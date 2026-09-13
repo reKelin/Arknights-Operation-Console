@@ -1,0 +1,38 @@
+[package]
+name = "arknights-operation-runner"
+version = "0.1.0"
+description = "明日方舟实机计时与作战轴工具"
+authors = ["Kelin"]
+edition = "2024"
+rust-version = "1.98.1"
+license = "Apache-2.0"
+default-run = "arknights-operation-runner"
+
+[lib]
+name = "arknights_operation_runner_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = "=2.6.3"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regress = "=0.12.0"
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta-typescript = "=0.0.12"
+tauri = { version = "=2.11.5", default-features = false, features = ["wry"] }
+tauri-plugin-dialog = { version = "=2.7.3", optional = true }
+tauri-plugin-global-shortcut = { version = "=2.3.2", optional = true }
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+thiserror = "2.0"
+typify = "=0.8.0"
+
+[features]
+default = ["desktop-app", "custom-protocol"]
+desktop-app = [
+    "tauri/tray-icon",
+    "dep:tauri-plugin-dialog",
+    "dep:tauri-plugin-global-shortcut",
+]
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:axislink:v1",
+  "title": "AxisDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "title", "stageId", "timebase", "events"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": ".*\\S.*"
+    },
+    "stageId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]*$"
+    },
+    "timebase": {
+      "$ref": "#/$defs/Timebase"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/DeployEvent" },
+          { "$ref": "#/$defs/SkillEvent" },
+          { "$ref": "#/$defs/RetreatEvent" }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "Timebase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fps"],
+      "properties": {
+        "fps": {
+          "const": 30
+        }
+      }
+    },
+    "EventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "OperatorId": {
+      "type": "string",
+      "minLength": 6,
+      "maxLength": 128,
+      "pattern": "^char_[A-Za-z0-9_]+$"
+    },
+    "Frame": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "Label": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "Tile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      }
+    },
+    "Direction": {
+      "type": "string",
+      "enum": ["up", "right", "down", "left"]
+    },
+    "DeployEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "frame", "kind", "operator", "tile", "direction"],
+      "properties": {
+        "id": { "$ref": "#/$defs/EventId" },
+        "frame": { "$ref": "#/$defs/Frame" },
+        "kind": { "const": "deploy" },
+        "operator": { "$ref": "#/$defs/OperatorId" },
+        "tile": { "$ref": "#/$defs/Tile" },
+        "direction": { "$ref": "#/$defs/Direction" },
+        "label": { "$ref": "#/$defs/Label" }
+      }
+    },
+    "SkillEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "frame", "kind", "operator"],
+      "properties": {
+        "id": { "$ref": "#/$defs/EventId" },
+        "frame": { "$ref": "#/$defs/Frame" },
+        "kind": { "const": "skill" },
+        "operator": { "$ref": "#/$defs/OperatorId" },
+        "label": { "$ref": "#/$defs/Label" }
+      }
+    },
+    "RetreatEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "frame", "kind", "operator"],
+      "properties": {
+        "id": { "$ref": "#/$defs/EventId" },
+        "frame": { "$ref": "#/$defs/Frame" },
+        "kind": { "const": "retreat" },
+        "operator": { "$ref": "#/$defs/OperatorId" },
+        "label": { "$ref": "#/$defs/Label" }
+      }
+    }
+  }
+}

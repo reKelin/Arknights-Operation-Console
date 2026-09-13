@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "title": "交互 Demo 示例轴",
+  "stageId": "main_00-01",
+  "timebase": {
+    "fps": 30
+  },
+  "events": [
+    {
+      "id": "demo-001",
+      "frame": 420,
+      "kind": "deploy",
+      "operator": "char_002_amiya",
+      "tile": {
+        "x": 4,
+        "y": 2
+      },
+      "direction": "left",
+      "label": "部署干员"
+    },
+    {
+      "id": "demo-002",
+      "frame": 1110,
+      "kind": "skill",
+      "operator": "char_002_amiya",
+      "label": "开启技能"
+    },
+    {
+      "id": "demo-003",
+      "frame": 1782,
+      "kind": "retreat",
+      "operator": "char_002_amiya",
+      "label": "撤退干员"
+    }
+  ]
+}

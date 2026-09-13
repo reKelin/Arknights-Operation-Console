@@ -1,0 +1,37 @@
+{
+  "name": "arknights-operation-runner",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": "22.16.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "check": "biome ci .",
+    "format": "biome check --write .",
+    "bindings": "npm run bindings:axis && npm run bindings:tauri",
+    "bindings:axis": "json2ts -i protocol/axislink.schema.json -o src/generated/axislink.ts",
+    "bindings:tauri": "node scripts/export-bindings.mjs",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13",
+    "@tauri-apps/cli": "2.11.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "json-schema-to-typescript": "16.0.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "5.0.0"
+  }
+}
