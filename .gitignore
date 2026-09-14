@@ -39,3 +39,5 @@ src-tauri/icons/StoreLogo.png
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+release/
