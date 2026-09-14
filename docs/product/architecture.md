@@ -20,13 +20,17 @@ depends_on:
 flowchart LR
   UI["React：计时器与时间轴"] --> Commands["生成的 Tauri 绑定"]
   Commands --> Core["Rust Runner Core"]
-  ClockSource["模拟或实机观测"] --> Clock["30 tick/s GameClock"]
+  Window["Arknights.exe 窗口"] --> Capture["WGC 捕获"]
+  Recording["MKV 或 MP4"] --> Decode["FFmpeg 解码"]
+  Capture --> Vision["视觉状态与费用观测"]
+  Decode --> Vision
+  Vision --> Clock["30 tick/s GameClock"]
   Clock --> Core
   Axis["AxisLink v1"] --> Core
   Core --> Snapshot["不可变 UI 快照"]
   Core --> Output["提醒或执行请求"]
   Snapshot --> UI
-  Output --> DryRun["Demo：预演"]
+  Output --> DryRun["预演或提醒"]
   Output --> Touch["后续：触摸注入"]
 ```
 
@@ -38,6 +42,14 @@ flowchart LR
 - Tauri 命令以 Rust 类型为源生成 TypeScript 绑定。
 - 同帧事件按 `frame`、创建序号、稳定 ID 排序。
 
+## 监控链
+
+- Runner 使用 `windows-capture` 提供的 Windows Graphics Capture 封装选择并捕获 `Arknights.exe` 窗口；CostBarRuler 仅作为公开行为基线，不作为运行时依赖。
+- 捕获线程只保留最新帧，视觉线程输出带捕获单调时间、战斗状态、费用相位和可信度的不可变观测。
+- 视觉识别在归一化的 1920×1080 参考坐标中采样费用条、速度键和暂停键，不渲染或保存完整游戏画面。
+- 录屏使用 `ffprobe` 读取元数据并由 `ffmpeg` 解码为 30 Hz BGRA 帧，随后进入同一视觉与时钟状态机；离线结果只保存在内存。
+- 主题、费用周期分母和游戏 UI 比例属于应用设置，可以持久化；AxisLink 草稿与录屏分析结果不得自动保存。
+
 ## 时钟路径
 
 两条高层时钟路径保持独立，避免把不同的数据完整性和回溯语义藏在模式开关中：
@@ -47,7 +59,9 @@ flowchart LR
 
 两者只共享捕获时间戳换算、定点帧累加等无状态基础函数，不共享可变状态或触发历史。
 
-实机阶段以 WGC 捕获时间戳为单调时间。费用条可见时负责锚定；满费时按当前速度外推。WebSocket `SkipToLatest` 可用于代理模式，高精度人类模式使用不丢帧的原始帧流或 Runner 自有 WGC。
+实机阶段以 WGC 捕获时间戳为单调时间。首次可信运行观测建立 F0；费用条可见时负责锚定，满费时按当前可信速度外推，暂停时冻结。未知、过期或窗口失效的观测不会推动权威时钟。稳定识别到离关后时钟归零并回到等待，当前轴保持不变。
+
+费用逻辑秒分母是费用周期与显示配置，不改变 30 Hz 权威游戏帧。若分母为 60，则 F60 显示为 `00:01:00/60`，其现实持续时间仍为 2 秒；AxisLink 中的事件帧保持 F60。
 
 ## 执行策略
 
