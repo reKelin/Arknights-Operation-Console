@@ -57,16 +57,18 @@
 - Rust 使用 rustfmt、Clippy 和 Rust 测试；TypeScript 使用 Biome、`tsc`、Vitest 和生产构建。
 - 前端首版不引入 React Testing Library 或端到端测试框架；Vitest 只覆盖时间轴帧/像素换算、滚动范围和拖动落点等纯逻辑。
 - 非平凡的分支、循环、解析器和状态转换至少保留一个能在错误时失败的最小检查。
+- 快速开发阶段不要求独立 Agent 审查；完成或合入条件以适用的测试、静态检查和构建全部通过为准。
 - 只报告实际执行过的检查；失败时修复原因，不跳过 hooks 或删除测试。
 
 ## Git
 
 - 开始实质改动前检查适用规则、当前分支、工作区、暂存区、未跟踪文件、分支起点和近期提交历史。
-- 实质改动使用 `<type>/<kebab-case-topic>` 主题分支；`type` 使用 `feat`、`fix`、`refactor`、`docs`、`test` 或 `chore`。
+- 边界明确且改动较大的独立功能性修改才需要创建 `<type>/<topic>` 主题分支。
+- 主题分支的 `type` 使用 `feat`、`fix`、`refactor`、`docs`、`test` 或 `chore`。
 - 一个 commit 只有一个可独立回滚的逻辑目的。提交信息使用 `<type>(<scope>): <简洁中文动作>`。
 - 只暂存当前 commit 的明确文件或 hunks；提交前检查 staged diff 和 `git diff --check`。
 - 未经用户明确授权，不得 commit、push、merge、amend、rebase、squash、force push、跳过 hooks、删除分支或丢弃工作区内容。
-- 完成功能后通过 GitHub Pull Request 的 merge commit 合入 `main`；不使用 squash merge。
+- 主题分支通过 GitHub Pull Request 的 merge commit 合入 `main`，不使用 squash merge。
 
 ## 文档与规范
 
@@ -75,19 +77,12 @@
 - 局部设计写入 `docs/subsystems/<subsystem>.md`，不得在多个文档重复定义同一规范。
 - Git 保存历史，不维护手工文档变更日志。
 - 跨进程协议、持久化格式、游戏时钟语义、真实输入、执行解锁与急停，以及架构边界变化，必须先创建 feature spec。
-- feature spec 固定包含 `requirements.md`、`design.md`、`tasks.md`，先 review 并解决阻塞项，再开始编码。
+- feature spec 固定包含 `requirements.md`、`design.md`、`tasks.md`；规范完成后即可开始编码，不设置独立审查门槛。
 - 规范文档使用 YAML front matter，字段为 `status`、`scope`、`depends_on`；状态只使用 `draft`、`approved`、`implemented`、`superseded`。
 - 需求编号使用 `REQ-<SCOPE>-###`，验收编号使用 `AC-<FEATURE>-###`；删除后的编号不得复用。
 - “必须/应该/可以”分别表示强制、默认和可选；每条“必须”要求必须关联可验证的验收标准。
 - 明确区分事实、决定、假设和未知项。结论必须能追溯到代码、版本化资料或实机证据。
 - 规范图表只使用 Mermaid 或纯文本字符图。
-
-## Code Review
-
-- 强制独立审查的高风险改动：跨进程协议与 Schema、轴持久化或迁移、游戏时钟，以及具有真实副作用的 PC 输入代码。
-- 普通 UI、纯文档、格式调整不强制独立审查。
-- Reviewer 必须未参与被审改动的编写，采用缺陷优先、只读审查，给出可定位且可执行的问题。
-- 阻塞问题必须在合并前解决；无法确认的问题标记为未验证，不得伪装为通过。
 
 ## 代码公约
 
