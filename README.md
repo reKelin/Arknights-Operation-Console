@@ -1,7 +1,7 @@
 <div align="center">
   <h1>Arknights Operation Runner</h1>
   <p>面向明日方舟实机计时、作战轴记录与执行的轻量桌面工具。</p>
-  <p><strong>开发中</strong></p>
+  <p><strong>交互 Demo 已完成；实机机制尚未接入</strong></p>
 </div>
 
 当前交互 Demo 包含：

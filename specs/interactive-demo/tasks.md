@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: interactive-demo
 depends_on:
   - specs/interactive-demo/requirements.md
