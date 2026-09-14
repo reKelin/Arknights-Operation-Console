@@ -5,6 +5,7 @@ use thiserror::Error;
 
 use crate::{
     axis::{DraftAxis, DraftDirection, DraftEvent, DraftKind, DraftTile},
+    monitor::MonitorSnapshot,
     settings::AppSettings,
 };
 
@@ -117,6 +118,7 @@ pub struct UpdateEventInput {
 pub struct RunnerSnapshot {
     pub axis: DraftAxis,
     pub settings: AppSettings,
+    pub monitor: MonitorSnapshot,
     pub frame: u32,
     pub time: String,
     pub speed: u8,

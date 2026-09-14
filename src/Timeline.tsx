@@ -7,7 +7,11 @@ import {
   useState,
 } from "react";
 
-import type { DraftEvent, DraftKind } from "./generated/bindings";
+import type {
+  DraftEvent,
+  DraftKind,
+  RecordingTracePoint,
+} from "./generated/bindings";
 import {
   frameToX,
   pointerToFrame,
@@ -19,6 +23,8 @@ import {
 type TimelineProps = {
   events: DraftEvent[];
   currentFrame: number;
+  traceDurationFrames: number | null;
+  tracePoints: RecordingTracePoint[];
   zoom: number;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -45,6 +51,8 @@ const KIND_LABELS: Record<DraftKind, string> = {
 export default function Timeline({
   events,
   currentFrame,
+  traceDurationFrames,
+  tracePoints,
   zoom,
   selectedId,
   onSelect,
@@ -62,9 +70,10 @@ export default function Timeline({
       Math.max(
         3_600,
         currentFrame + 600,
+        (traceDurationFrames ?? 0) + 300,
         ...events.map((event) => event.frame + 300),
       ),
-    [currentFrame, events],
+    [currentFrame, events, traceDurationFrames],
   );
   const contentWidth = timelineWidth(maxFrame, zoom, viewportWidth);
   const marks = useMemo(() => {
@@ -75,6 +84,15 @@ export default function Timeline({
     );
   }, [maxFrame, zoom]);
   const eventStacks = useMemo(() => stackPositions(events), [events]);
+  const stateChanges = useMemo(
+    () =>
+      tracePoints.filter(
+        (point, index) =>
+          index === 0 ||
+          tracePoints[index - 1]?.battleState !== point.battleState,
+      ),
+    [tracePoints],
+  );
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -176,6 +194,15 @@ export default function Timeline({
             width: Math.max(0, frameToX(currentFrame, zoom) - TIMELINE_PADDING),
           }}
         />
+
+        {stateChanges.map((point) => (
+          <span
+            className={`recording-trace-marker trace--${point.battleState}`}
+            key={`${point.sourceFrame}-${point.battleState}`}
+            style={{ left: frameToX(point.gameFrame, zoom) }}
+            title={`${point.battleState} · F${point.gameFrame}`}
+          />
+        ))}
 
         {events.map((event) => {
           const frame = eventFrame(event);

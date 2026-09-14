@@ -10,6 +10,8 @@ import {
   type DraftEvent,
   type DraftKind,
   events,
+  type GameWindowCandidate,
+  type ObservedBattleState,
   type RunnerSnapshot,
   type RunStrategy,
   type UpdateEventInput,
@@ -32,6 +34,18 @@ const STRATEGY_LABELS: Record<RunStrategy, string> = {
   notify: "提前提示",
   pause: "到点暂停",
   dryRun: "执行预演",
+};
+
+const OBSERVED_STATE_LABELS: Record<ObservedBattleState, string> = {
+  unknown: "未知",
+  notInBattle: "关卡外",
+  battleBegin: "正在进入关卡",
+  oneXRunning: "1× 运行",
+  twoXRunning: "2× 运行",
+  pointTwoXRunning: "0.2× 运行",
+  paused: "暂停",
+  deployingOperator: "部署中",
+  adjustingOperatorFacing: "调整方向",
 };
 
 function unwrap<T>(result: TypedResult<T>): T {
@@ -85,6 +99,12 @@ export default function App() {
   const [editing, setEditing] = useState<DraftEvent | null>(null);
   const [metadataOpen, setMetadataOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [windowPickerOpen, setWindowPickerOpen] = useState(false);
+  const [gameWindows, setGameWindows] = useState<GameWindowCandidate[]>([]);
+  const [scanningWindows, setScanningWindows] = useState(false);
+  const [tracePreviewFrame, setTracePreviewFrame] = useState<number | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const lastNoticeSequence = useRef(0);
@@ -161,6 +181,14 @@ export default function App() {
     }
   }, [snapshot]);
 
+  useEffect(() => {
+    if (snapshot?.monitor.connectionState === "ready") {
+      setTracePreviewFrame(0);
+    } else {
+      setTracePreviewFrame(null);
+    }
+  }, [snapshot?.monitor.connectionState]);
+
   async function run(
     operation: () => Promise<TypedResult<RunnerSnapshot>>,
   ): Promise<boolean> {
@@ -207,6 +235,26 @@ export default function App() {
     }
   }
 
+  async function scanGameWindows() {
+    setScanningWindows(true);
+    const result = await run(() => commands.listGameWindows());
+    setScanningWindows(false);
+    if (result) {
+      setGameWindows(result);
+      setWindowPickerOpen(true);
+    }
+  }
+
+  async function chooseRecording() {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "游戏录屏", extensions: ["mkv", "mp4"] }],
+    });
+    if (typeof path === "string") {
+      await run(() => commands.analyzeRecording(path));
+    }
+  }
+
   if (!snapshot) {
     return (
       <main className="loading-shell">
@@ -219,9 +267,14 @@ export default function App() {
   const statusLabel = {
     waiting: "等待进关",
     running: "战斗中 · 自动计时",
-    paused: "模拟已暂停",
+    paused: "计时已冻结",
     ended: "关卡结束",
   }[snapshot.status];
+  const displayedFrame = tracePreviewFrame ?? snapshot.frame;
+  const displayedTime =
+    tracePreviewFrame === null
+      ? snapshot.time
+      : frameTime(tracePreviewFrame, snapshot.settings.framesPerCost);
 
   return (
     <main className="app-shell">
@@ -260,6 +313,23 @@ export default function App() {
                 />
               ),
             )}
+          </MenuButton>
+          <MenuButton
+            active={activeMenu === "monitor"}
+            label="监控"
+            onClick={() =>
+              setActiveMenu(activeMenu === "monitor" ? null : "monitor")
+            }
+          >
+            <MenuItem
+              label={scanningWindows ? "正在扫描…" : "选择游戏窗口"}
+              onClick={scanGameWindows}
+            />
+            <MenuItem label="分析游戏录屏" onClick={chooseRecording} />
+            <MenuItem
+              label="停止监控"
+              onClick={() => run(() => commands.stopMonitor())}
+            />
           </MenuButton>
           <MenuButton
             active={activeMenu === "view"}
@@ -302,7 +372,14 @@ export default function App() {
           </MenuButton>
         </nav>
         <span className="connection-state" data-tauri-drag-region>
-          模拟游戏时钟 · 已连接
+          {snapshot.monitor.sourceName
+            ? `${snapshot.monitor.sourceName} · ${
+                snapshot.monitor.recordingProgress !== null &&
+                snapshot.monitor.connectionState === "analyzing"
+                  ? `分析 ${snapshot.monitor.recordingProgress}%`
+                  : OBSERVED_STATE_LABELS[snapshot.monitor.battleState]
+              }`
+            : "未选择监控源"}
         </span>
         <button
           aria-label="最小化到托盘"
@@ -326,14 +403,20 @@ export default function App() {
 
       <section className="timer-strip">
         <div className="timer-primary">
-          <strong>{snapshot.time}</strong>
+          <strong>{displayedTime}</strong>
           <div>
-            <span>F{snapshot.frame.toString().padStart(5, "0")}</span>
-            <span>30 FPS · {snapshot.speed}×</span>
+            <span>F{displayedFrame.toString().padStart(5, "0")}</span>
+            <span>30 Hz · 费用秒 {snapshot.settings.framesPerCost}f</span>
             <span className={`status status--${snapshot.status}`}>
-              {statusLabel}
+              {snapshot.monitor.sourceKind === "none"
+                ? statusLabel
+                : OBSERVED_STATE_LABELS[snapshot.monitor.battleState]}
             </span>
-            <span className="accuracy">±{snapshot.errorFrames} 帧</span>
+            <span className="accuracy">
+              {snapshot.monitor.sourceKind === "none"
+                ? `±${snapshot.errorFrames} 帧`
+                : `可信度 ${snapshot.monitor.confidence}%`}
+            </span>
           </div>
         </div>
         <div className="next-action">
@@ -342,15 +425,6 @@ export default function App() {
           <b>{countdownText(snapshot.countdownFrames)}</b>
         </div>
         <div className="timer-actions">
-          {snapshot.status === "paused" && (
-            <button
-              className="button button--primary"
-              onClick={() => run(() => commands.continueSimulation())}
-              type="button"
-            >
-              继续模拟
-            </button>
-          )}
           <button
             className={
               snapshot.recording ? "record-button active" : "record-button"
@@ -425,8 +499,10 @@ export default function App() {
         </div>
 
         <Timeline
-          currentFrame={snapshot.frame}
+          currentFrame={displayedFrame}
           events={snapshot.axis.events}
+          traceDurationFrames={snapshot.monitor.traceDurationFrames}
+          tracePoints={snapshot.monitor.tracePoints}
           onCreate={(frame, kind) =>
             run(() => commands.addEvent({ frame, kind }))
           }
@@ -452,6 +528,20 @@ export default function App() {
             </>
           ) : (
             <span>{snapshot.lastMessage || "双击时间轴新增操作点"}</span>
+          )}
+          {snapshot.monitor.traceDurationFrames !== null && (
+            <label className="recording-trace-control">
+              录屏轨迹
+              <input
+                max={snapshot.monitor.traceDurationFrames}
+                min="0"
+                onChange={(event) =>
+                  setTracePreviewFrame(Number.parseInt(event.target.value, 10))
+                }
+                type="range"
+                value={tracePreviewFrame ?? 0}
+              />
+            </label>
           )}
           <small>拖动改帧 · 右键编辑 · 双击空白新增</small>
         </div>
@@ -506,11 +596,24 @@ export default function App() {
         />
       )}
 
+      {windowPickerOpen && (
+        <WindowPicker
+          candidates={gameWindows}
+          onCancel={() => setWindowPickerOpen(false)}
+          onRefresh={scanGameWindows}
+          onSelect={async (id) => {
+            if (await run(() => commands.selectGameWindow(id))) {
+              setWindowPickerOpen(false);
+            }
+          }}
+        />
+      )}
+
       {aboutOpen && (
         <div className="modal-backdrop">
           <section className="compact-dialog about-dialog">
             <h2>Arknights Operation Runner</h2>
-            <p>交互 Demo · 模拟时钟 · 不接触游戏客户端</p>
+            <p>实机视觉时钟 · AxisLink 30 Hz 作战轴</p>
             <button onClick={() => setAboutOpen(false)} type="button">
               关闭
             </button>
@@ -827,6 +930,55 @@ function SettingsEditor({ settings, onSave, onCancel }: SettingsEditorProps) {
           </button>
         </footer>
       </form>
+    </div>
+  );
+}
+
+type WindowPickerProps = {
+  candidates: GameWindowCandidate[];
+  onSelect: (id: string) => void;
+  onRefresh: () => void;
+  onCancel: () => void;
+};
+
+function WindowPicker({
+  candidates,
+  onSelect,
+  onRefresh,
+  onCancel,
+}: WindowPickerProps) {
+  return (
+    <div className="modal-backdrop">
+      <section className="compact-dialog window-picker">
+        <h2>选择明日方舟窗口</h2>
+        <div className="window-candidates">
+          {candidates.length === 0 ? (
+            <p>未发现可捕获的 Arknights.exe 窗口。</p>
+          ) : (
+            candidates.map((candidate) => (
+              <button
+                key={candidate.id}
+                onClick={() => onSelect(candidate.id)}
+                type="button"
+              >
+                <strong>{candidate.title || "明日方舟"}</strong>
+                <span>
+                  {candidate.width}×{candidate.height}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+        <footer>
+          <button onClick={onRefresh} type="button">
+            重新扫描
+          </button>
+          <span />
+          <button onClick={onCancel} type="button">
+            取消
+          </button>
+        </footer>
+      </section>
     </div>
   );
 }

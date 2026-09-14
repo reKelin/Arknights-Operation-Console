@@ -16,10 +16,13 @@ export const commands = {
 	importAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("import_axis", { path })),
 	exportAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("export_axis", { path })),
 	setStrategy: (strategy: RunStrategy) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_strategy", { strategy })),
-	continueSimulation: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("continue_simulation")),
 	setAlwaysOnTop: (enabled: boolean) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_always_on_top", { enabled })),
 	updateSettings: (input: AppSettings) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_settings", { input })),
 	requestClearAxis: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_clear_axis")),
+	listGameWindows: () => typedError<GameWindowCandidate[], CommandError>(__TAURI_INVOKE("list_game_windows")),
+	selectGameWindow: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_game_window", { id })),
+	analyzeRecording: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("analyze_recording", { path })),
+	stopMonitor: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("stop_monitor")),
 	hideToTray: () => typedError<null, CommandError>(__TAURI_INVOKE("hide_to_tray")),
 	closeApp: () => __TAURI_INVOKE<void>("close_app"),
 };
@@ -84,7 +87,42 @@ export type DraftTile = {
 	y: number,
 };
 
+export type GameWindowCandidate = {
+	id: string,
+	title: string,
+	width: number,
+	height: number,
+};
+
+export type MonitorConnectionState = "idle" | "connecting" | "watching" | "analyzing" | "ready" | "error";
+
+export type MonitorSnapshot = {
+	sourceKind: MonitorSourceKind,
+	connectionState: MonitorConnectionState,
+	sourceName: string | null,
+	battleState: ObservedBattleState,
+	confidence: number,
+	costPhase: number | null,
+	costTotal: number,
+	trusted: boolean,
+	error: string | null,
+	recordingProgress: number | null,
+	traceDurationFrames: number | null,
+	tracePoints: RecordingTracePoint[],
+};
+
+export type MonitorSourceKind = "none" | "window" | "recording";
+
 export type NoticeKind = "info" | "notify" | "dryRun" | "paused";
+
+export type ObservedBattleState = "unknown" | "notInBattle" | "battleBegin" | "oneXRunning" | "twoXRunning" | "pointTwoXRunning" | "paused" | "deployingOperator" | "adjustingOperatorFacing";
+
+export type RecordingTracePoint = {
+	sourceFrame: number,
+	gameFrame: number,
+	battleState: ObservedBattleState,
+	costPhase: number | null,
+};
 
 export type RunNotice = {
 	sequence: number,
@@ -98,6 +136,7 @@ export type RunStrategy = "notify" | "pause" | "dryRun";
 export type RunnerSnapshot = {
 	axis: DraftAxis,
 	settings: AppSettings,
+	monitor: MonitorSnapshot,
 	frame: number,
 	time: string,
 	speed: number,

@@ -1,0 +1,52 @@
+[
+  {
+    "source": "2026-09-11 23-25-56.mkv @ 10s",
+    "expected": "notInBattle",
+    "gearRatio": 0.0,
+    "speedBright": 0.0,
+    "pauseBright": 0.0,
+    "pauseOverlay": 0.0,
+    "titleBright": 0.0,
+    "sampledLuma": 10.008701
+  },
+  {
+    "source": "2026-09-11 23-25-56.mkv @ 14s",
+    "expected": "battleBegin",
+    "gearRatio": 0.0,
+    "speedBright": 0.0,
+    "pauseBright": 0.0,
+    "pauseOverlay": 0.086422,
+    "titleBright": 0.051914,
+    "sampledLuma": 33.463031
+  },
+  {
+    "source": "2026-09-11 23-25-56.mkv @ 20s",
+    "expected": "paused",
+    "gearRatio": 0.067143,
+    "speedBright": 0.0,
+    "pauseBright": 0.0,
+    "pauseOverlay": 0.021189,
+    "titleBright": 0.016975,
+    "sampledLuma": 27.968301
+  },
+  {
+    "source": "2026-09-11 23-25-56.mkv @ 90s",
+    "expected": "twoXRunning",
+    "gearRatio": 0.077857,
+    "speedBright": 0.092968,
+    "pauseBright": 0.285714,
+    "pauseOverlay": 0.121434,
+    "titleBright": 0.088157,
+    "sampledLuma": 57.676838
+  },
+  {
+    "source": "2026-09-11 23-25-56.mkv @ 150s",
+    "expected": "paused",
+    "gearRatio": 0.077679,
+    "speedBright": 0.09281,
+    "pauseBright": 0.242148,
+    "pauseOverlay": 0.003315,
+    "titleBright": 0.001311,
+    "sampledLuma": 31.35768
+  }
+]

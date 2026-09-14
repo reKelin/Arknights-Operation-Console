@@ -467,6 +467,28 @@ button {
   background: var(--accent);
 }
 
+.recording-trace-marker {
+  position: absolute;
+  top: 35px;
+  width: 2px;
+  height: 24px;
+  z-index: 2;
+  background: var(--text-faint);
+  opacity: 0.7;
+}
+
+.recording-trace-marker.trace--oneXRunning,
+.recording-trace-marker.trace--twoXRunning,
+.recording-trace-marker.trace--pointTwoXRunning {
+  background: var(--success);
+}
+
+.recording-trace-marker.trace--paused,
+.recording-trace-marker.trace--deployingOperator,
+.recording-trace-marker.trace--adjustingOperatorFacing {
+  background: var(--warning);
+}
+
 .axis-point {
   position: absolute;
   z-index: 4;
@@ -617,6 +639,20 @@ button {
   color: var(--text-faint);
 }
 
+.recording-trace-control {
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+}
+
+.recording-trace-control input {
+  min-width: 90px;
+  flex: 1;
+  accent-color: var(--accent);
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 50;
@@ -696,6 +732,44 @@ button {
   margin: 6px 0 0;
   color: var(--text-faint);
   font-size: 10px;
+}
+
+.window-picker {
+  width: min(460px, calc(100vw - 24px));
+}
+
+.window-candidates {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.window-candidates > p {
+  margin: 14px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.window-candidates > button {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.window-candidates > button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.window-candidates > button span {
+  flex: 0 0 auto;
+  color: var(--text-faint);
 }
 
 .about-dialog p {

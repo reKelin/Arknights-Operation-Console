@@ -9,6 +9,10 @@ use crate::{
         AxisMetadataInput, BattleStatus, CommandError, NoticeKind, RunNotice, RunStrategy,
         RunnerSnapshot, UpdateEventInput,
     },
+    monitor::{
+        ClockTransition, MonitorEvent, MonitorSnapshot, MonitorSourceKind, ObservationClock,
+        ObservedBattleState,
+    },
     settings::AppSettings,
 };
 
@@ -20,10 +24,13 @@ const WAIT_BEFORE_BATTLE: Duration = Duration::from_millis(700);
 const WAIT_AFTER_BATTLE: Duration = Duration::from_secs(2);
 const NOTIFY_LEAD_FRAMES: u32 = 90;
 const CLEAR_CONFIRM_DURATION: Duration = Duration::from_secs(3);
+const OBSERVATION_TIMEOUT: Duration = Duration::from_millis(250);
 
 pub struct RunnerState {
     axis: DraftAxis,
     settings: AppSettings,
+    monitor: MonitorSnapshot,
+    clock: ObservationClock,
     frame: u32,
     status: BattleStatus,
     speed: u8,
@@ -40,6 +47,8 @@ pub struct RunnerState {
     last_message: Option<String>,
     always_on_top: bool,
     clear_pending_deadline: Option<Instant>,
+    last_observation_at: Option<Instant>,
+    error_frames: u16,
 }
 
 impl RunnerState {
@@ -55,6 +64,8 @@ impl RunnerState {
         Self {
             axis: DraftAxis::empty(),
             settings,
+            monitor: MonitorSnapshot::default(),
+            clock: ObservationClock::default(),
             frame: 0,
             status: BattleStatus::Waiting,
             speed: 0,
@@ -71,16 +82,13 @@ impl RunnerState {
             last_message: settings_warning.or_else(|| Some("等待选择监控源".to_string())),
             always_on_top: true,
             clear_pending_deadline: None,
+            last_observation_at: None,
+            error_frames: 0,
         }
     }
 
     pub fn tick(&mut self, now: Instant) {
-        if self
-            .clear_pending_deadline
-            .is_some_and(|deadline| now > deadline)
-        {
-            self.clear_pending_deadline = None;
-        }
+        self.refresh(now);
         match self.status {
             BattleStatus::Waiting | BattleStatus::Ended => {
                 if now >= self.phase_deadline {
@@ -91,6 +99,31 @@ impl RunnerState {
                 self.last_tick = now;
             }
             BattleStatus::Running => self.advance_running(now),
+        }
+    }
+
+    pub fn refresh(&mut self, now: Instant) {
+        if self
+            .clear_pending_deadline
+            .is_some_and(|deadline| now > deadline)
+        {
+            self.clear_pending_deadline = None;
+        }
+        if self.monitor.source_kind != MonitorSourceKind::None
+            && self
+                .last_observation_at
+                .is_some_and(|last| now.saturating_duration_since(last) > OBSERVATION_TIMEOUT)
+        {
+            let update = self.clock.freeze();
+            if update.active {
+                self.status = BattleStatus::Paused;
+            }
+            self.speed = 0;
+            self.error_frames = self.error_frames.max(1);
+            self.monitor.trusted = false;
+            self.monitor.battle_state = ObservedBattleState::Unknown;
+            self.last_observation_at = None;
+            self.last_message = Some("监控观测已过期，计时已冻结".to_string());
         }
     }
 
@@ -107,6 +140,7 @@ impl RunnerState {
         RunnerSnapshot {
             axis: self.axis.clone(),
             settings: self.settings.clone(),
+            monitor: self.monitor.clone(),
             frame: self.frame,
             time: format_frame(self.frame, self.settings.frames_per_cost),
             speed: self.speed,
@@ -115,7 +149,7 @@ impl RunnerState {
             strategy: self.strategy,
             next_event,
             countdown_frames,
-            error_frames: 0,
+            error_frames: self.error_frames,
             last_message: self.last_message.clone(),
             notices: self.notices.clone(),
             always_on_top: self.always_on_top,
@@ -139,7 +173,7 @@ impl RunnerState {
         if !matches!(self.status, BattleStatus::Running | BattleStatus::Paused) {
             return Err(CommandError::new(
                 "battle_not_running",
-                "当前不在模拟关卡中",
+                "当前不在运行中的关卡内",
             ));
         }
         self.insert_draft(self.frame, kind);
@@ -285,6 +319,80 @@ impl RunnerState {
 
     pub fn set_always_on_top(&mut self, enabled: bool) {
         self.always_on_top = enabled;
+    }
+
+    pub fn set_monitor_snapshot(&mut self, monitor: MonitorSnapshot) {
+        self.monitor = monitor;
+    }
+
+    pub fn reset_monitor_clock(&mut self, message: &str) {
+        self.clock = ObservationClock::default();
+        self.frame = 0;
+        self.status = BattleStatus::Waiting;
+        self.speed = 0;
+        self.error_frames = 0;
+        self.last_observation_at = None;
+        self.triggered.clear();
+        self.notices.clear();
+        self.last_message = Some(message.to_string());
+    }
+
+    pub fn apply_monitor_event(&mut self, event: MonitorEvent, received_at: Instant) {
+        match event {
+            MonitorEvent::Observation(observation) => {
+                self.last_observation_at = Some(received_at);
+                let previous_frame = self.frame;
+                let update = self.clock.observe(&observation);
+                self.frame = update.frame;
+                self.speed = update.speed;
+                self.error_frames = update.error_frames.min(u32::from(u16::MAX)) as u16;
+                self.status = if !update.active {
+                    BattleStatus::Waiting
+                } else if matches!(
+                    update.transition,
+                    ClockTransition::Paused | ClockTransition::Frozen
+                ) {
+                    BattleStatus::Paused
+                } else {
+                    BattleStatus::Running
+                };
+                match update.transition {
+                    ClockTransition::Started => {
+                        self.triggered.clear();
+                        self.notices.clear();
+                        self.last_message = Some("已识别到关卡运行，计时开始".to_string());
+                        self.dispatch_events(0);
+                    }
+                    ClockTransition::Advanced if self.frame > previous_frame => {
+                        self.dispatch_events(self.frame);
+                    }
+                    ClockTransition::Exited => {
+                        self.triggered.clear();
+                        self.notices.clear();
+                        self.last_message = Some("已离开关卡，计时已归零".to_string());
+                    }
+                    ClockTransition::Frozen => {
+                        self.last_message = Some("游戏状态不可信，计时已冻结".to_string());
+                    }
+                    ClockTransition::Paused => {
+                        self.last_message = Some("游戏已暂停".to_string());
+                    }
+                    ClockTransition::None | ClockTransition::Advanced => {}
+                }
+            }
+            MonitorEvent::Error(message) => {
+                let update = self.clock.freeze();
+                if update.active {
+                    self.status = BattleStatus::Paused;
+                }
+                self.speed = 0;
+                self.error_frames = self.error_frames.max(1);
+                self.last_observation_at = None;
+                self.monitor.trusted = false;
+                self.last_message = Some(message);
+            }
+            MonitorEvent::RecordingProgress { .. } | MonitorEvent::RecordingReady { .. } => {}
+        }
     }
 
     pub fn update_settings(&mut self, settings: AppSettings) -> Result<(), CommandError> {
