@@ -103,6 +103,14 @@ pub struct DraftAxis {
 }
 
 impl DraftAxis {
+    pub fn empty() -> Self {
+        Self {
+            title: "未命名轴".to_string(),
+            stage_id: None,
+            events: Vec::new(),
+        }
+    }
+
     pub fn demo() -> Self {
         let mut events = vec![
             complete_event("demo-001", 420, 0, DraftKind::Deploy, "部署 01"),

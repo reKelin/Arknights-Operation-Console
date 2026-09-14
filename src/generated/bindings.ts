@@ -18,6 +18,8 @@ export const commands = {
 	setStrategy: (strategy: RunStrategy) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_strategy", { strategy })),
 	continueSimulation: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("continue_simulation")),
 	setAlwaysOnTop: (enabled: boolean) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_always_on_top", { enabled })),
+	updateSettings: (input: AppSettings) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_settings", { input })),
+	requestClearAxis: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_clear_axis")),
 	hideToTray: () => typedError<null, CommandError>(__TAURI_INVOKE("hide_to_tray")),
 	closeApp: () => __TAURI_INVOKE<void>("close_app"),
 };
@@ -32,6 +34,15 @@ export type AddEventInput = {
 	frame: number,
 	kind: DraftKind,
 };
+
+export type AppSettings = {
+	version: number,
+	theme: AppTheme,
+	framesPerCost: number,
+	gameUiScale: number,
+};
+
+export type AppTheme = "dark" | "light";
 
 export type AxisMetadataInput = {
 	title: string,
@@ -86,6 +97,7 @@ export type RunStrategy = "notify" | "pause" | "dryRun";
 
 export type RunnerSnapshot = {
 	axis: DraftAxis,
+	settings: AppSettings,
 	frame: number,
 	time: string,
 	speed: number,
@@ -98,6 +110,7 @@ export type RunnerSnapshot = {
 	lastMessage: string | null,
 	notices: RunNotice[],
 	alwaysOnTop: boolean,
+	clearPending: boolean,
 };
 
 export type RunnerSnapshotEvent = RunnerSnapshot;

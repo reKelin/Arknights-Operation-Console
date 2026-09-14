@@ -1,6 +1,7 @@
 mod axis;
 mod bindings;
 mod runner;
+mod settings;
 
 use std::{path::PathBuf, sync::Mutex, time::Instant};
 
@@ -10,6 +11,7 @@ use bindings::{
     RunnerSnapshotEvent, UpdateEventInput,
 };
 use runner::RunnerState;
+use settings::AppSettings;
 use specta_typescript::Typescript;
 use tauri::{AppHandle, Manager};
 use tauri_specta::Builder;
@@ -189,6 +191,39 @@ fn set_always_on_top(
 
 #[tauri::command]
 #[specta::specta]
+fn update_settings(
+    input: AppSettings,
+    app: AppHandle,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    input
+        .validate()
+        .map_err(|message| CommandError::field("invalid_settings", message, "settings"))?;
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| CommandError::new("settings_path", error.to_string()))?
+        .join("settings.json");
+    input
+        .save(&path)
+        .map_err(|error| CommandError::new("settings_write", error.to_string()))?;
+    let mut runner = locked(&state)?;
+    runner.update_settings(input)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn request_clear_axis(
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.request_clear_axis(Instant::now());
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
 fn hide_to_tray(app: AppHandle) -> Result<(), CommandError> {
     let window = app
         .get_webview_window("main")
@@ -220,6 +255,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             set_strategy,
             continue_simulation,
             set_always_on_top,
+            update_settings,
+            request_clear_axis,
             hide_to_tray,
             close_app,
         ])
@@ -291,11 +328,12 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.handle().plugin(
         tauri_plugin_global_shortcut::Builder::new()
-            .with_shortcuts(["F1", "F2", "F3"])?
+            .with_shortcuts(["F1", "F2", "F3", "F4"])?
             .with_handler(|app, shortcut, event| {
                 if event.state != ShortcutState::Pressed {
                     return;
                 }
+                let clear = shortcut.matches(Modifiers::empty(), Code::F4);
                 let kind = if shortcut.matches(Modifiers::empty(), Code::F1) {
                     Some(DraftKind::Deploy)
                 } else if shortcut.matches(Modifiers::empty(), Code::F2) {
@@ -305,12 +343,16 @@ fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
-                let Some(kind) = kind else {
+                if !clear && kind.is_none() {
                     return;
-                };
+                }
                 let state = app.state::<SharedRunner>();
                 if let Ok(mut runner) = state.0.lock() {
-                    let _ = runner.record_event(kind);
+                    if clear {
+                        runner.request_clear_axis(Instant::now());
+                    } else if let Some(kind) = kind {
+                        let _ = runner.record_event(kind);
+                    }
                     emit_snapshot(app, runner.snapshot());
                 }
             })
@@ -325,9 +367,15 @@ pub fn run() {
     let builder = specta_builder();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(SharedRunner(Mutex::new(RunnerState::new(Instant::now()))))
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            let settings_path = app.path().app_config_dir()?.join("settings.json");
+            let (settings, warning) = AppSettings::load(&settings_path);
+            app.manage(SharedRunner(Mutex::new(RunnerState::with_settings(
+                Instant::now(),
+                settings,
+                warning,
+            ))));
             builder.mount_events(app);
             setup_tray(app)?;
             setup_shortcuts(app).map_err(|error| error.to_string())?;

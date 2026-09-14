@@ -2,6 +2,8 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import appIcon from "../assets/app-icon-small.png";
 import {
+  type AppSettings,
+  type AppTheme,
   type CommandError,
   commands,
   type DraftDirection,
@@ -58,11 +60,14 @@ function countdownText(frames: number | null): string {
   return `−${(frames / 30).toFixed(2)}`;
 }
 
-function frameTime(frame: number): string {
-  const totalSeconds = Math.floor(frame / 30);
+function frameTime(frame: number, denominator: number): string {
+  const totalSeconds = Math.floor(frame / denominator);
   return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(
     totalSeconds % 60,
-  ).padStart(2, "0")}.${String(frame % 30).padStart(2, "0")}`;
+  ).padStart(
+    2,
+    "0",
+  )}:${String(frame % denominator).padStart(2, "0")}/${denominator}`;
 }
 
 function eventSummary(event: DraftEvent | null): string {
@@ -79,6 +84,7 @@ export default function App() {
   const [activeMenu, setActiveMenu] = useState<MenuName | null>(null);
   const [editing, setEditing] = useState<DraftEvent | null>(null);
   const [metadataOpen, setMetadataOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const lastNoticeSequence = useRef(0);
@@ -148,6 +154,12 @@ export default function App() {
       );
     }
   }, [snapshot?.notices]);
+
+  useEffect(() => {
+    if (snapshot) {
+      document.documentElement.dataset.theme = snapshot.settings.theme;
+    }
+  }, [snapshot]);
 
   async function run(
     operation: () => Promise<TypedResult<RunnerSnapshot>>,
@@ -261,6 +273,25 @@ export default function App() {
                 run(() => commands.setAlwaysOnTop(!snapshot.alwaysOnTop))
               }
             />
+            <MenuItem
+              label="显示与监控设置"
+              onClick={() => setSettingsOpen(true)}
+            />
+            {(["dark", "light"] as AppTheme[]).map((theme) => (
+              <MenuItem
+                checked={snapshot.settings.theme === theme}
+                key={theme}
+                label={theme === "dark" ? "深色外观" : "浅色外观"}
+                onClick={() =>
+                  run(() =>
+                    commands.updateSettings({
+                      ...snapshot.settings,
+                      theme,
+                    }),
+                  )
+                }
+              />
+            ))}
           </MenuButton>
           <MenuButton
             active={activeMenu === "help"}
@@ -359,6 +390,16 @@ export default function App() {
               </button>
             ),
           )}
+          <button
+            className={
+              snapshot.clearPending ? "clear-axis pending" : "clear-axis"
+            }
+            onClick={() => run(() => commands.requestClearAxis())}
+            type="button"
+          >
+            {snapshot.clearPending ? "再次清空" : "清空"}
+            <kbd>F4</kbd>
+          </button>
           <div className="axis-toolbar__end">
             <button onClick={importAxis} type="button">
               导入
@@ -402,7 +443,10 @@ export default function App() {
               <b>{KIND_LABELS[selected.kind]}</b>
               <span>{selected.label || selected.id}</span>
               <span>
-                {frameTime(selected.frame)} · F{selected.frame}
+                {`${frameTime(
+                  selected.frame,
+                  snapshot.settings.framesPerCost,
+                )} · F${selected.frame}`}
               </span>
               {!selected.complete && <em>待补全</em>}
             </>
@@ -445,6 +489,18 @@ export default function App() {
               )
             ) {
               setMetadataOpen(false);
+            }
+          }}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsEditor
+          settings={snapshot.settings}
+          onCancel={() => setSettingsOpen(false)}
+          onSave={async (settings) => {
+            if (await run(() => commands.updateSettings(settings))) {
+              setSettingsOpen(false);
             }
           }}
         />
@@ -679,6 +735,88 @@ function MetadataEditor({ snapshot, onSave, onCancel }: MetadataEditorProps) {
             value={stageId}
           />
         </label>
+        <footer>
+          <span />
+          <button onClick={onCancel} type="button">
+            取消
+          </button>
+          <button className="button--primary" type="submit">
+            保存
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
+type SettingsEditorProps = {
+  settings: AppSettings;
+  onSave: (settings: AppSettings) => void;
+  onCancel: () => void;
+};
+
+function SettingsEditor({ settings, onSave, onCancel }: SettingsEditorProps) {
+  const [theme, setTheme] = useState(settings.theme);
+  const [framesPerCost, setFramesPerCost] = useState(
+    String(settings.framesPerCost),
+  );
+  const [gameUiScale, setGameUiScale] = useState(String(settings.gameUiScale));
+  return (
+    <div className="modal-backdrop">
+      <form
+        className="compact-dialog settings-editor"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave({
+            version: settings.version,
+            theme,
+            framesPerCost: Number.parseInt(framesPerCost, 10),
+            gameUiScale: Number.parseInt(gameUiScale, 10),
+          });
+        }}
+      >
+        <h2>显示与监控设置</h2>
+        <label>
+          外观
+          <select
+            onChange={(event) => setTheme(event.target.value as AppTheme)}
+            value={theme}
+          >
+            <option value="dark">深色</option>
+            <option value="light">浅色</option>
+          </select>
+        </label>
+        <label>
+          费用帧分母
+          <input
+            list="frames-per-cost-presets"
+            max="150"
+            min="15"
+            onChange={(event) => setFramesPerCost(event.target.value)}
+            required
+            type="number"
+            value={framesPerCost}
+          />
+          <datalist id="frames-per-cost-presets">
+            {[30, 45, 60, 90].map((value) => (
+              <option key={value} value={value} />
+            ))}
+          </datalist>
+        </label>
+        <label>
+          游戏 UI 比例
+          <input
+            max="100"
+            min="0"
+            onChange={(event) => setGameUiScale(event.target.value)}
+            required
+            type="number"
+            value={gameUiScale}
+          />
+        </label>
+        <p className="form-note">
+          事件帧始终为 30 Hz；分母只用于费用周期与时间显示。
+        </p>
         <footer>
           <span />
           <button onClick={onCancel} type="button">

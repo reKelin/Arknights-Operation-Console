@@ -1,9 +1,47 @@
 :root {
-  color: #e8ebf0;
-  background: #15171b;
+  --accent: #69b8ff;
+  --accent-soft: #21435d;
+  --danger: #ff7078;
+  --warning: #e5b95d;
+  --success: #69c998;
+  --text: #e8ebf0;
+  --text-muted: #aeb5c0;
+  --text-faint: #7c8490;
+  --surface: #1b1e24;
+  --surface-raised: #252a32;
+  --surface-input: #17191e;
+  --titlebar: #181a1f;
+  --panel: #191c21;
+  --timeline: #15171b;
+  --point: #1d2026;
+  --stroke: #3d434e;
+  --stroke-faint: #2d323b;
+
+  color: var(--text);
+  background: var(--timeline);
   font-family: Inter, "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+}
+
+:root[data-theme="light"] {
+  --accent: #1672b8;
+  --accent-soft: #d9ecfa;
+  --danger: #bd2635;
+  --warning: #916508;
+  --success: #24754d;
+  --text: #1d2630;
+  --text-muted: #4e5966;
+  --text-faint: #78838f;
+  --surface: #f3f5f7;
+  --surface-raised: #ffffff;
+  --surface-input: #e9edf1;
+  --titlebar: #e4e8ec;
+  --panel: #edf0f3;
+  --timeline: #f8f9fa;
+  --point: #ffffff;
+  --stroke: #b7c0c9;
+  --stroke-faint: #d5dbe1;
 }
 
 * {
@@ -40,24 +78,10 @@ button {
 }
 
 .app-shell {
-  --accent: #69b8ff;
-  --accent-soft: #21435d;
-  --danger: #ff7078;
-  --warning: #e5b95d;
-  --success: #69c998;
-  --text: #e8ebf0;
-  --text-muted: #9ba2ad;
-  --text-faint: #686f7a;
-  --surface: #1b1e24;
-  --surface-raised: #22262d;
-  --surface-input: #17191e;
-  --stroke: #353a44;
-  --stroke-faint: #292d35;
-
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-rows: 32px 72px minmax(0, 1fr);
+  grid-template-rows: 38px 92px minmax(0, 1fr);
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--stroke);
@@ -71,7 +95,7 @@ button {
   gap: 8px;
   min-width: 0;
   padding-left: 7px;
-  background: #181a1f;
+  background: var(--titlebar);
   border-bottom: 1px solid var(--stroke);
 }
 
@@ -84,7 +108,7 @@ button {
 }
 
 .titlebar strong {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 650;
   white-space: nowrap;
 }
@@ -109,8 +133,8 @@ button {
 }
 
 .menu-trigger {
-  padding: 0 7px;
-  font-size: 9px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .menu-trigger:hover,
@@ -123,9 +147,9 @@ button {
 .menu-popover {
   position: absolute;
   z-index: 30;
-  top: 31px;
+  top: 37px;
   left: 0;
-  min-width: 132px;
+  min-width: 154px;
   padding: 4px;
   background: var(--surface-raised);
   border: 1px solid var(--stroke);
@@ -133,14 +157,14 @@ button {
 
 .menu-item {
   width: 100%;
-  height: 26px;
+  height: 30px;
   display: grid;
   grid-template-columns: 14px 1fr;
   align-items: center;
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 11px;
   text-align: left;
 }
 
@@ -154,7 +178,7 @@ button {
   margin-left: auto;
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 8px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -171,11 +195,11 @@ button {
 
 .timer-strip {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(210px, 0.8fr) auto;
+  grid-template-columns: minmax(300px, 1fr) minmax(230px, 0.8fr) auto;
   align-items: center;
   gap: 10px;
   padding: 0 10px;
-  background: #191c21;
+  background: var(--panel);
   border-bottom: 1px solid var(--stroke);
 }
 
@@ -189,7 +213,7 @@ button {
 .timer-primary > strong {
   flex: 0 0 auto;
   font-family: "Cascadia Mono", "Consolas", monospace;
-  font-size: 23px;
+  font-size: 28px;
   font-variant-numeric: tabular-nums;
   font-weight: 680;
   letter-spacing: 0.04em;
@@ -199,7 +223,7 @@ button {
   display: grid;
   gap: 3px;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .timer-primary > div > span {
@@ -240,12 +264,12 @@ button {
 .next-action > span {
   grid-column: 1 / -1;
   color: var(--text-faint);
-  font-size: 7px;
+  font-size: 10px;
 }
 
 .next-action > strong {
   overflow: hidden;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -254,7 +278,7 @@ button {
 .next-action > b {
   color: var(--accent);
   font-family: "Cascadia Mono", "Consolas", monospace;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .timer-actions {
@@ -267,13 +291,13 @@ button {
 .quick-action,
 .axis-toolbar button,
 .compact-dialog button {
-  min-height: 24px;
+  min-height: 28px;
   border: 1px solid var(--stroke);
   border-radius: 3px;
   background: var(--surface-input);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .button:hover,
@@ -319,7 +343,7 @@ button {
 .axis-panel {
   min-height: 0;
   display: grid;
-  grid-template-rows: 32px minmax(0, 1fr) 28px;
+  grid-template-rows: 38px minmax(0, 1fr) 34px;
   background: var(--surface-input);
 }
 
@@ -329,13 +353,13 @@ button {
   gap: 7px;
   min-width: 0;
   padding: 0 8px;
-  background: #191c21;
+  background: var(--panel);
   border-bottom: 1px solid var(--stroke-faint);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .axis-toolbar > strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .axis-name {
@@ -357,16 +381,23 @@ button {
 }
 
 .quick-action,
+.clear-axis,
 .axis-toolbar__end button {
-  height: 22px;
-  min-height: 22px;
-  padding: 0 6px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 8px;
 }
 
-.quick-action kbd {
+.quick-action kbd,
+.clear-axis kbd {
   margin-left: 4px;
   color: var(--text-faint);
-  font-size: 7px;
+  font-size: 9px;
+}
+
+.clear-axis.pending {
+  color: var(--warning);
+  border-color: var(--warning);
 }
 
 .axis-toolbar__end {
@@ -378,12 +409,13 @@ button {
 .timeline-viewport {
   position: relative;
   min-width: 0;
-  height: 72px;
+  height: 100%;
+  min-height: 86px;
   margin: 0;
   padding: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  background: #15171b;
+  background: var(--timeline);
   border: 0;
   scrollbar-color: #4b525f #202329;
   scrollbar-width: thin;
@@ -400,7 +432,8 @@ button {
 
 .timeline-content {
   position: relative;
-  height: 58px;
+  height: calc(100% - 14px);
+  min-height: 72px;
 }
 
 .timeline-mark {
@@ -417,12 +450,12 @@ button {
   left: 5px;
   color: var(--text-faint);
   font-family: "Cascadia Mono", "Consolas", monospace;
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .timeline-rail {
   position: absolute;
-  top: 46px;
+  top: 62%;
   height: 2px;
 }
 
@@ -437,8 +470,8 @@ button {
 .axis-point {
   position: absolute;
   z-index: 4;
-  top: 21px;
-  width: 72px;
+  top: calc(62% - 25px);
+  width: 86px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -452,10 +485,10 @@ button {
   overflow: hidden;
   padding: 2px 4px;
   color: var(--text-muted);
-  background: #1d2026;
+  background: var(--point);
   border: 1px solid transparent;
   border-radius: 3px;
-  font-size: 7px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: auto;
@@ -466,7 +499,7 @@ button {
   width: 8px;
   height: 8px;
   margin: 5px auto 0;
-  border: 2px solid #15171b;
+  border: 2px solid var(--timeline);
   border-radius: 50%;
   background: var(--text-faint);
   pointer-events: auto;
@@ -545,12 +578,12 @@ button {
 
 .create-menu span,
 .create-menu button {
-  height: 19px;
+  height: 24px;
   padding: 0 4px;
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .create-menu button:hover {
@@ -564,10 +597,10 @@ button {
   gap: 12px;
   min-width: 0;
   padding: 0 10px;
-  background: #191c21;
+  background: var(--panel);
   border-top: 1px solid var(--stroke-faint);
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .event-summary b {
@@ -602,29 +635,29 @@ button {
 
 .compact-dialog h2 {
   margin: 0 0 8px;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .compact-dialog label {
   display: grid;
-  grid-template-columns: 62px 1fr;
+  grid-template-columns: 76px 1fr;
   align-items: center;
   gap: 7px;
-  min-height: 27px;
+  min-height: 32px;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .compact-dialog input,
 .compact-dialog select {
   width: 100%;
-  height: 22px;
+  height: 28px;
   padding: 0 6px;
   color: var(--text);
   background: var(--surface-input);
   border: 1px solid var(--stroke);
   outline: none;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .compact-dialog input:focus,
@@ -654,13 +687,20 @@ button {
 }
 
 .metadata-editor,
+.settings-editor,
 .about-dialog {
   min-width: 330px;
 }
 
+.form-note {
+  margin: 6px 0 0;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
 .about-dialog p {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .about-dialog button {
@@ -679,7 +719,7 @@ button {
   background: #7e2830;
   border: 1px solid var(--danger);
   border-radius: 3px;
-  font-size: 9px;
+  font-size: 11px;
   text-align: left;
 }
 
