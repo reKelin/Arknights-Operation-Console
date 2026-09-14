@@ -22,7 +22,7 @@ type TypedResult<T> =
   | { status: "ok"; data: T }
   | { status: "error"; error: CommandError };
 
-type MenuName = "file" | "axis" | "view" | "help";
+type MenuName = "file" | "axis" | "monitor" | "view" | "help";
 
 const KIND_LABELS: Record<DraftKind, string> = {
   deploy: "部署",
@@ -237,11 +237,15 @@ export default function App() {
 
   async function scanGameWindows() {
     setScanningWindows(true);
-    const result = await run(() => commands.listGameWindows());
-    setScanningWindows(false);
-    if (result) {
-      setGameWindows(result);
+    try {
+      const candidates = unwrap(await commands.listGameWindows());
+      setGameWindows(candidates);
       setWindowPickerOpen(true);
+      setError(null);
+    } catch (reason) {
+      setError(messageOf(reason));
+    } finally {
+      setScanningWindows(false);
     }
   }
 

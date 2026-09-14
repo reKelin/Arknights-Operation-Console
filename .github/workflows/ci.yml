@@ -36,11 +36,14 @@ jobs:
       - name: Check generated bindings
         run: git diff --exit-code -- src/generated
 
-      - name: Check frontend
-        run: |
-          npm run check
-          npm run build
-          npm test
+      - name: Check frontend formatting and lint
+        run: npm run check
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Test frontend
+        run: npm test
 
       - name: Check Rust
         working-directory: src-tauri
