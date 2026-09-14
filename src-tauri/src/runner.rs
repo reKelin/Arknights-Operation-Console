@@ -270,7 +270,7 @@ impl RunnerState {
         self.last_tick = now;
         self.frame_remainder = 0;
         self.last_message = Some("模拟关卡已开始".to_string());
-        self.dispatch_events(-1, 0);
+        self.dispatch_events(0);
     }
 
     fn advance_running(&mut self, now: Instant) {
@@ -281,7 +281,7 @@ impl RunnerState {
         if self.frame == previous {
             return;
         }
-        self.dispatch_events(previous as i64, self.frame);
+        self.dispatch_events(self.frame);
 
         if self.status == BattleStatus::Running && self.frame >= BATTLE_END_FRAME {
             self.status = BattleStatus::Ended;
@@ -318,16 +318,14 @@ impl RunnerState {
         self.speed = speed_for_frame(self.frame);
     }
 
-    fn dispatch_events(&mut self, previous_frame: i64, current_frame: u32) {
+    fn dispatch_events(&mut self, current_frame: u32) {
         let due: Vec<DraftEvent> = self
             .axis
             .events
             .iter()
             .filter(|event| {
                 let trigger = trigger_frame(event, self.strategy);
-                i64::from(trigger) > previous_frame
-                    && trigger <= current_frame
-                    && !self.triggered.contains(&event.id)
+                trigger <= current_frame && !self.triggered.contains(&event.id)
             })
             .cloned()
             .collect();
@@ -410,13 +408,12 @@ impl RunnerState {
     }
 
     fn rebuild_triggered(&mut self) {
-        let strategy = self.strategy;
         let current_frame = self.frame;
         self.triggered = self
             .axis
             .events
             .iter()
-            .filter(|event| trigger_frame(event, strategy) <= current_frame)
+            .filter(|event| event.frame <= current_frame)
             .map(|event| event.id.clone())
             .collect();
     }
@@ -543,6 +540,34 @@ mod tests {
         runner.move_event(&id, 200).unwrap();
 
         assert!(!runner.triggered.contains(&id));
+    }
+
+    #[test]
+    fn notify_rebuild_keeps_future_event_pending() {
+        let start = Instant::now();
+        let mut runner = RunnerState::new(start);
+        runner.tick(start + WAIT_BEFORE_BATTLE);
+        runner.frame = 100;
+        runner.set_strategy(RunStrategy::Notify);
+        runner.add_event(150, DraftKind::Skill).unwrap();
+        let id = runner
+            .axis
+            .events
+            .iter()
+            .find(|event| event.frame == 150)
+            .unwrap()
+            .id
+            .clone();
+
+        assert!(!runner.triggered.contains(&id));
+
+        runner.dispatch_events(101);
+
+        assert!(runner.triggered.contains(&id));
+        assert_eq!(
+            runner.notices.last().unwrap().event_id.as_deref(),
+            Some(id.as_str())
+        );
     }
 
     #[test]
