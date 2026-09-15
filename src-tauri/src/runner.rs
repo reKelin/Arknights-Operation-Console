@@ -43,6 +43,7 @@ pub struct RunnerState {
 }
 
 impl RunnerState {
+    #[cfg(test)]
     pub fn new(now: Instant) -> Self {
         Self::with_settings(now, AppSettings::default(), None)
     }
@@ -671,14 +672,14 @@ mod tests {
     }
 
     #[test]
-    fn one_tick_preserves_every_due_notice() {
+    fn one_observation_preserves_every_due_notice() {
         let start = Instant::now();
         let mut runner = RunnerState::new(start);
         for _ in 0..40 {
             runner.add_event(0, DraftKind::Skill).unwrap();
         }
 
-        runner.dispatch_events(0);
+        runner.apply_monitor_event(observation(0, ObservedBattleState::OneXRunning), start);
 
         assert_eq!(runner.notices.len(), 40);
         assert_ne!(runner.notices[0].sequence, runner.notices[1].sequence);

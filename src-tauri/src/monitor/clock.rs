@@ -145,10 +145,11 @@ impl ObservationClock {
             return;
         };
         let total = u32::from(observation.cost_total.max(1));
-        if let Some(previous) = self.last_cost_phase {
-            if u32::from(previous) * 4 >= total * 3 && u32::from(phase) * 4 <= total {
-                self.cost_cycles = self.cost_cycles.saturating_add(1);
-            }
+        if let Some(previous) = self.last_cost_phase
+            && u32::from(previous) * 4 >= total * 3
+            && u32::from(phase) * 4 <= total
+        {
+            self.cost_cycles = self.cost_cycles.saturating_add(1);
         }
         self.last_cost_phase = Some(phase);
         let absolute = self
