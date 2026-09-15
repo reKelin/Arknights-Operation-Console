@@ -44,9 +44,16 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
         frame: &mut Frame<'_>,
         _capture_control: InternalCaptureControl,
     ) -> Result<(), Self::Error> {
-        let mut buffer = frame
-            .buffer_without_title_bar()
-            .map_err(|error| format!("读取 WGC 帧失败：{error}"))?;
+        let mut buffer = match frame.buffer_without_title_bar() {
+            Ok(buffer) => buffer,
+            Err(error) => {
+                let message = format!("读取 WGC 帧失败：{error}");
+                if let Ok(mut latest) = self.latest.lock() {
+                    *latest = Some(MonitorEvent::Error(message.clone()));
+                }
+                return Err(message);
+            }
+        };
         let width = buffer.width();
         let height = buffer.height();
         let row_pitch = buffer.row_pitch();

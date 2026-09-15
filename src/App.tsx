@@ -32,7 +32,7 @@ const KIND_LABELS: Record<DraftKind, string> = {
 
 const STRATEGY_LABELS: Record<RunStrategy, string> = {
   notify: "提前提示",
-  pause: "到点暂停",
+  pause: "到点暂停请求",
   dryRun: "执行预演",
 };
 
@@ -105,6 +105,7 @@ export default function App() {
   const [tracePreviewFrame, setTracePreviewFrame] = useState<number | null>(
     null,
   );
+  const [recordingSegmentIndex, setRecordingSegmentIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const lastNoticeSequence = useRef(0);
@@ -183,6 +184,7 @@ export default function App() {
 
   useEffect(() => {
     if (snapshot?.monitor.connectionState === "ready") {
+      setRecordingSegmentIndex(0);
       setTracePreviewFrame(0);
     } else {
       setTracePreviewFrame(null);
@@ -279,6 +281,18 @@ export default function App() {
     tracePreviewFrame === null
       ? snapshot.time
       : frameTime(tracePreviewFrame, snapshot.settings.framesPerCost);
+  const recordingSegment =
+    snapshot.monitor.recordingSegments[recordingSegmentIndex] ?? null;
+  const visibleTracePoints = recordingSegment
+    ? snapshot.monitor.tracePoints.filter(
+        (point) =>
+          point.sourceFrame >= recordingSegment.sourceStartFrame &&
+          point.sourceFrame <= recordingSegment.sourceEndFrame,
+      )
+    : snapshot.monitor.tracePoints;
+  const traceDurationFrames =
+    recordingSegment?.gameDurationFrames ??
+    snapshot.monitor.traceDurationFrames;
 
   return (
     <main className="app-shell">
@@ -505,8 +519,8 @@ export default function App() {
         <Timeline
           currentFrame={displayedFrame}
           events={snapshot.axis.events}
-          traceDurationFrames={snapshot.monitor.traceDurationFrames}
-          tracePoints={snapshot.monitor.tracePoints}
+          traceDurationFrames={traceDurationFrames}
+          tracePoints={visibleTracePoints}
           onCreate={(frame, kind) =>
             run(() => commands.addEvent({ frame, kind }))
           }
@@ -533,11 +547,30 @@ export default function App() {
           ) : (
             <span>{snapshot.lastMessage || "双击时间轴新增操作点"}</span>
           )}
-          {snapshot.monitor.traceDurationFrames !== null && (
+          {traceDurationFrames !== null && (
             <label className="recording-trace-control">
-              录屏轨迹
+              {snapshot.monitor.recordingSegments.length > 1 ? (
+                <select
+                  aria-label="关卡区段"
+                  onChange={(event) => {
+                    setRecordingSegmentIndex(
+                      Number.parseInt(event.target.value, 10),
+                    );
+                    setTracePreviewFrame(0);
+                  }}
+                  value={recordingSegmentIndex}
+                >
+                  {snapshot.monitor.recordingSegments.map((segment) => (
+                    <option key={segment.index} value={segment.index}>
+                      关卡 {segment.index + 1}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                "录屏轨迹"
+              )}
               <input
-                max={snapshot.monitor.traceDurationFrames}
+                max={traceDurationFrames}
                 min="0"
                 onChange={(event) =>
                   setTracePreviewFrame(Number.parseInt(event.target.value, 10))

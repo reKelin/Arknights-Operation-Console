@@ -12,7 +12,10 @@ use std::{
 
 use serde::Deserialize;
 
-use super::{MonitorEvent, ObservationClock, RecordingTracePoint, VisionConfig, analyze_bgra};
+use super::{
+    ClockTransition, MonitorEvent, ObservationClock, RecordingSegment, RecordingTracePoint,
+    VisionConfig, analyze_bgra,
+};
 
 const OUTPUT_FPS: u64 = 30;
 
@@ -73,7 +76,7 @@ struct ProbeFormat {
     duration: String,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct RecordingMetadata {
     width: u32,
     height: u32,
@@ -117,12 +120,22 @@ fn probe(path: &Path) -> Result<RecordingMetadata, String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    let probe: ProbeOutput = serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("解析录屏信息失败：{error}"))?;
+    parse_probe_output(&output.stdout)
+}
+
+fn parse_probe_output(bytes: &[u8]) -> Result<RecordingMetadata, String> {
+    let probe: ProbeOutput =
+        serde_json::from_slice(bytes).map_err(|error| format!("解析录屏信息失败：{error}"))?;
     let stream = probe
         .streams
         .first()
         .ok_or_else(|| "录屏中没有视频流".to_string())?;
+    if stream.width < 640 || stream.height < 360 {
+        return Err(format!(
+            "录屏画面尺寸过小：{}×{}",
+            stream.width, stream.height
+        ));
+    }
     let frame_rate = parse_rate(&stream.avg_frame_rate)?;
     if !(1.0..=240.0).contains(&frame_rate) {
         return Err(format!("录屏帧率无效：{frame_rate}"));
@@ -197,6 +210,8 @@ fn analyze_file(
     let mut source_frame = 0_u64;
     let mut clock = ObservationClock::default();
     let mut trace = Vec::new();
+    let mut segments = Vec::new();
+    let mut active_segment: Option<(u32, u32, u32)> = None;
     let mut last_progress = u8::MAX;
 
     loop {
@@ -224,6 +239,25 @@ fn analyze_file(
             config,
         )?;
         let update = clock.observe(&observation);
+        match update.transition {
+            ClockTransition::Started => {
+                let source = source_frame.min(u64::from(u32::MAX)) as u32;
+                active_segment = Some((source, 0, source));
+            }
+            ClockTransition::Exited => {
+                if let Some((start, duration, last_inside)) = active_segment.take() {
+                    push_segment(&mut segments, start, last_inside, duration);
+                }
+            }
+            _ => {
+                if let Some((_, duration, last_inside)) = &mut active_segment {
+                    *duration = (*duration).max(update.frame);
+                    if observation.battle_state.is_in_battle() {
+                        *last_inside = source_frame.min(u64::from(u32::MAX)) as u32;
+                    }
+                }
+            }
+        }
         let point = RecordingTracePoint {
             source_frame: source_frame.min(u64::from(u32::MAX)) as u32,
             game_frame: update.frame,
@@ -261,6 +295,9 @@ fn analyze_file(
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
+    if let Some((start, duration, last_inside)) = active_segment {
+        push_segment(&mut segments, start, last_inside, duration);
+    }
     let duration_frames = trace
         .iter()
         .map(|point| point.game_frame)
@@ -270,10 +307,25 @@ fn analyze_file(
         latest,
         MonitorEvent::RecordingReady {
             trace,
+            segments,
             duration_frames,
         },
     );
     Ok(())
+}
+
+fn push_segment(
+    segments: &mut Vec<RecordingSegment>,
+    start: u32,
+    end: u32,
+    game_duration_frames: u32,
+) {
+    segments.push(RecordingSegment {
+        index: segments.len().min(u32::MAX as usize) as u32,
+        source_start_frame: start,
+        source_end_frame: end,
+        game_duration_frames,
+    });
 }
 
 fn publish(latest: &Mutex<Option<MonitorEvent>>, event: MonitorEvent) {
@@ -294,5 +346,41 @@ mod tests {
     #[test]
     fn rejects_zero_frame_rate_denominator() {
         assert!(parse_rate("60/0").is_err());
+    }
+
+    #[test]
+    fn parses_ffprobe_metadata() {
+        let metadata = parse_probe_output(
+            br#"{
+                "streams": [{
+                    "width": 1920,
+                    "height": 1080,
+                    "avg_frame_rate": "60000/1001"
+                }],
+                "format": { "duration": "153.749" }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(metadata.width, 1920);
+        assert_eq!(metadata.height, 1080);
+        assert_eq!(metadata.duration_seconds, 153.749);
+    }
+
+    #[test]
+    fn rejects_missing_video_stream() {
+        let error = parse_probe_output(br#"{"streams":[],"format":{"duration":"1"}}"#).unwrap_err();
+        assert_eq!(error, "录屏中没有视频流");
+    }
+
+    #[test]
+    fn appends_indexed_recording_segment() {
+        let mut segments = Vec::new();
+        push_segment(&mut segments, 30, 300, 450);
+        push_segment(&mut segments, 600, 900, 300);
+
+        assert_eq!(segments[1].index, 1);
+        assert_eq!(segments[1].source_start_frame, 600);
+        assert_eq!(segments[1].game_duration_frames, 300);
     }
 }

@@ -69,7 +69,6 @@ impl ObservedBattleState {
                 | Self::TwoXRunning
                 | Self::PointTwoXRunning
                 | Self::DeployingOperator
-                | Self::AdjustingOperatorFacing
         )
     }
 }
@@ -98,6 +97,7 @@ pub struct MonitorSnapshot {
     pub recording_progress: Option<u8>,
     pub trace_duration_frames: Option<u32>,
     pub trace_points: Vec<RecordingTracePoint>,
+    pub recording_segments: Vec<RecordingSegment>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
@@ -109,6 +109,15 @@ pub struct RecordingTracePoint {
     pub cost_phase: Option<u16>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingSegment {
+    pub index: u32,
+    pub source_start_frame: u32,
+    pub source_end_frame: u32,
+    pub game_duration_frames: u32,
+}
+
 pub enum MonitorEvent {
     Observation(VisualObservation),
     RecordingProgress {
@@ -117,6 +126,7 @@ pub enum MonitorEvent {
     },
     RecordingReady {
         trace: Vec<RecordingTracePoint>,
+        segments: Vec<RecordingSegment>,
         duration_frames: u32,
     },
     Error(String),
@@ -181,12 +191,24 @@ impl MonitorManager {
             }
             MonitorEvent::RecordingReady {
                 trace,
+                segments,
                 duration_frames,
             } if self.snapshot.source_kind == MonitorSourceKind::Recording => {
+                if segments.is_empty() {
+                    let message = "录屏中未识别到可信关卡区段".to_string();
+                    self.snapshot.connection_state = MonitorConnectionState::Error;
+                    self.snapshot.recording_progress = Some(100);
+                    self.snapshot.trace_points = trace;
+                    self.snapshot.trusted = false;
+                    self.snapshot.error = Some(message.clone());
+                    self.recording = None;
+                    return Some(MonitorEvent::Error(message));
+                }
                 self.snapshot.connection_state = MonitorConnectionState::Ready;
                 self.snapshot.recording_progress = Some(100);
                 self.snapshot.trace_duration_frames = Some(duration_frames);
                 self.snapshot.trace_points = trace;
+                self.snapshot.recording_segments = segments;
                 self.snapshot.trusted = true;
                 self.recording = None;
                 None

@@ -109,6 +109,7 @@ export type MonitorSnapshot = {
 	recordingProgress: number | null,
 	traceDurationFrames: number | null,
 	tracePoints: RecordingTracePoint[],
+	recordingSegments: RecordingSegment[],
 };
 
 export type MonitorSourceKind = "none" | "window" | "recording";
@@ -116,6 +117,13 @@ export type MonitorSourceKind = "none" | "window" | "recording";
 export type NoticeKind = "info" | "notify" | "dryRun" | "paused";
 
 export type ObservedBattleState = "unknown" | "notInBattle" | "battleBegin" | "oneXRunning" | "twoXRunning" | "pointTwoXRunning" | "paused" | "deployingOperator" | "adjustingOperatorFacing";
+
+export type RecordingSegment = {
+	index: number,
+	sourceStartFrame: number,
+	sourceEndFrame: number,
+	gameDurationFrames: number,
+};
 
 export type RecordingTracePoint = {
 	sourceFrame: number,

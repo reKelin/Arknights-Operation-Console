@@ -16,12 +16,6 @@ use crate::{
     settings::AppSettings,
 };
 
-const NANOS_PER_SECOND: u128 = 1_000_000_000;
-const TICKS_PER_SECOND: u128 = 30;
-const BATTLE_END_FRAME: u32 = 3_600;
-const DOUBLE_SPEED_FRAME: u32 = 1_800;
-const WAIT_BEFORE_BATTLE: Duration = Duration::from_millis(700);
-const WAIT_AFTER_BATTLE: Duration = Duration::from_secs(2);
 const NOTIFY_LEAD_FRAMES: u32 = 90;
 const CLEAR_CONFIRM_DURATION: Duration = Duration::from_secs(3);
 const OBSERVATION_TIMEOUT: Duration = Duration::from_millis(250);
@@ -41,9 +35,6 @@ pub struct RunnerState {
     next_order: u32,
     next_notice: u32,
     notices: Vec<RunNotice>,
-    last_tick: Instant,
-    phase_deadline: Instant,
-    frame_remainder: u128,
     last_message: Option<String>,
     always_on_top: bool,
     clear_pending_deadline: Option<Instant>,
@@ -57,7 +48,7 @@ impl RunnerState {
     }
 
     pub fn with_settings(
-        now: Instant,
+        _now: Instant,
         settings: AppSettings,
         settings_warning: Option<String>,
     ) -> Self {
@@ -76,29 +67,11 @@ impl RunnerState {
             next_order: 0,
             next_notice: 1,
             notices: Vec::new(),
-            last_tick: now,
-            phase_deadline: now + WAIT_BEFORE_BATTLE,
-            frame_remainder: 0,
             last_message: settings_warning.or_else(|| Some("等待选择监控源".to_string())),
             always_on_top: true,
             clear_pending_deadline: None,
             last_observation_at: None,
             error_frames: 0,
-        }
-    }
-
-    pub fn tick(&mut self, now: Instant) {
-        self.refresh(now);
-        match self.status {
-            BattleStatus::Waiting | BattleStatus::Ended => {
-                if now >= self.phase_deadline {
-                    self.begin_battle(now);
-                }
-            }
-            BattleStatus::Paused => {
-                self.last_tick = now;
-            }
-            BattleStatus::Running => self.advance_running(now),
         }
     }
 
@@ -306,17 +279,6 @@ impl RunnerState {
         self.last_message = Some("运行策略已更新".to_string());
     }
 
-    pub fn continue_simulation(&mut self, now: Instant) -> Result<(), CommandError> {
-        if self.status != BattleStatus::Paused {
-            return Err(CommandError::new("not_paused", "模拟关卡当前未暂停"));
-        }
-        self.status = BattleStatus::Running;
-        self.speed = speed_for_frame(self.frame);
-        self.last_tick = now;
-        self.last_message = Some("模拟关卡已继续".to_string());
-        Ok(())
-    }
-
     pub fn set_always_on_top(&mut self, enabled: bool) {
         self.always_on_top = enabled;
     }
@@ -426,61 +388,6 @@ impl RunnerState {
         }
     }
 
-    fn begin_battle(&mut self, now: Instant) {
-        self.frame = 0;
-        self.status = BattleStatus::Running;
-        self.speed = 1;
-        self.triggered.clear();
-        self.notices.clear();
-        self.last_tick = now;
-        self.frame_remainder = 0;
-        self.last_message = Some("模拟关卡已开始".to_string());
-        self.dispatch_events(0);
-    }
-
-    fn advance_running(&mut self, now: Instant) {
-        let elapsed = now.saturating_duration_since(self.last_tick);
-        self.last_tick = now;
-        let previous = self.frame;
-        self.advance_by_nanos(elapsed.as_nanos());
-        if self.frame == previous {
-            return;
-        }
-        self.dispatch_events(self.frame);
-
-        if self.status == BattleStatus::Running && self.frame >= BATTLE_END_FRAME {
-            self.status = BattleStatus::Ended;
-            self.speed = 0;
-            self.phase_deadline = now + WAIT_AFTER_BATTLE;
-            self.last_message = Some("模拟关卡已结束".to_string());
-        }
-    }
-
-    fn advance_by_nanos(&mut self, elapsed: u128) {
-        let mut progress =
-            self.frame_remainder + elapsed * TICKS_PER_SECOND * u128::from(self.speed);
-        if self.speed == 1 && self.frame < DOUBLE_SPEED_FRAME {
-            let units_to_boundary = u128::from(DOUBLE_SPEED_FRAME - self.frame) * NANOS_PER_SECOND;
-            if progress < units_to_boundary {
-                self.frame += (progress / NANOS_PER_SECOND) as u32;
-                self.frame_remainder = progress % NANOS_PER_SECOND;
-                return;
-            }
-            progress = (progress - units_to_boundary) * 2;
-            self.frame = DOUBLE_SPEED_FRAME;
-            self.speed = 2;
-        }
-
-        let advanced = (progress / NANOS_PER_SECOND).min(u128::from(u32::MAX)) as u32;
-        self.frame = self.frame.saturating_add(advanced).min(BATTLE_END_FRAME);
-        self.frame_remainder = if self.frame < BATTLE_END_FRAME {
-            progress % NANOS_PER_SECOND
-        } else {
-            0
-        };
-        self.speed = speed_for_frame(self.frame);
-    }
-
     fn dispatch_events(&mut self, current_frame: u32) {
         let due: Vec<DraftEvent> = self
             .axis
@@ -503,13 +410,10 @@ impl RunnerState {
                 self.push_notice(
                     NoticeKind::Paused,
                     Some(event.id.clone()),
-                    format!("已在操作点 {} 暂停", event_name(event)),
+                    format!("已到暂停点 {}", event_name(event)),
                 );
             }
-            self.frame = pause_frame;
-            self.status = BattleStatus::Paused;
-            self.speed = 0;
-            self.frame_remainder = 0;
+            self.last_message = Some("真实暂停输入尚未接入，仅记录到点暂停请求".to_string());
             return;
         }
 
@@ -590,10 +494,6 @@ fn trigger_frame(event: &DraftEvent, strategy: RunStrategy) -> u32 {
     }
 }
 
-fn speed_for_frame(frame: u32) -> u8 {
-    if frame >= DOUBLE_SPEED_FRAME { 2 } else { 1 }
-}
-
 fn event_name(event: &DraftEvent) -> String {
     event
         .label
@@ -639,6 +539,18 @@ fn validate_frame(frame: u32) -> Result<(), CommandError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::monitor::VisualObservation;
+
+    fn observation(timestamp: u64, state: ObservedBattleState) -> MonitorEvent {
+        MonitorEvent::Observation(VisualObservation {
+            capture_timestamp_ns: timestamp,
+            battle_state: state,
+            confidence: 90,
+            cost_phase: None,
+            cost_total: 30,
+            cost_full: false,
+        })
+    }
 
     #[test]
     fn default_axis_is_empty() {
@@ -667,17 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn mock_clock_uses_elapsed_time_not_wakeup_count() {
-        let start = Instant::now();
-        let mut runner = RunnerState::new(start);
-        runner.tick(start + WAIT_BEFORE_BATTLE);
-        runner.tick(start + WAIT_BEFORE_BATTLE + Duration::from_secs(1));
-
-        assert_eq!(runner.frame, 30);
-    }
-
-    #[test]
-    fn frame_zero_event_triggers_on_new_battle() {
+    fn frame_zero_event_triggers_on_observed_battle() {
         let start = Instant::now();
         let mut runner = RunnerState::new(start);
         runner.add_event(0, DraftKind::Skill).unwrap();
@@ -690,32 +592,40 @@ mod tests {
             .id
             .clone();
 
-        runner.tick(start + WAIT_BEFORE_BATTLE);
+        runner.apply_monitor_event(observation(0, ObservedBattleState::OneXRunning), start);
 
         assert!(runner.triggered.contains(&id));
     }
 
     #[test]
-    fn paused_strategy_has_an_explicit_resume_path() {
+    fn leaving_observed_battle_resets_clock_and_keeps_axis() {
         let start = Instant::now();
         let mut runner = RunnerState::new(start);
-        runner.add_event(0, DraftKind::Skill).unwrap();
-        runner.set_strategy(RunStrategy::Pause);
-        runner.tick(start + WAIT_BEFORE_BATTLE);
-        assert_eq!(runner.status, BattleStatus::Paused);
+        runner.add_event(60, DraftKind::Skill).unwrap();
+        runner.apply_monitor_event(observation(0, ObservedBattleState::OneXRunning), start);
+        runner.apply_monitor_event(
+            observation(1_000_000_000, ObservedBattleState::OneXRunning),
+            start,
+        );
+        for index in 0..30 {
+            runner.apply_monitor_event(
+                observation(
+                    1_100_000_000 + index * 33_333_333,
+                    ObservedBattleState::NotInBattle,
+                ),
+                start,
+            );
+        }
 
-        runner
-            .continue_simulation(start + WAIT_BEFORE_BATTLE)
-            .unwrap();
-
-        assert_eq!(runner.status, BattleStatus::Running);
+        assert_eq!(runner.status, BattleStatus::Waiting);
+        assert_eq!(runner.frame, 0);
+        assert_eq!(runner.axis.events.len(), 1);
     }
 
     #[test]
     fn moving_processed_event_to_future_rearms_it() {
         let start = Instant::now();
         let mut runner = RunnerState::new(start);
-        runner.tick(start + WAIT_BEFORE_BATTLE);
         runner.frame = 100;
         runner.add_event(50, DraftKind::Skill).unwrap();
         let id = runner
@@ -737,7 +647,6 @@ mod tests {
     fn notify_rebuild_keeps_future_event_pending() {
         let start = Instant::now();
         let mut runner = RunnerState::new(start);
-        runner.tick(start + WAIT_BEFORE_BATTLE);
         runner.frame = 100;
         runner.set_strategy(RunStrategy::Notify);
         runner.add_event(150, DraftKind::Skill).unwrap();
@@ -769,7 +678,7 @@ mod tests {
             runner.add_event(0, DraftKind::Skill).unwrap();
         }
 
-        runner.tick(start + WAIT_BEFORE_BATTLE);
+        runner.dispatch_events(0);
 
         assert_eq!(runner.notices.len(), 40);
         assert_ne!(runner.notices[0].sequence, runner.notices[1].sequence);
@@ -787,18 +696,5 @@ mod tests {
 
         let mut ids = HashSet::new();
         assert!(runner.axis.events.iter().all(|event| ids.insert(&event.id)));
-    }
-
-    #[test]
-    fn elapsed_time_is_split_at_speed_boundary() {
-        let start = Instant::now();
-        let mut runner = RunnerState::new(start);
-        runner.status = BattleStatus::Running;
-        runner.frame = DOUBLE_SPEED_FRAME - 10;
-        runner.speed = 1;
-
-        runner.advance_by_nanos(Duration::from_secs(1).as_nanos());
-
-        assert_eq!(runner.frame, DOUBLE_SPEED_FRAME + 40);
     }
 }

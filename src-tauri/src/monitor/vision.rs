@@ -59,6 +59,7 @@ struct VisualFeatures {
     speed_bright: f64,
     pause_bright: f64,
     pause_overlay: f64,
+    green_ratio: f64,
     sampled_luma: f64,
     title_bright: f64,
 }
@@ -101,6 +102,7 @@ pub fn analyze_bgra(
         speed_bright,
         pause_bright,
         pause_overlay: frame.threshold_ratio(frame.reference_rect(650, 390, 1270, 660), 180),
+        green_ratio: frame.green_ratio(frame.reference_rect(100, 120, 1820, 900), 4),
         sampled_luma: frame.sampled_average_luma(16),
         title_bright: frame.threshold_ratio(frame.reference_rect(500, 300, 1420, 760), 180),
     };
@@ -139,10 +141,17 @@ fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
             (ObservedBattleState::PointTwoXRunning, 78)
         }
     } else if has_battle_anchor {
-        if features.pause_overlay >= 0.012 {
-            (ObservedBattleState::Paused, 82)
+        if features.green_ratio >= 0.02 {
+            (ObservedBattleState::DeployingOperator, 84)
         } else {
-            (ObservedBattleState::DeployingOperator, 74)
+            (
+                ObservedBattleState::AdjustingOperatorFacing,
+                if features.pause_overlay >= 0.01 {
+                    82
+                } else {
+                    78
+                },
+            )
         }
     } else if features.sampled_luma < 75.0 && features.title_bright >= 0.02 {
         (ObservedBattleState::BattleBegin, 86)
@@ -220,6 +229,30 @@ impl FrameView<'_> {
         }
     }
 
+    fn green_ratio(&self, rect: Rect, reference_step: u32) -> f64 {
+        let step = (reference_step as f64 * self.scale).round().max(1.0) as usize;
+        let mut matching = 0_u64;
+        let mut total = 0_u64;
+        for y in (rect.top..rect.bottom).step_by(step) {
+            for x in (rect.left..rect.right).step_by(step) {
+                if let Some((r, g, b)) = self.pixel(x, y) {
+                    total += 1;
+                    if g > 120
+                        && f64::from(g) > f64::from(r) * 1.25
+                        && f64::from(g) > f64::from(b) * 1.15
+                    {
+                        matching += 1;
+                    }
+                }
+            }
+        }
+        if total == 0 {
+            0.0
+        } else {
+            matching as f64 / total as f64
+        }
+    }
+
     fn cost_phase(&self, config: VisionConfig) -> Option<(u16, bool)> {
         let edge_scale = 0.9 + f64::from(config.game_ui_scale.min(100)) / 1000.0;
         let right = self.reference_x(1919);
@@ -272,6 +305,7 @@ mod tests {
         speed_bright: f64,
         pause_bright: f64,
         pause_overlay: f64,
+        green_ratio: f64,
         sampled_luma: f64,
         title_bright: f64,
     }
@@ -306,6 +340,7 @@ mod tests {
                 speed_bright: fixture.speed_bright,
                 pause_bright: fixture.pause_bright,
                 pause_overlay: fixture.pause_overlay,
+                green_ratio: fixture.green_ratio,
                 sampled_luma: fixture.sampled_luma,
                 title_bright: fixture.title_bright,
             });

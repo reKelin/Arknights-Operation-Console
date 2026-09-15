@@ -75,7 +75,10 @@ impl ObservationClock {
                 .saturating_add(nanos_to_frames(elapsed_ns));
             return self.update(ClockTransition::Frozen, 0);
         }
-        if observation.battle_state == ObservedBattleState::Paused {
+        if matches!(
+            observation.battle_state,
+            ObservedBattleState::Paused | ObservedBattleState::AdjustingOperatorFacing
+        ) {
             return self.update(ClockTransition::Paused, 0);
         }
 
@@ -175,9 +178,7 @@ impl ObservationClock {
 fn speed_fifths(state: ObservedBattleState) -> u128 {
     match state {
         ObservedBattleState::TwoXRunning => 10,
-        ObservedBattleState::PointTwoXRunning
-        | ObservedBattleState::DeployingOperator
-        | ObservedBattleState::AdjustingOperatorFacing => 1,
+        ObservedBattleState::PointTwoXRunning | ObservedBattleState::DeployingOperator => 1,
         _ => 5,
     }
 }
@@ -240,6 +241,20 @@ mod tests {
     }
 
     #[test]
+    fn facing_adjustment_freezes_clock() {
+        let mut clock = ObservationClock::default();
+        clock.observe(&observation(0, ObservedBattleState::OneXRunning));
+
+        let update = clock.observe(&observation(
+            1_000_000_000,
+            ObservedBattleState::AdjustingOperatorFacing,
+        ));
+
+        assert_eq!(update.transition, ClockTransition::Paused);
+        assert_eq!(update.frame, 0);
+    }
+
+    #[test]
     fn leaving_battle_resets_after_stable_observations() {
         let mut clock = ObservationClock::default();
         clock.observe(&observation(0, ObservedBattleState::OneXRunning));
@@ -258,5 +273,38 @@ mod tests {
 
         assert_eq!(update.transition, ClockTransition::Exited);
         assert_eq!(update.frame, 0);
+    }
+
+    #[test]
+    fn cost_phase_wrap_advances_anchor_without_going_backwards() {
+        let mut clock = ObservationClock::default();
+        let mut first = observation(0, ObservedBattleState::OneXRunning);
+        first.cost_phase = Some(25);
+        clock.observe(&first);
+
+        let mut before_wrap = observation(100_000_000, ObservedBattleState::OneXRunning);
+        before_wrap.cost_phase = Some(29);
+        clock.observe(&before_wrap);
+        let mut after_wrap = observation(200_000_000, ObservedBattleState::OneXRunning);
+        after_wrap.cost_phase = Some(1);
+        let update = clock.observe(&after_wrap);
+
+        assert_eq!(update.frame, 7);
+        assert_eq!(update.error_frames, 1);
+    }
+
+    #[test]
+    fn full_cost_does_not_create_false_wrap() {
+        let mut clock = ObservationClock::default();
+        let mut first = observation(0, ObservedBattleState::OneXRunning);
+        first.cost_phase = Some(29);
+        clock.observe(&first);
+
+        let mut full = observation(1_000_000_000, ObservedBattleState::OneXRunning);
+        full.cost_phase = Some(0);
+        full.cost_full = true;
+        let update = clock.observe(&full);
+
+        assert_eq!(update.frame, 30);
     }
 }
