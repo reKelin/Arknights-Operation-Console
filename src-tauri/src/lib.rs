@@ -459,7 +459,13 @@ pub fn run() {
             ))));
             builder.mount_events(app);
             setup_tray(app)?;
-            setup_shortcuts(app).map_err(|error| error.to_string())?;
+            if let Err(error) = setup_shortcuts(app) {
+                let state = app.state::<SharedRunner>();
+                if let Ok(mut runner) = state.0.lock() {
+                    runner
+                        .set_runtime_warning(format!("全局 F1–F4 注册失败，应用仍可使用：{error}"));
+                }
+            }
             start_runtime(app.handle().clone());
             Ok(())
         })

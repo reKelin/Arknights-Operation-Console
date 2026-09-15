@@ -284,6 +284,10 @@ impl RunnerState {
         self.always_on_top = enabled;
     }
 
+    pub fn set_runtime_warning(&mut self, message: String) {
+        self.last_message = Some(message);
+    }
+
     pub fn set_monitor_snapshot(&mut self, monitor: MonitorSnapshot) {
         self.monitor = monitor;
     }
