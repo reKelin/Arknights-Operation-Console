@@ -3,7 +3,11 @@ use specta::Type;
 use tauri_specta::Event;
 use thiserror::Error;
 
-use crate::axis::{DraftAxis, DraftDirection, DraftEvent, DraftKind, DraftTile};
+use crate::{
+    axis::{DraftAxis, DraftDirection, DraftEvent, DraftKind, DraftTile},
+    monitor::MonitorSnapshot,
+    settings::AppSettings,
+};
 
 #[derive(Clone, Debug, Error, Serialize, Type)]
 #[error("{message}")]
@@ -113,6 +117,8 @@ pub struct UpdateEventInput {
 #[serde(rename_all = "camelCase")]
 pub struct RunnerSnapshot {
     pub axis: DraftAxis,
+    pub settings: AppSettings,
+    pub monitor: MonitorSnapshot,
     pub frame: u32,
     pub time: String,
     pub speed: u8,
@@ -125,6 +131,7 @@ pub struct RunnerSnapshot {
     pub last_message: Option<String>,
     pub notices: Vec<RunNotice>,
     pub always_on_top: bool,
+    pub clear_pending: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Type, Event)]

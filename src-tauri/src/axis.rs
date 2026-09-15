@@ -103,6 +103,15 @@ pub struct DraftAxis {
 }
 
 impl DraftAxis {
+    pub fn empty() -> Self {
+        Self {
+            title: "未命名轴".to_string(),
+            stage_id: None,
+            events: Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
     pub fn demo() -> Self {
         let mut events = vec![
             complete_event("demo-001", 420, 0, DraftKind::Deploy, "部署 01"),
@@ -211,6 +220,7 @@ impl DraftAxis {
     }
 }
 
+#[cfg(test)]
 fn complete_event(id: &str, frame: u32, order: u32, kind: DraftKind, label: &str) -> DraftEvent {
     let deploy = matches!(kind, DraftKind::Deploy);
     DraftEvent {

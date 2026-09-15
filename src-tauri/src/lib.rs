@@ -1,6 +1,8 @@
 mod axis;
 mod bindings;
+mod monitor;
 mod runner;
+mod settings;
 
 use std::{path::PathBuf, sync::Mutex, time::Instant};
 
@@ -9,7 +11,9 @@ use bindings::{
     AddEventInput, AxisMetadataInput, CommandError, RunStrategy, RunnerSnapshot,
     RunnerSnapshotEvent, UpdateEventInput,
 };
+use monitor::{GameWindowCandidate, MonitorManager, VisionConfig};
 use runner::RunnerState;
+use settings::AppSettings;
 use specta_typescript::Typescript;
 use tauri::{AppHandle, Manager};
 use tauri_specta::Builder;
@@ -27,6 +31,7 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tauri_specta::Event;
 
 pub struct SharedRunner(Mutex<RunnerState>);
+pub struct SharedMonitor(Mutex<MonitorManager>);
 
 fn locked<'a>(
     state: &'a tauri::State<'a, SharedRunner>,
@@ -35,6 +40,15 @@ fn locked<'a>(
         .0
         .lock()
         .map_err(|_| CommandError::new("state_poisoned", "Runner 状态不可用"))
+}
+
+fn locked_monitor<'a>(
+    state: &'a tauri::State<'a, SharedMonitor>,
+) -> Result<std::sync::MutexGuard<'a, MonitorManager>, CommandError> {
+    state
+        .0
+        .lock()
+        .map_err(|_| CommandError::new("monitor_poisoned", "监控状态不可用"))
 }
 
 #[tauri::command]
@@ -161,16 +175,6 @@ fn set_strategy(
 
 #[tauri::command]
 #[specta::specta]
-fn continue_simulation(
-    state: tauri::State<'_, SharedRunner>,
-) -> Result<RunnerSnapshot, CommandError> {
-    let mut runner = locked(&state)?;
-    runner.continue_simulation(Instant::now())?;
-    Ok(runner.snapshot())
-}
-
-#[tauri::command]
-#[specta::specta]
 fn set_always_on_top(
     enabled: bool,
     app: AppHandle,
@@ -184,6 +188,99 @@ fn set_always_on_top(
         .map_err(|error| CommandError::new("window_error", error.to_string()))?;
     let mut runner = locked(&state)?;
     runner.set_always_on_top(enabled);
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn update_settings(
+    input: AppSettings,
+    app: AppHandle,
+    runner_state: tauri::State<'_, SharedRunner>,
+    monitor_state: tauri::State<'_, SharedMonitor>,
+) -> Result<RunnerSnapshot, CommandError> {
+    input
+        .validate()
+        .map_err(|message| CommandError::field("invalid_settings", message, "settings"))?;
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| CommandError::new("settings_path", error.to_string()))?
+        .join("settings.json");
+    input
+        .save(&path)
+        .map_err(|error| CommandError::new("settings_write", error.to_string()))?;
+    locked_monitor(&monitor_state)?.update_config(VisionConfig::from(&input));
+    let mut runner = locked(&runner_state)?;
+    runner.update_settings(input)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn request_clear_axis(
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.request_clear_axis(Instant::now());
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn list_game_windows() -> Result<Vec<GameWindowCandidate>, CommandError> {
+    MonitorManager::list_game_windows()
+        .map_err(|message| CommandError::new("window_discovery", message))
+}
+
+#[tauri::command]
+#[specta::specta]
+fn select_game_window(
+    id: String,
+    monitor_state: tauri::State<'_, SharedMonitor>,
+    runner_state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut monitor = locked_monitor(&monitor_state)?;
+    monitor
+        .select_game_window(&id)
+        .map_err(|message| CommandError::field("window_selection", message, "id"))?;
+    let snapshot = monitor.snapshot();
+    drop(monitor);
+    let mut runner = locked(&runner_state)?;
+    runner.set_monitor_snapshot(snapshot);
+    runner.reset_monitor_clock("等待游戏进入关卡并开始运行");
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn analyze_recording(
+    path: String,
+    monitor_state: tauri::State<'_, SharedMonitor>,
+    runner_state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut monitor = locked_monitor(&monitor_state)?;
+    monitor
+        .analyze_recording(&path)
+        .map_err(|message| CommandError::field("recording_analysis", message, "path"))?;
+    let snapshot = monitor.snapshot();
+    drop(monitor);
+    let mut runner = locked(&runner_state)?;
+    runner.set_monitor_snapshot(snapshot);
+    runner.reset_monitor_clock("正在离线分析录屏");
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn stop_monitor(
+    monitor_state: tauri::State<'_, SharedMonitor>,
+    runner_state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    locked_monitor(&monitor_state)?.stop();
+    let mut runner = locked(&runner_state)?;
+    runner.set_monitor_snapshot(Default::default());
+    runner.reset_monitor_clock("监控已停止");
     Ok(runner.snapshot())
 }
 
@@ -218,8 +315,13 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             import_axis,
             export_axis,
             set_strategy,
-            continue_simulation,
             set_always_on_top,
+            update_settings,
+            request_clear_axis,
+            list_game_windows,
+            select_game_window,
+            analyze_recording,
+            stop_monitor,
             hide_to_tray,
             close_app,
         ])
@@ -238,16 +340,29 @@ fn emit_snapshot(app: &AppHandle, snapshot: RunnerSnapshot) {
 }
 
 #[cfg(feature = "desktop-app")]
-fn start_mock_clock(app: AppHandle) {
+fn start_runtime(app: AppHandle) {
     thread::spawn(move || {
         loop {
             thread::sleep(Duration::from_millis(16));
+            let (monitor_event, monitor_snapshot) = {
+                let state = app.state::<SharedMonitor>();
+                let Ok(mut monitor) = state.0.lock() else {
+                    break;
+                };
+                let event = monitor.poll();
+                (event, monitor.snapshot())
+            };
             let snapshot = {
                 let state = app.state::<SharedRunner>();
                 let Ok(mut runner) = state.0.lock() else {
                     break;
                 };
-                runner.tick(Instant::now());
+                runner.set_monitor_snapshot(monitor_snapshot);
+                let now = Instant::now();
+                if let Some(event) = monitor_event {
+                    runner.apply_monitor_event(event, now);
+                }
+                runner.refresh(now);
                 runner.snapshot()
             };
             if RunnerSnapshotEvent(snapshot).emit(&app).is_err() {
@@ -291,11 +406,12 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.handle().plugin(
         tauri_plugin_global_shortcut::Builder::new()
-            .with_shortcuts(["F1", "F2", "F3"])?
+            .with_shortcuts(["F1", "F2", "F3", "F4"])?
             .with_handler(|app, shortcut, event| {
                 if event.state != ShortcutState::Pressed {
                     return;
                 }
+                let clear = shortcut.matches(Modifiers::empty(), Code::F4);
                 let kind = if shortcut.matches(Modifiers::empty(), Code::F1) {
                     Some(DraftKind::Deploy)
                 } else if shortcut.matches(Modifiers::empty(), Code::F2) {
@@ -305,12 +421,16 @@ fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
-                let Some(kind) = kind else {
+                if !clear && kind.is_none() {
                     return;
-                };
+                }
                 let state = app.state::<SharedRunner>();
                 if let Ok(mut runner) = state.0.lock() {
-                    let _ = runner.record_event(kind);
+                    if clear {
+                        runner.request_clear_axis(Instant::now());
+                    } else if let Some(kind) = kind {
+                        let _ = runner.record_event(kind);
+                    }
                     emit_snapshot(app, runner.snapshot());
                 }
             })
@@ -325,13 +445,22 @@ pub fn run() {
     let builder = specta_builder();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(SharedRunner(Mutex::new(RunnerState::new(Instant::now()))))
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            let settings_path = app.path().app_config_dir()?.join("settings.json");
+            let (settings, warning) = AppSettings::load(&settings_path);
+            app.manage(SharedRunner(Mutex::new(RunnerState::with_settings(
+                Instant::now(),
+                settings.clone(),
+                warning,
+            ))));
+            app.manage(SharedMonitor(Mutex::new(MonitorManager::new(
+                VisionConfig::from(&settings),
+            ))));
             builder.mount_events(app);
             setup_tray(app)?;
             setup_shortcuts(app).map_err(|error| error.to_string())?;
-            start_mock_clock(app.handle().clone());
+            start_runtime(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

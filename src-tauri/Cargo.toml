@@ -1,6 +1,6 @@
 [package]
 name = "arknights-operation-runner"
-version = "0.1.0"
+version = "0.2.0"
 description = "明日方舟实机计时与作战轴工具"
 authors = ["Kelin"]
 edition = "2024"
@@ -27,6 +27,9 @@ tauri-plugin-global-shortcut = { version = "=2.3.2", optional = true }
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 thiserror = "2.0"
 typify = "=0.8.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-capture = "=2.0.1"
 
 [features]
 default = ["desktop-app", "custom-protocol"]

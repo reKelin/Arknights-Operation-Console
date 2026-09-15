@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Arknights Operation Runner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "io.github.kelin.arknights-operation-runner",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -14,12 +14,10 @@
       {
         "label": "main",
         "title": "Arknights Operation Runner",
-        "width": 900,
-        "height": 236,
+        "width": 960,
+        "height": 300,
         "minWidth": 760,
-        "maxWidth": 1600,
-        "minHeight": 236,
-        "maxHeight": 236,
+        "minHeight": 260,
         "resizable": true,
         "decorations": false,
         "alwaysOnTop": true,
