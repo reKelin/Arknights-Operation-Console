@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: axislink-v2
 depends_on:
   - specs/axislink-v2/requirements.md
