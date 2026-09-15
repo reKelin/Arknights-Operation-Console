@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: game-monitoring
 depends_on:
   - docs/product/requirements.md

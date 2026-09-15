@@ -1,7 +1,7 @@
 <div align="center">
   <h1>Arknights Operation Runner</h1>
   <p>面向明日方舟实机计时、作战轴记录与执行的轻量桌面工具。</p>
-  <p><strong>交互 Demo 已完成；实机监控阶段开发中</strong></p>
+  <p><strong>实机监控与录屏时钟已接入；真实输入执行尚未接入</strong></p>
 </div>
 
 当前交互 Demo 包含：
@@ -14,8 +14,8 @@
 - AxisLink JSON 导入导出；
 - 提示、到点暂停和执行预演。
 
-实机监控阶段正在接入 `Arknights.exe` 窗口选择、Windows Graphics
-Capture、视觉状态/费用同步，以及 MKV/MP4 录屏时钟轨迹分析。项目不读取游戏内存。
+当前版本支持 `Arknights.exe` 窗口选择、Windows Graphics Capture、视觉状态/费用同步，
+以及 MKV/MP4 录屏时钟轨迹分析。项目不读取游戏内存。
 
 ## 开发
 

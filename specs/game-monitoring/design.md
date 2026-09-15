@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: game-monitoring
 depends_on:
   - specs/game-monitoring/requirements.md
@@ -17,7 +17,7 @@ depends_on:
 - `src/App.tsx`：监控源、主题、设置、录屏进度和清空确认界面。
 - `src/Timeline.tsx`：响应式时间轴与录屏轨迹定位。
 
-仍使用单个 `src-tauri` crate。窗口与录屏已经是两个真实来源，使用 `MonitorSource` enum 共享后续视觉和时钟链，不建立可注入插件体系。
+仍使用单个 `src-tauri` crate。窗口与录屏由同一个 `MonitorManager` 管理，共享视觉和时钟链，不建立可注入插件体系。
 
 ## 外部基线与依赖
 
@@ -42,7 +42,7 @@ game_ui_scale = 0..100
 
 `list_game_windows` 使用 `windows-capture::window::Window::enumerate`，读取进程名、标题和捕获能力，只返回 `Arknights.exe` 的可见顶层窗口。UI 使用一次扫描结果中的短期候选 ID 调用 `select_game_window`；Rust 再次验证候选，避免接受前端提供的任意句柄。
 
-捕获回调把最新 BGRA 帧和单调时间写入容量为 1 的通道；满时替换旧帧。窗口关闭、尺寸变化或捕获错误终止当前会话，时钟进入不可信冻结状态。重新选择窗口创建新会话。
+捕获回调分析最新 BGRA 帧，并把观测和单调时间写入容量为 1 的共享槽；新观测替换尚未消费的旧观测。窗口关闭或捕获错误终止当前会话，时钟进入不可信冻结状态。重新选择窗口创建新会话。
 
 ## 视觉观测
 
@@ -51,13 +51,13 @@ game_ui_scale = 0..100
 ```text
 ObservedBattleState
 cost_phase
-cost_visible
+cost_phase = Some(frame) | None
 cost_full
 confidence
 capture_timestamp
 ```
 
-速度键与暂停键的亮度、边缘和连通段组合用于区分 1×、2×、0.2×、暂停、部署与方向调整；关卡标题画面和连续非战斗帧定义关卡边界。费用条沿多条相邻扫描线取中位数，降低压缩噪声影响。当前填充宽度按 `frames_per_cost` 映射到费用相位；只有高置信度的满到空变化才提交循环回绕。
+速度键与暂停键亮度用于区分 1×、2×、0.2×和暂停，战场绿色覆盖率区分部署与方向调整；关卡标题画面和连续非战斗帧定义关卡边界。费用条沿多条相邻扫描线取中位数，降低压缩噪声影响。当前填充宽度按 `frames_per_cost` 映射到费用相位；满费观测不提交循环回绕。
 
 ## 权威时钟
 
@@ -88,9 +88,9 @@ AxisLink 继续保存原始 30 Hz `game_frame`。
 
 `analyze_recording` 先用 `ffprobe` 验证单视频流、尺寸、帧率和时长，再启动 `ffmpeg` 解码为 30 Hz BGRA 原始帧。解码线程按帧序号生成确定性时间戳，不使用处理耗时。
 
-每帧经过同一视觉和时钟状态机，结果压缩为状态发生变化或游戏帧变化时的 `RecordingTracePoint`。UI 展示进度、检测到的关卡区段和定位滑块。轨迹与录屏路径只存在内存；取消、失败和完成均不得改写轴。
+每帧经过同一视觉和时钟状态机，结果压缩为状态、费用相位或游戏帧发生变化时的 `RecordingTracePoint`，并汇总为独立关卡区段。UI 展示进度、关卡区段选择和定位滑块。轨迹与录屏路径只存在内存；取消、失败和完成均不得改写轴。
 
-首版接受恒定帧率 MKV/MP4。检测到不可用帧率、解码短读或尺寸变化时停止并返回结构化错误。
+首版接受 MKV/MP4，并由 FFmpeg 统一采样为 30 Hz。检测到不可用帧率、解码短读或无效尺寸时停止并返回结构化错误。
 
 ## UI
 
@@ -100,7 +100,7 @@ AxisLink 继续保存原始 30 Hz `game_frame`。
 
 ## 验证
 
-- 视觉纯函数使用合成 BGRA 缓冲区和从 OBS 录屏提取的小型 ROI PNG。
+- 视觉纯函数使用合成 BGRA 缓冲区和从 OBS 录屏提取的最小特征 JSON。
 - 时钟测试使用显式纳秒时间戳，不等待现实时间。
 - 录屏测试只验证元数据解析、命令错误与短小夹具，不提交原始录像。
 - Windows 人工验收覆盖候选窗口、WGC 生命周期、失焦 F1–F4、主题持久化和真实关卡边界。
