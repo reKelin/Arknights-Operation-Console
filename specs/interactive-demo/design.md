@@ -7,6 +7,8 @@ depends_on:
 
 # 交互 Demo 设计
 
+> 本文中的 AxisLink v1 定义已由 `specs/axislink-v2/` 取代，不再受支持；其余内容保留为 Demo 历史设计。
+
 ## 文件边界
 
 - `protocol/axislink.schema.json`：AxisLink v1 唯一规范源。

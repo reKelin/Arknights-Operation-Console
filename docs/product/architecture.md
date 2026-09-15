@@ -26,7 +26,7 @@ flowchart LR
   Decode --> Vision
   Vision --> Clock["30 tick/s GameClock"]
   Clock --> Core
-  Axis["AxisLink v1"] --> Core
+  Axis["AxisLink v2"] --> Core
   Core --> Snapshot["不可变 UI 快照"]
   Core --> Output["提醒或执行请求"]
   Snapshot --> UI
@@ -41,6 +41,7 @@ flowchart LR
 - AxisLink JSON Schema 是跨仓库协议的唯一规范源，并生成 Rust/TypeScript 类型。
 - Tauri 命令以 Rust 类型为源生成 TypeScript 绑定。
 - 同帧事件按 `frame`、创建序号、稳定 ID 排序。
+- 轴的期望关卡与 OCR 或手动确认的观测关卡分别持有；不一致时跳过并消费已到期调度项，禁止恢复后补发。
 
 ## 监控链
 
@@ -48,6 +49,7 @@ flowchart LR
 - 捕获线程只保留最新帧，视觉线程输出带捕获单调时间、战斗状态、费用相位和可信度的不可变观测。
 - 视觉识别在归一化的 1920×1080 参考坐标中采样费用条、速度键和暂停键，不渲染或保存完整游戏画面。
 - 录屏使用 `ffprobe` 读取元数据并由 `ffmpeg` 解码为 30 Hz BGRA 帧，随后进入同一视觉与时钟状态机；离线结果只保存在内存。
+- 关卡标题帧使用 Windows OCR 同时读取代码与中文名，并与固定版本的内置关卡目录匹配；地图按需下载到缓存，不渲染到界面。
 - 主题、费用周期分母和游戏 UI 比例属于应用设置，可以持久化；AxisLink 草稿与录屏分析结果不得自动保存。
 
 ## 时钟路径
