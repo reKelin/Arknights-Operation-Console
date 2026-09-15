@@ -1,5 +1,6 @@
 use super::ObservedBattleState;
 use crate::settings::AppSettings;
+use crate::stage::StageRecognition;
 
 #[derive(Clone, Copy, Debug)]
 pub struct VisionConfig {
@@ -33,6 +34,7 @@ pub struct VisualObservation {
     pub cost_phase: Option<u16>,
     pub cost_total: u16,
     pub cost_full: bool,
+    pub stage_recognition: Option<StageRecognition>,
 }
 
 #[derive(Clone, Copy)]
@@ -124,6 +126,7 @@ pub fn analyze_bgra(
         cost_phase,
         cost_total: config.frames_per_cost,
         cost_full,
+        stage_recognition: None,
     })
 }
 

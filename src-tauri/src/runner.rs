@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    axis::{DraftAxis, DraftEvent, DraftKind},
+    axis::{DraftAxis, DraftEvent, DraftKind, valid_tile_code},
     bindings::{
         AxisMetadataInput, BattleStatus, CommandError, NoticeKind, RunNotice, RunStrategy,
         RunnerSnapshot, UpdateEventInput,
@@ -14,6 +14,10 @@ use crate::{
         ObservedBattleState,
     },
     settings::AppSettings,
+    stage::{
+        StageCatalogEntry, StageIdentitySource, StageMapBounds, StageMatchStatus,
+        StageSafetySnapshot, StageSafetyStatus, validate_tile_in_map,
+    },
 };
 
 const NOTIFY_LEAD_FRAMES: u32 = 90;
@@ -40,6 +44,8 @@ pub struct RunnerState {
     clear_pending_deadline: Option<Instant>,
     last_observation_at: Option<Instant>,
     error_frames: u16,
+    manual_stage: Option<StageCatalogEntry>,
+    stage_bounds: Option<(String, StageMapBounds)>,
 }
 
 impl RunnerState {
@@ -73,6 +79,8 @@ impl RunnerState {
             clear_pending_deadline: None,
             last_observation_at: None,
             error_frames: 0,
+            manual_stage: None,
+            stage_bounds: None,
         }
     }
 
@@ -115,6 +123,7 @@ impl RunnerState {
             axis: self.axis.clone(),
             settings: self.settings.clone(),
             monitor: self.monitor.clone(),
+            stage_safety: self.stage_safety(),
             frame: self.frame,
             time: format_frame(self.frame, self.settings.frames_per_cost),
             speed: self.speed,
@@ -128,6 +137,32 @@ impl RunnerState {
             notices: self.notices.clone(),
             always_on_top: self.always_on_top,
             clear_pending: self.clear_pending_deadline.is_some(),
+        }
+    }
+
+    fn stage_safety(&self) -> StageSafetySnapshot {
+        let ocr_stage = (self.monitor.stage_recognition.status == StageMatchStatus::Matched)
+            .then(|| self.monitor.stage_recognition.stage.clone())
+            .flatten();
+        let (observed_stage, source) = if let Some(stage) = ocr_stage {
+            (Some(stage), StageIdentitySource::Ocr)
+        } else if let Some(stage) = self.manual_stage.clone() {
+            (Some(stage), StageIdentitySource::Manual)
+        } else {
+            (None, StageIdentitySource::None)
+        };
+        let status = match (self.axis.stage_id.as_deref(), observed_stage.as_ref()) {
+            (Some(expected), Some(observed)) if expected == observed.id => {
+                StageSafetyStatus::Matched
+            }
+            (Some(_), Some(_)) => StageSafetyStatus::Mismatched,
+            _ => StageSafetyStatus::Unverified,
+        };
+        StageSafetySnapshot {
+            status,
+            expected_stage_id: self.axis.stage_id.clone(),
+            observed_stage,
+            source,
         }
     }
 
@@ -148,6 +183,12 @@ impl RunnerState {
             return Err(CommandError::new(
                 "battle_not_running",
                 "当前不在运行中的关卡内",
+            ));
+        }
+        if self.stage_safety().status != StageSafetyStatus::Matched {
+            return Err(CommandError::new(
+                "stage_unverified",
+                "当前关卡未确认或与轴不一致，不能录制操作点",
             ));
         }
         self.insert_draft(self.frame, kind);
@@ -176,14 +217,24 @@ impl RunnerState {
         }
         if input
             .tile
-            .as_ref()
-            .is_some_and(|tile| tile.x > 255 || tile.y > 255)
+            .as_deref()
+            .is_some_and(|tile| !valid_tile_code(tile))
         {
             return Err(CommandError::field(
                 "invalid_tile",
-                "格子坐标必须在 0–255 之间",
+                "格子必须是 A1 到 I36 的短代码",
                 "tile",
             ));
+        }
+        if let (Some(tile), Some(stage_id), Some((bounds_stage, bounds))) = (
+            input.tile.as_deref(),
+            self.axis.stage_id.as_deref(),
+            self.stage_bounds.as_ref(),
+        ) {
+            if stage_id == bounds_stage {
+                validate_tile_in_map(tile, *bounds)
+                    .map_err(|message| CommandError::field("invalid_tile", message, "tile"))?;
+            }
         }
         let event_id = input.id.clone();
         {
@@ -195,13 +246,16 @@ impl RunnerState {
                 .ok_or_else(|| CommandError::new("event_not_found", "未找到操作点"))?;
             event.frame = input.frame;
             event.kind = input.kind;
-            event.operator = normalized_optional(input.operator);
+            event.operator = if matches!(event.kind, DraftKind::Deploy) {
+                normalized_optional(input.operator)
+            } else {
+                None
+            };
             event.label = normalized_optional(input.label);
+            event.tile = normalized_optional(input.tile);
             if matches!(event.kind, DraftKind::Deploy) {
-                event.tile = input.tile;
                 event.direction = input.direction;
             } else {
-                event.tile = None;
                 event.direction = None;
             }
             event.refresh_complete();
@@ -250,7 +304,11 @@ impl RunnerState {
             ));
         }
         self.axis.title = title.to_string();
-        self.axis.stage_id = normalized_optional(input.stage_id);
+        let stage_id = normalized_optional(input.stage_id);
+        if self.axis.stage_id != stage_id {
+            self.stage_bounds = None;
+        }
+        self.axis.stage_id = stage_id;
         self.last_message = Some("轴属性已更新".to_string());
         Ok(())
     }
@@ -265,6 +323,7 @@ impl RunnerState {
             .unwrap_or(0)
             .saturating_add(1);
         self.next_id = 1;
+        self.stage_bounds = None;
         self.axis = axis;
         self.rebuild_triggered();
         self.last_message = Some("AxisLink 已导入".to_string());
@@ -292,6 +351,20 @@ impl RunnerState {
         self.monitor = monitor;
     }
 
+    pub fn set_manual_stage(&mut self, stage: StageCatalogEntry) {
+        if self.axis.stage_id.is_none() {
+            self.axis.stage_id = Some(stage.id.clone());
+        }
+        self.manual_stage = Some(stage);
+        self.last_message = Some("已手动确认当前关卡".to_string());
+    }
+
+    pub fn set_stage_map_bounds(&mut self, stage_id: String, bounds: StageMapBounds) {
+        if self.axis.stage_id.as_deref() == Some(stage_id.as_str()) {
+            self.stage_bounds = Some((stage_id, bounds));
+        }
+    }
+
     pub fn reset_monitor_clock(&mut self, message: &str) {
         self.clock = ObservationClock::default();
         self.frame = 0;
@@ -299,6 +372,7 @@ impl RunnerState {
         self.speed = 0;
         self.error_frames = 0;
         self.last_observation_at = None;
+        self.manual_stage = None;
         self.triggered.clear();
         self.notices.clear();
         self.last_message = Some(message.to_string());
@@ -308,6 +382,21 @@ impl RunnerState {
         match event {
             MonitorEvent::Observation(observation) => {
                 self.last_observation_at = Some(received_at);
+                if self.axis.stage_id.is_none()
+                    && observation
+                        .stage_recognition
+                        .as_ref()
+                        .is_some_and(|recognition| {
+                            recognition.status == StageMatchStatus::Matched
+                                && recognition.stage.is_some()
+                        })
+                {
+                    self.axis.stage_id = observation
+                        .stage_recognition
+                        .as_ref()
+                        .and_then(|recognition| recognition.stage.as_ref())
+                        .map(|stage| stage.id.clone());
+                }
                 let previous_frame = self.frame;
                 let update = self.clock.observe(&observation);
                 self.frame = update.frame;
@@ -336,6 +425,7 @@ impl RunnerState {
                     ClockTransition::Exited => {
                         self.triggered.clear();
                         self.notices.clear();
+                        self.manual_stage = None;
                         self.last_message = Some("已离开关卡，计时已归零".to_string());
                     }
                     ClockTransition::Frozen => {
@@ -345,6 +435,10 @@ impl RunnerState {
                         self.last_message = Some("游戏已暂停".to_string());
                     }
                     ClockTransition::None | ClockTransition::Advanced => {}
+                }
+                if self.stage_safety().status == StageSafetyStatus::Mismatched {
+                    self.last_message =
+                        Some("观测关卡与当前轴不一致，调度和录轴已停止".to_string());
                 }
             }
             MonitorEvent::Error(message) => {
@@ -394,6 +488,14 @@ impl RunnerState {
     }
 
     fn dispatch_events(&mut self, current_frame: u32) {
+        if self.stage_safety().status != StageSafetyStatus::Matched {
+            for event in &self.axis.events {
+                if trigger_frame(event, self.strategy) <= current_frame {
+                    self.triggered.insert(event.id.clone());
+                }
+            }
+            return;
+        }
         let due: Vec<DraftEvent> = self
             .axis
             .events
@@ -554,7 +656,40 @@ mod tests {
             cost_phase: None,
             cost_total: 30,
             cost_full: false,
+            stage_recognition: None,
         })
+    }
+
+    fn stage(id: &str) -> StageCatalogEntry {
+        StageCatalogEntry {
+            id: id.to_string(),
+            code: "TEST-1".to_string(),
+            name: "测试关卡".to_string(),
+            level_path: "obt/test.json".to_string(),
+        }
+    }
+
+    fn observation_with_stage(timestamp: u64, id: &str) -> MonitorEvent {
+        MonitorEvent::Observation(VisualObservation {
+            capture_timestamp_ns: timestamp,
+            battle_state: ObservedBattleState::OneXRunning,
+            confidence: 90,
+            cost_phase: None,
+            cost_total: 30,
+            cost_full: false,
+            stage_recognition: Some(crate::stage::StageRecognition {
+                status: StageMatchStatus::Matched,
+                raw_text: "TEST-1\n测试关卡".to_string(),
+                stage: Some(stage(id)),
+                candidates: vec![stage(id)],
+                warning: None,
+            }),
+        })
+    }
+
+    fn confirm_axis_stage(runner: &mut RunnerState) {
+        runner.axis.stage_id = Some("test_stage".to_string());
+        runner.manual_stage = Some(stage("test_stage"));
     }
 
     #[test]
@@ -653,6 +788,7 @@ mod tests {
         let start = Instant::now();
         let mut runner = RunnerState::new(start);
         runner.frame = 100;
+        confirm_axis_stage(&mut runner);
         runner.set_strategy(RunStrategy::Notify);
         runner.add_event(150, DraftKind::Skill).unwrap();
         let id = runner
@@ -679,6 +815,7 @@ mod tests {
     fn one_observation_preserves_every_due_notice() {
         let start = Instant::now();
         let mut runner = RunnerState::new(start);
+        confirm_axis_stage(&mut runner);
         for _ in 0..40 {
             runner.add_event(0, DraftKind::Skill).unwrap();
         }
@@ -701,5 +838,21 @@ mod tests {
 
         let mut ids = HashSet::new();
         assert!(runner.axis.events.iter().all(|event| ids.insert(&event.id)));
+    }
+
+    #[test]
+    fn mismatched_stage_consumes_due_events_without_catch_up() {
+        let start = Instant::now();
+        let mut runner = RunnerState::new(start);
+        runner.axis = DraftAxis::demo();
+        let due_id = runner.axis.events[0].id.clone();
+
+        runner.apply_monitor_event(observation_with_stage(0, "other_stage"), start);
+        runner.apply_monitor_event(observation_with_stage(20_000_000_000, "other_stage"), start);
+        assert!(runner.triggered.contains(&due_id));
+        assert!(runner.notices.is_empty());
+
+        runner.apply_monitor_event(observation_with_stage(21_000_000_000, "main_00-01"), start);
+        assert!(runner.notices.is_empty());
     }
 }

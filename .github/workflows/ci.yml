@@ -30,6 +30,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Regenerate stage catalog
+        run: npm run stages:sync
+
+      - name: Check generated stage catalog
+        run: git diff --exit-code -- src-tauri/data/stages.json
+
       - name: Regenerate bindings
         run: npm run bindings
 

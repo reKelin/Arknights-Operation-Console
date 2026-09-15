@@ -634,6 +634,13 @@ button {
   font-style: normal;
 }
 
+.stage-ocr {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .event-summary small {
   margin-left: auto;
   color: var(--text-faint);
@@ -734,25 +741,29 @@ button {
   font-size: 10px;
 }
 
-.window-picker {
+.window-picker,
+.stage-picker {
   width: min(460px, calc(100vw - 24px));
 }
 
-.window-candidates {
+.window-candidates,
+.stage-candidates {
   display: grid;
   gap: 6px;
   max-height: 220px;
   overflow-y: auto;
 }
 
-.window-candidates > p {
+.window-candidates > p,
+.stage-candidates > p {
   margin: 14px 0;
   color: var(--text-muted);
   font-size: 11px;
   text-align: center;
 }
 
-.window-candidates > button {
+.window-candidates > button,
+.stage-candidates > button {
   min-height: 42px;
   display: flex;
   align-items: center;
@@ -761,15 +772,40 @@ button {
   text-align: left;
 }
 
-.window-candidates > button strong {
+.window-candidates > button strong,
+.stage-candidates > button strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.window-candidates > button span {
+.window-candidates > button span,
+.stage-candidates > button span {
   flex: 0 0 auto;
   color: var(--text-faint);
+}
+
+.stage-search-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.stage-search-row button {
+  padding: 0 10px;
+}
+
+.stage-candidates > button {
+  min-height: 46px;
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.metadata-editor select[size] {
+  height: auto;
+  margin-top: 5px;
 }
 
 .about-dialog p {

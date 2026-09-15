@@ -1,4 +1,5 @@
 mod clock;
+mod ocr;
 mod recording;
 mod vision;
 
@@ -7,6 +8,7 @@ mod live;
 
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::stage::{StageCatalog, StageRecognition};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -98,6 +100,7 @@ pub struct MonitorSnapshot {
     pub trace_duration_frames: Option<u32>,
     pub trace_points: Vec<RecordingTracePoint>,
     pub recording_segments: Vec<RecordingSegment>,
+    pub stage_recognition: StageRecognition,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
@@ -116,6 +119,7 @@ pub struct RecordingSegment {
     pub source_start_frame: u32,
     pub source_end_frame: u32,
     pub game_duration_frames: u32,
+    pub stage_recognition: StageRecognition,
 }
 
 pub enum MonitorEvent {
@@ -134,6 +138,7 @@ pub enum MonitorEvent {
 
 pub struct MonitorManager {
     config: Arc<RwLock<VisionConfig>>,
+    catalog: Arc<StageCatalog>,
     latest: Arc<Mutex<Option<MonitorEvent>>>,
     snapshot: MonitorSnapshot,
     #[cfg(windows)]
@@ -142,9 +147,10 @@ pub struct MonitorManager {
 }
 
 impl MonitorManager {
-    pub fn new(config: VisionConfig) -> Self {
+    pub fn new(config: VisionConfig, catalog: Arc<StageCatalog>) -> Self {
         Self {
             config: Arc::new(RwLock::new(config)),
+            catalog,
             latest: Arc::new(Mutex::new(None)),
             snapshot: MonitorSnapshot::default(),
             #[cfg(windows)]
@@ -174,6 +180,9 @@ impl MonitorManager {
                 self.snapshot.cost_total = observation.cost_total;
                 self.snapshot.trusted = observation.confidence >= 70;
                 self.snapshot.error = None;
+                if let Some(recognition) = observation.stage_recognition.clone() {
+                    self.snapshot.stage_recognition = recognition;
+                }
                 Some(MonitorEvent::Observation(observation))
             }
             MonitorEvent::RecordingProgress {
@@ -187,6 +196,9 @@ impl MonitorManager {
                 self.snapshot.cost_phase = observation.cost_phase;
                 self.snapshot.cost_total = observation.cost_total;
                 self.snapshot.trusted = observation.confidence >= 70;
+                if let Some(recognition) = observation.stage_recognition {
+                    self.snapshot.stage_recognition = recognition;
+                }
                 None
             }
             MonitorEvent::RecordingReady {
@@ -236,8 +248,12 @@ impl MonitorManager {
     #[cfg(windows)]
     pub fn select_game_window(&mut self, id: &str) -> Result<(), String> {
         self.stop();
-        let (session, candidate) =
-            live::LiveSession::start(id, Arc::clone(&self.config), Arc::clone(&self.latest))?;
+        let (session, candidate) = live::LiveSession::start(
+            id,
+            Arc::clone(&self.config),
+            Arc::clone(&self.catalog),
+            Arc::clone(&self.latest),
+        )?;
         self.live = Some(session);
         self.snapshot = MonitorSnapshot {
             source_kind: MonitorSourceKind::Window,
@@ -277,6 +293,7 @@ impl MonitorManager {
         let (session, name, total) = recording::RecordingSession::start(
             path,
             *self.config.read().map_err(|_| "监控设置不可用")?,
+            Arc::clone(&self.catalog),
             Arc::clone(&self.latest),
         )?;
         self.recording = Some(session);

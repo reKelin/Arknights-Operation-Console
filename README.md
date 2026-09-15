@@ -11,16 +11,18 @@
 - 可横向滚动、缩放和拖动的单轨时间轴；
 - 全局 F1/F2/F3 实时记录部署、技能和撤退；
 - 操作点执行参数编辑；
-- AxisLink JSON 导入导出；
+- AxisLink v2 JSON 导入导出，使用 A1–I36 格子短代码；
 - 提示、到点暂停和执行预演。
 
 当前版本支持 `Arknights.exe` 窗口选择、Windows Graphics Capture、视觉状态/费用同步，
-以及 MKV/MP4 录屏时钟轨迹分析。项目不读取游戏内存。
+MKV/MP4 录屏时钟轨迹分析，以及进关标题的关卡代码和中文名 OCR。自动识别不唯一时
+可以从内置目录手动确认；地图按需下载并用于坐标边界校验。项目不读取游戏内存。
 
 ## 开发
 
 需要 Node.js 22.16.0、Rust 1.98.1、WebView2 和 Visual Studio C++ Build
-Tools。录屏分析还需要 PATH 中可用的 `ffmpeg` 和 `ffprobe`。
+Tools。录屏分析还需要 PATH 中可用的 `ffmpeg` 和 `ffprobe`。自动识关使用 Windows
+简体中文 OCR 语言功能；该功能不可用时仍可手动选择关卡。
 
 ```powershell
 npm ci
@@ -29,6 +31,10 @@ npm run tauri dev
 ```
 
 格式、类型、测试和 Windows 构建由 GitHub Actions 执行。
+
+关卡目录与地图来自固定版本的
+[Kengxxiao/ArknightsGameData](https://github.com/Kengxxiao/ArknightsGameData)，
+来源提交记录在 `src-tauri/data/stages.json`。
 
 ## 许可证
 

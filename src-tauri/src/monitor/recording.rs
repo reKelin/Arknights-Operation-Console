@@ -10,11 +10,13 @@ use std::{
     thread,
 };
 
+use crate::stage::{StageCatalog, StageMatchStatus, StageRecognition};
 use serde::Deserialize;
 
 use super::{
     ClockTransition, MonitorEvent, ObservationClock, RecordingSegment, RecordingTracePoint,
     VisionConfig, analyze_bgra,
+    ocr::{StageOcrRecognizer, crop_title},
 };
 
 const OUTPUT_FPS: u64 = 30;
@@ -27,6 +29,7 @@ impl RecordingSession {
     pub fn start(
         path: &str,
         config: VisionConfig,
+        catalog: Arc<StageCatalog>,
         latest: Arc<Mutex<Option<MonitorEvent>>>,
     ) -> Result<(Self, String, u16), String> {
         let path = Path::new(path);
@@ -44,7 +47,7 @@ impl RecordingSession {
             .name("recording-analysis".to_string())
             .spawn(move || {
                 if let Err(message) =
-                    analyze_file(&path, metadata, config, &task_cancelled, &latest)
+                    analyze_file(&path, metadata, config, catalog, &task_cancelled, &latest)
                 {
                     publish(&latest, MonitorEvent::Error(message));
                 }
@@ -175,6 +178,7 @@ fn analyze_file(
     path: &Path,
     metadata: RecordingMetadata,
     config: VisionConfig,
+    catalog: Arc<StageCatalog>,
     cancelled: &AtomicBool,
     latest: &Mutex<Option<MonitorEvent>>,
 ) -> Result<(), String> {
@@ -211,7 +215,15 @@ fn analyze_file(
     let mut clock = ObservationClock::default();
     let mut trace = Vec::new();
     let mut segments = Vec::new();
-    let mut active_segment: Option<(u32, u32, u32)> = None;
+    let recognizer = StageOcrRecognizer::new(catalog);
+    let mut stage_recognition = match &recognizer {
+        Ok(_) => StageRecognition::default(),
+        Err(warning) => StageRecognition {
+            warning: Some(warning.clone()),
+            ..StageRecognition::default()
+        },
+    };
+    let mut active_segment: Option<(u32, u32, u32, StageRecognition)> = None;
     let mut last_progress = u8::MAX;
 
     loop {
@@ -230,7 +242,7 @@ fn analyze_file(
             }
         }
         let timestamp_ns = source_frame.saturating_mul(1_000_000_000) / OUTPUT_FPS;
-        let observation = analyze_bgra(
+        let mut observation = analyze_bgra(
             &buffer,
             metadata.width,
             metadata.height,
@@ -238,20 +250,45 @@ fn analyze_file(
             timestamp_ns,
             config,
         )?;
+        if observation.battle_state == super::ObservedBattleState::BattleBegin
+            && source_frame.is_multiple_of(15)
+        {
+            if let (Ok(recognizer), Ok(image)) = (
+                recognizer.as_ref(),
+                crop_title(&buffer, metadata.width, metadata.height, metadata.width * 4),
+            ) {
+                let candidate = recognizer.recognize(image);
+                if recognition_rank(candidate.status) >= recognition_rank(stage_recognition.status)
+                {
+                    stage_recognition = candidate;
+                }
+            }
+        }
+        if stage_recognition.status != StageMatchStatus::Unavailable
+            || stage_recognition.warning.is_some()
+        {
+            observation.stage_recognition = Some(stage_recognition.clone());
+        }
         let update = clock.observe(&observation);
         match update.transition {
             ClockTransition::Started => {
                 let source = source_frame.min(u64::from(u32::MAX)) as u32;
-                active_segment = Some((source, 0, source));
+                active_segment = Some((source, 0, source, stage_recognition.clone()));
             }
             ClockTransition::Exited => {
-                if let Some((start, duration, last_inside)) = active_segment.take() {
-                    push_segment(&mut segments, start, last_inside, duration);
+                if let Some((start, duration, last_inside, recognition)) = active_segment.take() {
+                    push_segment(&mut segments, start, last_inside, duration, recognition);
                 }
+                stage_recognition = StageRecognition::default();
             }
             _ => {
-                if let Some((_, duration, last_inside)) = &mut active_segment {
+                if let Some((_, duration, last_inside, recognition)) = &mut active_segment {
                     *duration = (*duration).max(update.frame);
+                    if recognition_rank(stage_recognition.status)
+                        >= recognition_rank(recognition.status)
+                    {
+                        *recognition = stage_recognition.clone();
+                    }
                     if observation.battle_state.is_in_battle() {
                         *last_inside = source_frame.min(u64::from(u32::MAX)) as u32;
                     }
@@ -295,8 +332,8 @@ fn analyze_file(
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    if let Some((start, duration, last_inside)) = active_segment {
-        push_segment(&mut segments, start, last_inside, duration);
+    if let Some((start, duration, last_inside, recognition)) = active_segment {
+        push_segment(&mut segments, start, last_inside, duration, recognition);
     }
     let duration_frames = trace
         .iter()
@@ -319,13 +356,24 @@ fn push_segment(
     start: u32,
     end: u32,
     game_duration_frames: u32,
+    stage_recognition: StageRecognition,
 ) {
     segments.push(RecordingSegment {
         index: segments.len().min(u32::MAX as usize) as u32,
         source_start_frame: start,
         source_end_frame: end,
         game_duration_frames,
+        stage_recognition,
     });
+}
+
+fn recognition_rank(status: StageMatchStatus) -> u8 {
+    match status {
+        StageMatchStatus::Unavailable => 0,
+        StageMatchStatus::Partial => 1,
+        StageMatchStatus::Ambiguous => 2,
+        StageMatchStatus::Matched => 3,
+    }
 }
 
 fn publish(latest: &Mutex<Option<MonitorEvent>>, event: MonitorEvent) {
@@ -376,8 +424,8 @@ mod tests {
     #[test]
     fn appends_indexed_recording_segment() {
         let mut segments = Vec::new();
-        push_segment(&mut segments, 30, 300, 450);
-        push_segment(&mut segments, 600, 900, 300);
+        push_segment(&mut segments, 30, 300, 450, StageRecognition::default());
+        push_segment(&mut segments, 600, 900, 300, StageRecognition::default());
 
         assert_eq!(segments[1].index, 1);
         assert_eq!(segments[1].source_start_frame, 600);

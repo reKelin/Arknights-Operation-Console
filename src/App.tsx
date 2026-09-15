@@ -14,6 +14,7 @@ import {
   type ObservedBattleState,
   type RunnerSnapshot,
   type RunStrategy,
+  type StageCatalogEntry,
   type UpdateEventInput,
 } from "./generated/bindings";
 import Timeline from "./Timeline";
@@ -102,6 +103,11 @@ export default function App() {
   const [windowPickerOpen, setWindowPickerOpen] = useState(false);
   const [gameWindows, setGameWindows] = useState<GameWindowCandidate[]>([]);
   const [scanningWindows, setScanningWindows] = useState(false);
+  const [stagePickerOpen, setStagePickerOpen] = useState(false);
+  const [stageCandidates, setStageCandidates] = useState<StageCatalogEntry[]>(
+    [],
+  );
+  const [stageSearching, setStageSearching] = useState(false);
   const [tracePreviewFrame, setTracePreviewFrame] = useState<number | null>(
     null,
   );
@@ -251,6 +257,26 @@ export default function App() {
     }
   }
 
+  async function searchStages(query: string): Promise<StageCatalogEntry[]> {
+    setStageSearching(true);
+    try {
+      const candidates = unwrap(await commands.listStages(query));
+      setStageCandidates(candidates);
+      setError(null);
+      return candidates;
+    } catch (reason) {
+      setError(messageOf(reason));
+      return [];
+    } finally {
+      setStageSearching(false);
+    }
+  }
+
+  async function openStagePicker() {
+    setStagePickerOpen(true);
+    await searchStages("");
+  }
+
   async function chooseRecording() {
     const path = await open({
       multiple: false,
@@ -276,6 +302,13 @@ export default function App() {
     paused: "计时已冻结",
     ended: "关卡结束",
   }[snapshot.status];
+  const stageWarning =
+    snapshot.monitor.sourceKind !== "none" &&
+    snapshot.stageSafety.status !== "matched"
+      ? snapshot.stageSafety.status === "mismatched"
+        ? "关卡不匹配"
+        : "关卡未确认"
+      : null;
   const displayedFrame = tracePreviewFrame ?? snapshot.frame;
   const displayedTime =
     tracePreviewFrame === null
@@ -344,6 +377,7 @@ export default function App() {
               onClick={scanGameWindows}
             />
             <MenuItem label="分析游戏录屏" onClick={chooseRecording} />
+            <MenuItem label="手动确认当前关卡" onClick={openStagePicker} />
             <MenuItem
               label="停止监控"
               onClick={() => run(() => commands.stopMonitor())}
@@ -398,6 +432,9 @@ export default function App() {
                   : OBSERVED_STATE_LABELS[snapshot.monitor.battleState]
               }`
             : "未选择监控源"}
+          {snapshot.stageSafety.observedStage
+            ? ` · ${snapshot.stageSafety.observedStage.code} ${snapshot.stageSafety.observedStage.name}`
+            : ""}
         </span>
         <button
           aria-label="最小化到托盘"
@@ -425,10 +462,15 @@ export default function App() {
           <div>
             <span>F{displayedFrame.toString().padStart(5, "0")}</span>
             <span>30 Hz · 费用秒 {snapshot.settings.framesPerCost}f</span>
-            <span className={`status status--${snapshot.status}`}>
-              {snapshot.monitor.sourceKind === "none"
-                ? statusLabel
-                : OBSERVED_STATE_LABELS[snapshot.monitor.battleState]}
+            <span
+              className={`status status--${
+                stageWarning ? "paused" : snapshot.status
+              }`}
+            >
+              {stageWarning ??
+                (snapshot.monitor.sourceKind === "none"
+                  ? statusLabel
+                  : OBSERVED_STATE_LABELS[snapshot.monitor.battleState])}
             </span>
             <span className="accuracy">
               {snapshot.monitor.sourceKind === "none"
@@ -536,6 +578,7 @@ export default function App() {
             <>
               <b>{KIND_LABELS[selected.kind]}</b>
               <span>{selected.label || selected.id}</span>
+              <span>{selected.tile || "未填写格子"}</span>
               <span>
                 {`${frameTime(
                   selected.frame,
@@ -562,7 +605,9 @@ export default function App() {
                 >
                   {snapshot.monitor.recordingSegments.map((segment) => (
                     <option key={segment.index} value={segment.index}>
-                      关卡 {segment.index + 1}
+                      {segment.stageRecognition.stage
+                        ? `${segment.stageRecognition.stage.code} ${segment.stageRecognition.stage.name}`
+                        : `关卡 ${segment.index + 1}（未确认）`}
                     </option>
                   ))}
                 </select>
@@ -579,6 +624,23 @@ export default function App() {
                 value={tracePreviewFrame ?? 0}
               />
             </label>
+          )}
+          {snapshot.monitor.stageRecognition.rawText && (
+            <span
+              className="stage-ocr"
+              title={snapshot.monitor.stageRecognition.rawText}
+            >
+              OCR：
+              {snapshot.monitor.stageRecognition.rawText.replaceAll(
+                "\n",
+                " / ",
+              )}
+            </span>
+          )}
+          {snapshot.monitor.stageRecognition.warning && (
+            <em title={snapshot.monitor.stageRecognition.warning}>
+              {snapshot.monitor.stageRecognition.warning}
+            </em>
           )}
           <small>拖动改帧 · 右键编辑 · 双击空白新增</small>
         </div>
@@ -606,6 +668,7 @@ export default function App() {
         <MetadataEditor
           snapshot={snapshot}
           onCancel={() => setMetadataOpen(false)}
+          onSearchStages={searchStages}
           onSave={async (title, stageId) => {
             if (
               await run(() =>
@@ -641,6 +704,20 @@ export default function App() {
           onSelect={async (id) => {
             if (await run(() => commands.selectGameWindow(id))) {
               setWindowPickerOpen(false);
+            }
+          }}
+        />
+      )}
+
+      {stagePickerOpen && (
+        <StagePicker
+          candidates={stageCandidates}
+          searching={stageSearching}
+          onCancel={() => setStagePickerOpen(false)}
+          onSearch={searchStages}
+          onSelect={async (stageId) => {
+            if (await run(() => commands.setManualStage(stageId))) {
+              setStagePickerOpen(false);
             }
           }}
         />
@@ -719,8 +796,7 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
   const [frame, setFrame] = useState(String(event.frame));
   const [kind, setKind] = useState<DraftKind>(event.kind);
   const [operator, setOperator] = useState(event.operator ?? "");
-  const [tileX, setTileX] = useState(String(event.tile?.x ?? 0));
-  const [tileY, setTileY] = useState(String(event.tile?.y ?? 0));
+  const [tile, setTile] = useState(event.tile ?? "");
   const [direction, setDirection] = useState<DraftDirection>(
     event.direction ?? "right",
   );
@@ -736,14 +812,8 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
             id: event.id,
             frame: Math.max(0, Number.parseInt(frame, 10) || 0),
             kind,
-            operator: operator || null,
-            tile:
-              kind === "deploy"
-                ? {
-                    x: Math.max(0, Number.parseInt(tileX, 10) || 0),
-                    y: Math.max(0, Number.parseInt(tileY, 10) || 0),
-                  }
-                : null,
+            operator: kind === "deploy" ? operator || null : null,
+            tile: tile.trim().toUpperCase() || null,
             direction: kind === "deploy" ? direction : null,
             label: label || null,
           });
@@ -772,48 +842,41 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
             value={frame}
           />
         </label>
+        {kind === "deploy" && (
+          <label>
+            干员 ID
+            <input
+              onChange={(event) => setOperator(event.target.value)}
+              placeholder="char_002_amiya"
+              value={operator}
+            />
+          </label>
+        )}
         <label>
-          干员 ID
+          格子
           <input
-            onChange={(event) => setOperator(event.target.value)}
-            placeholder="char_002_amiya"
-            value={operator}
+            maxLength={3}
+            onChange={(event) => setTile(event.target.value.toUpperCase())}
+            pattern="[A-I](?:[1-9]|[12][0-9]|3[0-6])"
+            placeholder="C5"
+            value={tile}
           />
         </label>
         {kind === "deploy" && (
-          <>
-            <label>
-              格子
-              <span className="coordinate-inputs">
-                <input
-                  min="0"
-                  onChange={(event) => setTileX(event.target.value)}
-                  type="number"
-                  value={tileX}
-                />
-                <input
-                  min="0"
-                  onChange={(event) => setTileY(event.target.value)}
-                  type="number"
-                  value={tileY}
-                />
-              </span>
-            </label>
-            <label>
-              朝向
-              <select
-                onChange={(event) =>
-                  setDirection(event.target.value as DraftDirection)
-                }
-                value={direction}
-              >
-                <option value="up">上</option>
-                <option value="right">右</option>
-                <option value="down">下</option>
-                <option value="left">左</option>
-              </select>
-            </label>
-          </>
+          <label>
+            朝向
+            <select
+              onChange={(event) =>
+                setDirection(event.target.value as DraftDirection)
+              }
+              value={direction}
+            >
+              <option value="up">上</option>
+              <option value="right">右</option>
+              <option value="down">下</option>
+              <option value="left">左</option>
+            </select>
+          </label>
         )}
         <label>
           说明
@@ -843,12 +906,19 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
 type MetadataEditorProps = {
   snapshot: RunnerSnapshot;
   onSave: (title: string, stageId: string) => void;
+  onSearchStages: (query: string) => Promise<StageCatalogEntry[]>;
   onCancel: () => void;
 };
 
-function MetadataEditor({ snapshot, onSave, onCancel }: MetadataEditorProps) {
+function MetadataEditor({
+  snapshot,
+  onSave,
+  onSearchStages,
+  onCancel,
+}: MetadataEditorProps) {
   const [title, setTitle] = useState(snapshot.axis.title);
   const [stageId, setStageId] = useState(snapshot.axis.stageId ?? "");
+  const [stageResults, setStageResults] = useState<StageCatalogEntry[]>([]);
   return (
     <div className="modal-backdrop">
       <form
@@ -868,13 +938,42 @@ function MetadataEditor({ snapshot, onSave, onCancel }: MetadataEditorProps) {
           />
         </label>
         <label>
-          stageId
-          <input
-            onChange={(event) => setStageId(event.target.value)}
-            placeholder="main_00-01"
-            value={stageId}
-          />
+          关卡
+          <span className="stage-search-row">
+            <input
+              onChange={(event) => setStageId(event.target.value)}
+              placeholder="代码、名称或 stageId"
+              value={stageId}
+            />
+            <button
+              onClick={async () =>
+                setStageResults(await onSearchStages(stageId))
+              }
+              type="button"
+            >
+              搜索
+            </button>
+          </span>
         </label>
+        {stageResults.length > 0 && (
+          <select
+            aria-label="关卡搜索结果"
+            onChange={(event) => setStageId(event.target.value)}
+            size={Math.min(5, stageResults.length)}
+            value={
+              stageResults.some((stage) => stage.id === stageId) ? stageId : ""
+            }
+          >
+            <option disabled value="">
+              选择匹配关卡
+            </option>
+            {stageResults.map((stage) => (
+              <option key={stage.id} value={stage.id}>
+                {stage.code} · {stage.name} · {stage.id}
+              </option>
+            ))}
+          </select>
+        )}
         <footer>
           <span />
           <button onClick={onCancel} type="button">
@@ -1010,6 +1109,69 @@ function WindowPicker({
           <button onClick={onRefresh} type="button">
             重新扫描
           </button>
+          <span />
+          <button onClick={onCancel} type="button">
+            取消
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+type StagePickerProps = {
+  candidates: StageCatalogEntry[];
+  searching: boolean;
+  onSelect: (id: string) => void;
+  onSearch: (query: string) => void;
+  onCancel: () => void;
+};
+
+function StagePicker({
+  candidates,
+  searching,
+  onSelect,
+  onSearch,
+  onCancel,
+}: StagePickerProps) {
+  const [query, setQuery] = useState("");
+  return (
+    <div className="modal-backdrop">
+      <section className="compact-dialog stage-picker">
+        <h2>手动确认当前关卡</h2>
+        <form
+          className="stage-search-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSearch(query);
+          }}
+        >
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="输入关卡代码、名称或 stageId"
+            value={query}
+          />
+          <button type="submit">{searching ? "搜索中…" : "搜索"}</button>
+        </form>
+        <div className="stage-candidates">
+          {candidates.length === 0 ? (
+            <p>没有匹配的关卡。</p>
+          ) : (
+            candidates.map((stage) => (
+              <button
+                key={stage.id}
+                onClick={() => onSelect(stage.id)}
+                type="button"
+              >
+                <strong>
+                  {stage.code || "无代码"} · {stage.name}
+                </strong>
+                <span>{stage.id}</span>
+              </button>
+            ))
+          )}
+        </div>
+        <footer>
           <span />
           <button onClick={onCancel} type="button">
             取消
