@@ -328,6 +328,31 @@ mod tests {
     }
 
     #[test]
+    fn maps_synthetic_cost_bar_to_configured_phase() {
+        let width = 640_u32;
+        let height = 360_u32;
+        let mut frame = vec![0; (width * height * 4) as usize];
+        for y in 3..30 {
+            for x in 7..30 {
+                let offset = ((y * width + x) * 4) as usize;
+                frame[offset..offset + 3].fill(80);
+            }
+        }
+        for y in 269..=273 {
+            for x in 580..610 {
+                let offset = ((y * width + x) * 4) as usize;
+                frame[offset..offset + 3].fill(255);
+            }
+        }
+
+        let observation =
+            analyze_bgra(&frame, width, height, width * 4, 0, VisionConfig::default()).unwrap();
+
+        assert_eq!(observation.cost_phase, Some(15));
+        assert!(!observation.cost_full);
+    }
+
+    #[test]
     fn classifies_features_measured_from_obs_recording() {
         let fixtures: Vec<FeatureFixture> = serde_json::from_str(include_str!(
             "../../tests/fixtures/monitor/obs-features.json"
