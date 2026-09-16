@@ -4,6 +4,8 @@
     "includes": [
       "**",
       "!src/generated",
+      "!src-tauri/data",
+      "!src-tauri/gen",
       "!src-tauri/target",
       "!.local",
       "!dist",
