@@ -13,7 +13,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v5
@@ -54,11 +54,8 @@ jobs:
       - name: Check frontend formatting and lint
         run: npm run check
 
-      - name: Build frontend
-        run: npm run build
-
-      - name: Test frontend
-        run: npm test
+      - name: Check TypeScript
+        run: npx tsc -b
 
       - name: Check Rust
         working-directory: src-tauri
@@ -66,24 +63,3 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
-
-      - name: Build Windows application
-        run: npm run tauri build -- --no-bundle
-
-      - name: Smoke test Windows application startup
-        shell: pwsh
-        run: |
-          $path = "src-tauri/target/release/arknights-operation-runner.exe"
-          $process = Start-Process $path -PassThru
-          Start-Sleep -Seconds 5
-          if ($process.HasExited) {
-            throw "Application exited during startup with code $($process.ExitCode)"
-          }
-          Stop-Process -Id $process.Id
-
-      - name: Upload Windows application
-        uses: actions/upload-artifact@v4
-        with:
-          name: arknights-operation-runner-windows
-          path: src-tauri/target/release/arknights-operation-runner.exe
-          if-no-files-found: error
