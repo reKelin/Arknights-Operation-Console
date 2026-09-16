@@ -9,7 +9,7 @@ depends_on:
 # 交互 Demo 任务
 
 1. 初始化固定版本的 Tauri 2、React、TypeScript、Vite、Biome 和 Vitest 工程；配置窗口、置顶与托盘生命周期。（REQ-DEMO-002、REQ-DEMO-009）
-2. 完整定义 AxisLink v1 JSON Schema、示例轴和 `DraftAxis` 转换规则。（REQ-DEMO-005、REQ-DEMO-006、REQ-DEMO-011）
+2. 完整定义当时的 AxisLink v1 JSON Schema、示例轴和 `DraftAxis` 转换规则；该定义已由 AxisLink v2 取代。（REQ-DEMO-005、REQ-DEMO-006、REQ-DEMO-011）
 3. 使用 `typify` 和 `tauri-specta` 生成 Rust/TypeScript 协议类型与可调用命令绑定。（REQ-DEMO-010）
 4. 实现 Rust 自动模拟关卡时钟、RunnerState、稳定排序、区间调度和可恢复的模拟暂停。（REQ-DEMO-001、REQ-DEMO-007、REQ-DEMO-012）
 5. 实现 Tauri 命令、快照事件、轴标题/`stageId` 编辑、录轴开关和全局 F1/F2/F3。（REQ-DEMO-004、REQ-DEMO-005、REQ-DEMO-006）

@@ -3,8 +3,13 @@ mod bindings;
 mod monitor;
 mod runner;
 mod settings;
+mod stage;
 
-use std::{path::PathBuf, sync::Mutex, time::Instant};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use axis::{DraftAxis, DraftKind};
 use bindings::{
@@ -15,6 +20,7 @@ use monitor::{GameWindowCandidate, MonitorManager, VisionConfig};
 use runner::RunnerState;
 use settings::AppSettings;
 use specta_typescript::Typescript;
+use stage::{StageCatalogEntry, StageRepository};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Builder;
 
@@ -32,6 +38,7 @@ use tauri_specta::Event;
 
 pub struct SharedRunner(Mutex<RunnerState>);
 pub struct SharedMonitor(Mutex<MonitorManager>);
+pub struct SharedStages(Arc<StageRepository>);
 
 fn locked<'a>(
     state: &'a tauri::State<'a, SharedRunner>,
@@ -128,10 +135,26 @@ fn delete_event(
 #[specta::specta]
 fn set_axis_metadata(
     input: AxisMetadataInput,
-    state: tauri::State<'_, SharedRunner>,
+    runner_state: tauri::State<'_, SharedRunner>,
+    stages: tauri::State<'_, SharedStages>,
 ) -> Result<RunnerSnapshot, CommandError> {
-    let mut runner = locked(&state)?;
-    runner.set_axis_metadata(input)?;
+    let stage_id = input.stage_id.clone();
+    {
+        let mut runner = locked(&runner_state)?;
+        runner.set_axis_metadata(input)?;
+    }
+    if let Some(stage_id) = stage_id.filter(|id| stages.0.catalog().find(id).is_some()) {
+        let map = stages.0.load_map(&stage_id);
+        let mut runner = locked(&runner_state)?;
+        match map {
+            Ok(bounds) => runner.set_stage_map_bounds(stage_id, bounds),
+            Err(message) => {
+                runner.set_runtime_warning(format!("轴关卡已更新，但地图暂不可用：{message}"))
+            }
+        }
+        return Ok(runner.snapshot());
+    }
+    let runner = locked(&runner_state)?;
     Ok(runner.snapshot())
 }
 
@@ -139,13 +162,29 @@ fn set_axis_metadata(
 #[specta::specta]
 fn import_axis(
     path: String,
-    state: tauri::State<'_, SharedRunner>,
+    runner_state: tauri::State<'_, SharedRunner>,
+    stages: tauri::State<'_, SharedStages>,
 ) -> Result<RunnerSnapshot, CommandError> {
     let text = std::fs::read_to_string(PathBuf::from(path))?;
     let value = serde_json::from_str(&text)?;
     let axis = DraftAxis::from_axis_json(value)?;
-    let mut runner = locked(&state)?;
-    runner.replace_axis(axis);
+    let stage_id = axis.stage_id.clone();
+    {
+        let mut runner = locked(&runner_state)?;
+        runner.replace_axis(axis);
+    }
+    if let Some(stage_id) = stage_id.filter(|id| stages.0.catalog().find(id).is_some()) {
+        let map = stages.0.load_map(&stage_id);
+        let mut runner = locked(&runner_state)?;
+        match map {
+            Ok(bounds) => runner.set_stage_map_bounds(stage_id, bounds),
+            Err(message) => {
+                runner.set_runtime_warning(format!("轴已导入，但地图暂不可用：{message}"))
+            }
+        }
+        return Ok(runner.snapshot());
+    }
+    let runner = locked(&runner_state)?;
     Ok(runner.snapshot())
 }
 
@@ -235,6 +274,44 @@ fn list_game_windows() -> Result<Vec<GameWindowCandidate>, CommandError> {
 
 #[tauri::command]
 #[specta::specta]
+fn list_stages(
+    query: String,
+    state: tauri::State<'_, SharedStages>,
+) -> Result<Vec<StageCatalogEntry>, CommandError> {
+    Ok(state.0.catalog().search(&query, 100))
+}
+
+#[tauri::command]
+#[specta::specta]
+fn set_manual_stage(
+    stage_id: String,
+    stages: tauri::State<'_, SharedStages>,
+    runner_state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let stage = stages.0.catalog().find(&stage_id).cloned().ok_or_else(|| {
+        CommandError::field(
+            "stage_not_found",
+            format!("关卡目录中没有 {stage_id}"),
+            "stageId",
+        )
+    })?;
+    {
+        let mut runner = locked(&runner_state)?;
+        runner.set_manual_stage(stage);
+    }
+    let map = stages.0.load_map(&stage_id);
+    let mut runner = locked(&runner_state)?;
+    match map {
+        Ok(bounds) => runner.set_stage_map_bounds(stage_id, bounds),
+        Err(message) => {
+            runner.set_runtime_warning(format!("已选择关卡，但地图暂不可用：{message}"))
+        }
+    }
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
 fn select_game_window(
     id: String,
     monitor_state: tauri::State<'_, SharedMonitor>,
@@ -319,6 +396,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             update_settings,
             request_clear_axis,
             list_game_windows,
+            list_stages,
+            set_manual_stage,
             select_game_window,
             analyze_recording,
             stop_monitor,
@@ -448,6 +527,11 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             let settings_path = app.path().app_config_dir()?.join("settings.json");
+            let stage_cache = app.path().app_cache_dir()?.join("stage-maps");
+            let catalog = Arc::new(
+                stage::StageCatalog::embedded()
+                    .map_err(|message| std::io::Error::other(message))?,
+            );
             let (settings, warning) = AppSettings::load(&settings_path);
             app.manage(SharedRunner(Mutex::new(RunnerState::with_settings(
                 Instant::now(),
@@ -456,6 +540,11 @@ pub fn run() {
             ))));
             app.manage(SharedMonitor(Mutex::new(MonitorManager::new(
                 VisionConfig::from(&settings),
+                Arc::clone(&catalog),
+            ))));
+            app.manage(SharedStages(Arc::new(StageRepository::new(
+                catalog,
+                stage_cache,
             ))));
             builder.mount_events(app);
             setup_tray(app)?;

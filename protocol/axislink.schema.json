@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:axislink:v1",
+  "$id": "urn:axislink:v2",
   "title": "AxisDocument",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "title", "stageId", "timebase", "events"],
   "properties": {
     "schemaVersion": {
-      "const": 1
+      "const": 2
     },
     "title": {
       "type": "string",
@@ -19,7 +19,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]*$"
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_./#-]*$"
     },
     "timebase": {
       "$ref": "#/$defs/Timebase"
@@ -68,21 +68,8 @@
       "maxLength": 120
     },
     "Tile": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["x", "y"],
-      "properties": {
-        "x": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 255
-        },
-        "y": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 255
-        }
-      }
+      "type": "string",
+      "pattern": "^[A-I](?:[1-9]|[12][0-9]|3[0-6])$"
     },
     "Direction": {
       "type": "string",
@@ -105,24 +92,24 @@
     "SkillEvent": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "frame", "kind", "operator"],
+      "required": ["id", "frame", "kind", "tile"],
       "properties": {
         "id": { "$ref": "#/$defs/EventId" },
         "frame": { "$ref": "#/$defs/Frame" },
         "kind": { "const": "skill" },
-        "operator": { "$ref": "#/$defs/OperatorId" },
+        "tile": { "$ref": "#/$defs/Tile" },
         "label": { "$ref": "#/$defs/Label" }
       }
     },
     "RetreatEvent": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "frame", "kind", "operator"],
+      "required": ["id", "frame", "kind", "tile"],
       "properties": {
         "id": { "$ref": "#/$defs/EventId" },
         "frame": { "$ref": "#/$defs/Frame" },
         "kind": { "const": "retreat" },
-        "operator": { "$ref": "#/$defs/OperatorId" },
+        "tile": { "$ref": "#/$defs/Tile" },
         "label": { "$ref": "#/$defs/Label" }
       }
     }

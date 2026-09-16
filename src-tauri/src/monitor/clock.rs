@@ -209,6 +209,7 @@ mod tests {
             cost_phase: None,
             cost_total: 30,
             cost_full: false,
+            stage_recognition: None,
         }
     }
 

@@ -20,6 +20,8 @@ export const commands = {
 	updateSettings: (input: AppSettings) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_settings", { input })),
 	requestClearAxis: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_clear_axis")),
 	listGameWindows: () => typedError<GameWindowCandidate[], CommandError>(__TAURI_INVOKE("list_game_windows")),
+	listStages: (query: string) => typedError<StageCatalogEntry[], CommandError>(__TAURI_INVOKE("list_stages", { query })),
+	setManualStage: (stageId: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_manual_stage", { stageId })),
 	selectGameWindow: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_game_window", { id })),
 	analyzeRecording: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("analyze_recording", { path })),
 	stopMonitor: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("stop_monitor")),
@@ -74,18 +76,13 @@ export type DraftEvent = {
 	order: number,
 	kind: DraftKind,
 	operator: string | null,
-	tile: DraftTile | null,
+	tile: string | null,
 	direction: DraftDirection | null,
 	label: string | null,
 	complete: boolean,
 };
 
 export type DraftKind = "deploy" | "skill" | "retreat";
-
-export type DraftTile = {
-	x: number,
-	y: number,
-};
 
 export type GameWindowCandidate = {
 	id: string,
@@ -110,6 +107,7 @@ export type MonitorSnapshot = {
 	traceDurationFrames: number | null,
 	tracePoints: RecordingTracePoint[],
 	recordingSegments: RecordingSegment[],
+	stageRecognition: StageRecognition,
 };
 
 export type MonitorSourceKind = "none" | "window" | "recording";
@@ -123,6 +121,7 @@ export type RecordingSegment = {
 	sourceStartFrame: number,
 	sourceEndFrame: number,
 	gameDurationFrames: number,
+	stageRecognition: StageRecognition,
 };
 
 export type RecordingTracePoint = {
@@ -145,6 +144,7 @@ export type RunnerSnapshot = {
 	axis: DraftAxis,
 	settings: AppSettings,
 	monitor: MonitorSnapshot,
+	stageSafety: StageSafetySnapshot,
 	frame: number,
 	time: string,
 	speed: number,
@@ -162,12 +162,40 @@ export type RunnerSnapshot = {
 
 export type RunnerSnapshotEvent = RunnerSnapshot;
 
+export type StageCatalogEntry = {
+	id: string,
+	code: string,
+	name: string,
+	levelPath: string,
+};
+
+export type StageIdentitySource = "none" | "ocr" | "manual";
+
+export type StageMatchStatus = "unavailable" | "matched" | "ambiguous" | "partial";
+
+export type StageRecognition = {
+	status: StageMatchStatus,
+	rawText: string,
+	stage: StageCatalogEntry | null,
+	candidates: StageCatalogEntry[],
+	warning: string | null,
+};
+
+export type StageSafetySnapshot = {
+	status: StageSafetyStatus,
+	expectedStageId: string | null,
+	observedStage: StageCatalogEntry | null,
+	source: StageIdentitySource,
+};
+
+export type StageSafetyStatus = "unverified" | "matched" | "mismatched";
+
 export type UpdateEventInput = {
 	id: string,
 	frame: number,
 	kind: DraftKind,
 	operator: string | null,
-	tile: DraftTile | null,
+	tile: string | null,
 	direction: DraftDirection | null,
 	label: string | null,
 };

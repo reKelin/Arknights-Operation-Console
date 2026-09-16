@@ -46,12 +46,7 @@ impl DraftDirection {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DraftTile {
-    pub x: u16,
-    pub y: u16,
-}
+pub type DraftTile = String;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -85,11 +80,16 @@ impl DraftEvent {
     }
 
     pub fn refresh_complete(&mut self) {
-        let operator_complete = self.operator.as_deref().is_some_and(valid_operator_id);
-        self.complete = operator_complete
+        let tile_complete = self.tile.as_deref().is_some_and(valid_tile_code);
+        self.complete = tile_complete
             && match self.kind {
-                DraftKind::Deploy => self.tile.is_some() && self.direction.is_some(),
-                DraftKind::Skill | DraftKind::Retreat => true,
+                DraftKind::Deploy => {
+                    self.operator.as_deref().is_some_and(valid_operator_id)
+                        && self.direction.is_some()
+                }
+                DraftKind::Skill | DraftKind::Retreat => {
+                    self.operator.is_none() && self.direction.is_none()
+                }
             };
     }
 }
@@ -170,7 +170,7 @@ impl DraftAxis {
         }
 
         let value = json!({
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "title": self.title,
             "stageId": stage_id,
             "timebase": { "fps": 30 },
@@ -228,8 +228,8 @@ fn complete_event(id: &str, frame: u32, order: u32, kind: DraftKind, label: &str
         frame,
         order,
         kind,
-        operator: Some("char_002_amiya".to_string()),
-        tile: deploy.then_some(DraftTile { x: 4, y: 2 }),
+        operator: deploy.then(|| "char_002_amiya".to_string()),
+        tile: Some("C5".to_string()),
         direction: deploy.then_some(DraftDirection::Left),
         label: Some(label.to_string()),
         complete: true,
@@ -237,15 +237,15 @@ fn complete_event(id: &str, frame: u32, order: u32, kind: DraftKind, label: &str
 }
 
 fn event_to_value(event: &DraftEvent) -> Result<Value, CommandError> {
-    let operator = event
-        .operator
+    let tile = event
+        .tile
         .as_deref()
-        .filter(|value| valid_operator_id(value))
+        .filter(|value| valid_tile_code(value))
         .ok_or_else(|| {
             CommandError::field(
                 "event_incomplete",
-                format!("操作点 {} 缺少合法干员 ID", event.id),
-                format!("events.{}.operator", event.id),
+                format!("操作点 {} 缺少合法格子短代码", event.id),
+                format!("events.{}.tile", event.id),
             )
         })?;
 
@@ -253,20 +253,24 @@ fn event_to_value(event: &DraftEvent) -> Result<Value, CommandError> {
         "id": event.id,
         "frame": event.frame,
         "kind": event.kind.as_str(),
-        "operator": operator,
+        "tile": tile,
     });
     let object = value.as_object_mut().expect("event object");
     if let Some(label) = event.label.as_deref() {
         object.insert("label".to_string(), Value::String(label.to_string()));
     }
     if matches!(event.kind, DraftKind::Deploy) {
-        let tile = event.tile.as_ref().ok_or_else(|| {
-            CommandError::field(
-                "event_incomplete",
-                format!("部署点 {} 缺少格子", event.id),
-                format!("events.{}.tile", event.id),
-            )
-        })?;
+        let operator = event
+            .operator
+            .as_deref()
+            .filter(|value| valid_operator_id(value))
+            .ok_or_else(|| {
+                CommandError::field(
+                    "event_incomplete",
+                    format!("部署点 {} 缺少合法干员 ID", event.id),
+                    format!("events.{}.operator", event.id),
+                )
+            })?;
         let direction = event.direction.ok_or_else(|| {
             CommandError::field(
                 "event_incomplete",
@@ -274,7 +278,7 @@ fn event_to_value(event: &DraftEvent) -> Result<Value, CommandError> {
                 format!("events.{}.direction", event.id),
             )
         })?;
-        object.insert("tile".to_string(), json!({ "x": tile.x, "y": tile.y }));
+        object.insert("operator".to_string(), Value::String(operator.to_string()));
         object.insert(
             "direction".to_string(),
             Value::String(direction.as_str().to_string()),
@@ -291,13 +295,10 @@ fn event_from_value(value: &Value, order: u32) -> Result<DraftEvent, CommandErro
         "retreat" => DraftKind::Retreat,
         _ => unreachable!("validated event kind"),
     };
-    let tile = object.get("tile").map(|tile| {
-        let tile = tile.as_object().expect("validated tile");
-        DraftTile {
-            x: tile["x"].as_u64().expect("validated tile x") as u16,
-            y: tile["y"].as_u64().expect("validated tile y") as u16,
-        }
-    });
+    let tile = object
+        .get("tile")
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
     let direction =
         object
             .get("direction")
@@ -314,12 +315,10 @@ fn event_from_value(value: &Value, order: u32) -> Result<DraftEvent, CommandErro
         frame: object["frame"].as_u64().expect("validated frame") as u32,
         order,
         kind,
-        operator: Some(
-            object["operator"]
-                .as_str()
-                .expect("validated operator")
-                .to_string(),
-        ),
+        operator: object
+            .get("operator")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
         tile,
         direction,
         label: object
@@ -341,10 +340,10 @@ fn validate_axis_value(value: &Value) -> Result<(), CommandError> {
         &["schemaVersion", "title", "stageId", "timebase", "events"],
         "",
     )?;
-    if object.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
+    if object.get("schemaVersion").and_then(Value::as_u64) != Some(2) {
         return Err(CommandError::field(
             "unsupported_version",
-            "只支持 AxisLink schemaVersion 1",
+            "只支持 AxisLink schemaVersion 2；v1 定义无效且不会迁移",
             "schemaVersion",
         ));
     }
@@ -427,15 +426,15 @@ fn validate_event(
             field("frame"),
         ));
     }
-    let operator = object
-        .get("operator")
+    let tile = object
+        .get("tile")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if !valid_operator_id(operator) {
+    if !valid_tile_code(tile) {
         return Err(CommandError::field(
-            "invalid_operator",
-            "operator 必须使用 char_ 开头的角色键",
-            field("operator"),
+            "invalid_tile",
+            "tile 必须是 A1 到 I36 的格子短代码",
+            field("tile"),
         ));
     }
     if object
@@ -464,22 +463,16 @@ fn validate_event(
                 ],
                 &format!("events.{index}"),
             )?;
-            let tile = object
-                .get("tile")
-                .and_then(Value::as_object)
-                .ok_or_else(|| {
-                    CommandError::field("invalid_tile", "部署操作必须包含 tile", field("tile"))
-                })?;
-            reject_unknown_fields(tile, &["x", "y"], &field("tile"))?;
-            for axis in ["x", "y"] {
-                let coordinate = tile.get(axis).and_then(Value::as_u64);
-                if coordinate.is_none() || coordinate > Some(255) {
-                    return Err(CommandError::field(
-                        "invalid_tile",
-                        "格子坐标必须是 0–255 的整数",
-                        format!("{}.{}", field("tile"), axis),
-                    ));
-                }
+            let operator = object
+                .get("operator")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !valid_operator_id(operator) {
+                return Err(CommandError::field(
+                    "invalid_operator",
+                    "operator 必须使用 char_ 开头的角色键",
+                    field("operator"),
+                ));
             }
             if !matches!(
                 object.get("direction").and_then(Value::as_str),
@@ -495,7 +488,7 @@ fn validate_event(
         Some("skill" | "retreat") => {
             reject_unknown_fields(
                 object,
-                &["id", "frame", "kind", "operator", "label"],
+                &["id", "frame", "kind", "tile", "label"],
                 &format!("events.{index}"),
             )?;
         }
@@ -552,6 +545,16 @@ fn valid_operator_id(value: &str) -> bool {
         })
 }
 
+pub(crate) fn valid_tile_code(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if !(2..=3).contains(&bytes.len()) || !(b'A'..=b'I').contains(&bytes[0]) {
+        return false;
+    }
+    value[1..]
+        .parse::<u8>()
+        .is_ok_and(|column| (1..=36).contains(&column))
+}
+
 fn valid_stage_id(value: &str) -> bool {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
@@ -560,7 +563,7 @@ fn valid_stage_id(value: &str) -> bool {
     value.len() <= 128
         && first.is_ascii_alphanumeric()
         && chars.all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '/' | '-')
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '/' | '#' | '-')
         })
 }
 
@@ -575,7 +578,7 @@ mod tests {
         let axis = DraftAxis::from_axis_json(value).unwrap();
         let exported = axis.to_axis_json().unwrap();
 
-        assert_eq!(exported["schemaVersion"], 1);
+        assert_eq!(exported["schemaVersion"], 2);
         assert_eq!(exported["events"].as_array().unwrap().len(), 3);
     }
 
@@ -604,5 +607,26 @@ mod tests {
         let error = DraftAxis::from_axis_json(value).unwrap_err();
 
         assert_eq!(error.code, "duplicate_event_id");
+    }
+
+    #[test]
+    fn version_one_is_rejected_without_migration() {
+        let mut value: Value =
+            serde_json::from_str(include_str!("../../examples/demo.axis.json")).unwrap();
+        value["schemaVersion"] = json!(1);
+
+        let error = DraftAxis::from_axis_json(value).unwrap_err();
+
+        assert_eq!(error.code, "unsupported_version");
+    }
+
+    #[test]
+    fn tile_short_code_has_fixed_bounds() {
+        assert!(valid_tile_code("A1"));
+        assert!(valid_tile_code("I36"));
+        assert!(!valid_tile_code("A0"));
+        assert!(!valid_tile_code("J1"));
+        assert!(!valid_tile_code("I37"));
+        assert!(!valid_tile_code("a1"));
     }
 }

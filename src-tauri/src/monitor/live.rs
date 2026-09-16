@@ -1,6 +1,10 @@
 use std::{
-    sync::{Arc, Mutex, RwLock},
-    time::Instant,
+    sync::{
+        Arc, Mutex, RwLock,
+        mpsc::{SyncSender, sync_channel},
+    },
+    thread,
+    time::{Duration, Instant},
 };
 
 use windows_capture::{
@@ -14,10 +18,16 @@ use windows_capture::{
     window::Window,
 };
 
-use super::{GameWindowCandidate, MonitorEvent, VisionConfig, analyze_bgra};
+use crate::stage::{StageCatalog, StageMatchStatus, StageRecognition};
+
+use super::{
+    GameWindowCandidate, MonitorEvent, ObservedBattleState, VisionConfig, analyze_bgra,
+    ocr::{OcrImage, StageOcrRecognizer, crop_title},
+};
 
 struct CaptureFlags {
     config: Arc<RwLock<VisionConfig>>,
+    catalog: Arc<StageCatalog>,
     latest: Arc<Mutex<Option<MonitorEvent>>>,
 }
 
@@ -25,6 +35,10 @@ struct LiveFrameHandler {
     config: Arc<RwLock<VisionConfig>>,
     latest: Arc<Mutex<Option<MonitorEvent>>>,
     started: Instant,
+    ocr_sender: SyncSender<OcrImage>,
+    ocr_result: Arc<Mutex<Option<StageRecognition>>>,
+    last_ocr_at: Option<Instant>,
+    outside_frames: u8,
 }
 
 impl GraphicsCaptureApiHandler for LiveFrameHandler {
@@ -32,10 +46,44 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
     type Error = String;
 
     fn new(context: Context<Self::Flags>) -> Result<Self, Self::Error> {
+        let (ocr_sender, ocr_receiver) = sync_channel(1);
+        let ocr_result: Arc<Mutex<Option<StageRecognition>>> = Arc::new(Mutex::new(None));
+        let worker_result = Arc::clone(&ocr_result);
+        let catalog = context.flags.catalog;
+        thread::Builder::new()
+            .name("stage-ocr".to_string())
+            .spawn(move || match StageOcrRecognizer::new(catalog) {
+                Ok(recognizer) => {
+                    while let Ok(image) = ocr_receiver.recv() {
+                        let recognition = recognizer.recognize(image);
+                        if let Ok(mut result) = worker_result.lock() {
+                            if result.as_ref().is_none_or(|current| {
+                                current.status != StageMatchStatus::Matched
+                                    || recognition.status == StageMatchStatus::Matched
+                            }) {
+                                *result = Some(recognition);
+                            }
+                        }
+                    }
+                }
+                Err(warning) => {
+                    if let Ok(mut result) = worker_result.lock() {
+                        *result = Some(StageRecognition {
+                            warning: Some(warning),
+                            ..StageRecognition::default()
+                        });
+                    }
+                }
+            })
+            .map_err(|error| format!("启动关卡 OCR 线程失败：{error}"))?;
         Ok(Self {
             config: context.flags.config,
             latest: context.flags.latest,
             started: Instant::now(),
+            ocr_sender,
+            ocr_result,
+            last_ocr_at: None,
+            outside_frames: 0,
         })
     }
 
@@ -67,7 +115,38 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
             timestamp,
             config,
         ) {
-            Ok(observation) => MonitorEvent::Observation(observation),
+            Ok(mut observation) => {
+                if observation.battle_state == ObservedBattleState::BattleBegin {
+                    self.outside_frames = 0;
+                    let now = Instant::now();
+                    if self.last_ocr_at.is_none_or(|last| {
+                        now.saturating_duration_since(last) >= Duration::from_millis(500)
+                    }) {
+                        self.last_ocr_at = Some(now);
+                        if let Ok(image) =
+                            crop_title(buffer.as_raw_buffer(), width, height, row_pitch)
+                        {
+                            let _ = self.ocr_sender.try_send(image);
+                        }
+                    }
+                } else if observation.battle_state == ObservedBattleState::NotInBattle {
+                    self.outside_frames = self.outside_frames.saturating_add(1);
+                    if self.outside_frames >= 30 {
+                        if let Ok(mut result) = self.ocr_result.lock() {
+                            *result = Some(StageRecognition::default());
+                        }
+                        self.last_ocr_at = None;
+                    }
+                } else {
+                    self.outside_frames = 0;
+                }
+                observation.stage_recognition = self
+                    .ocr_result
+                    .lock()
+                    .ok()
+                    .and_then(|result| result.clone());
+                MonitorEvent::Observation(observation)
+            }
             Err(message) => MonitorEvent::Error(message),
         };
         if let Ok(mut latest) = self.latest.lock() {
@@ -92,6 +171,7 @@ impl LiveSession {
     pub fn start(
         id: &str,
         config: Arc<RwLock<VisionConfig>>,
+        catalog: Arc<StageCatalog>,
         latest: Arc<Mutex<Option<MonitorEvent>>>,
     ) -> Result<(Self, GameWindowCandidate), String> {
         let (window, candidate) = find_window(id)?;
@@ -103,7 +183,11 @@ impl LiveSession {
             MinimumUpdateIntervalSettings::Default,
             DirtyRegionSettings::Default,
             ColorFormat::Bgra8,
-            CaptureFlags { config, latest },
+            CaptureFlags {
+                config,
+                catalog,
+                latest,
+            },
         );
         let control = LiveFrameHandler::start_free_threaded(settings)
             .map_err(|error| format!("启动 WGC 捕获失败：{error}"))?;

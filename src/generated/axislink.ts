@@ -8,11 +8,12 @@
 export type EventId = string;
 export type Frame = number;
 export type OperatorId = string;
+export type Tile = string;
 export type Direction = "up" | "right" | "down" | "left";
 export type Label = string;
 
 export interface AxisDocument {
-  schemaVersion: 1;
+  schemaVersion: 2;
   title: string;
   stageId: string;
   timebase: Timebase;
@@ -30,21 +31,17 @@ export interface DeployEvent {
   direction: Direction;
   label?: Label;
 }
-export interface Tile {
-  x: number;
-  y: number;
-}
 export interface SkillEvent {
   id: EventId;
   frame: Frame;
   kind: "skill";
-  operator: OperatorId;
+  tile: Tile;
   label?: Label;
 }
 export interface RetreatEvent {
   id: EventId;
   frame: Frame;
   kind: "retreat";
-  operator: OperatorId;
+  tile: Tile;
   label?: Label;
 }

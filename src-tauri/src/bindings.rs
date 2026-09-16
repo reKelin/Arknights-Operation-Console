@@ -7,6 +7,7 @@ use crate::{
     axis::{DraftAxis, DraftDirection, DraftEvent, DraftKind, DraftTile},
     monitor::MonitorSnapshot,
     settings::AppSettings,
+    stage::StageSafetySnapshot,
 };
 
 #[derive(Clone, Debug, Error, Serialize, Type)]
@@ -119,6 +120,7 @@ pub struct RunnerSnapshot {
     pub axis: DraftAxis,
     pub settings: AppSettings,
     pub monitor: MonitorSnapshot,
+    pub stage_safety: StageSafetySnapshot,
     pub frame: u32,
     pub time: String,
     pub speed: u8,

@@ -1,7 +1,7 @@
 {
   "name": "arknights-operation-runner",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "engines": {
     "node": "22.16.0"
@@ -15,6 +15,7 @@
     "bindings": "npm run bindings:axis && npm run bindings:tauri",
     "bindings:axis": "json2ts -i protocol/axislink.schema.json -o src/generated/axislink.ts",
     "bindings:tauri": "node scripts/export-bindings.mjs",
+    "stages:sync": "node scripts/sync-stage-catalog.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
