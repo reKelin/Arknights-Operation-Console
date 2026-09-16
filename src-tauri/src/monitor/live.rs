@@ -223,9 +223,9 @@ impl LiveSession {
         let (window, candidate) = find_window(id)?;
         let settings = Settings::new(
             window,
-            CursorCaptureSettings::WithoutCursor,
-            DrawBorderSettings::WithoutBorder,
-            SecondaryWindowSettings::Exclude,
+            CursorCaptureSettings::Default,
+            DrawBorderSettings::Default,
+            SecondaryWindowSettings::Default,
             MinimumUpdateIntervalSettings::Default,
             DirtyRegionSettings::Default,
             ColorFormat::Bgra8,
