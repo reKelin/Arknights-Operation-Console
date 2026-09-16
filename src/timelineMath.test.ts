@@ -6,6 +6,7 @@ import {
   stackPositions,
   TIMELINE_PADDING,
   timelineWidth,
+  zoomedScrollLeft,
 } from "./timelineMath";
 
 describe("timelineMath", () => {
@@ -36,5 +37,15 @@ describe("timelineMath", () => {
     expect(positions.get("a")).toEqual({ index: 0, count: 2 });
     expect(positions.get("b")).toEqual({ index: 1, count: 2 });
     expect(positions.get("c")).toEqual({ index: 0, count: 1 });
+  });
+
+  it("keeps the pointed frame under the cursor while zooming", () => {
+    const anchorFrame = 900;
+    const pointerOffset = 240;
+    const scrollLeft = zoomedScrollLeft(anchorFrame, pointerOffset, 2);
+
+    expect(pointerToFrame(pointerOffset, 0, scrollLeft, 2, 3_600)).toBe(
+      anchorFrame,
+    );
   });
 });

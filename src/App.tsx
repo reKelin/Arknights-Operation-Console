@@ -1,3 +1,4 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import appIcon from "../assets/app-icon-small.png";
@@ -35,6 +36,7 @@ const STRATEGY_LABELS: Record<RunStrategy, string> = {
   notify: "提前提示",
   pause: "到点暂停请求",
   dryRun: "执行预演",
+  proxy: "代理执行",
 };
 
 const OBSERVED_STATE_LABELS: Record<ObservedBattleState, string> = {
@@ -326,12 +328,27 @@ export default function App() {
   const traceDurationFrames =
     recordingSegment?.gameDurationFrames ??
     snapshot.monitor.traceDurationFrames;
+  const lastProxyRecord = snapshot.proxy.records.at(-1) ?? null;
 
   return (
     <main className="app-shell">
-      <header className="titlebar" data-tauri-drag-region>
+      <header
+        className="titlebar"
+        onPointerDown={(event) => {
+          if (
+            event.button === 0 &&
+            !(event.target as HTMLElement).closest(
+              "button, nav, input, select, a",
+            )
+          ) {
+            getCurrentWindow()
+              .startDragging()
+              .catch((reason) => setError(messageOf(reason)));
+          }
+        }}
+      >
         <img alt="" className="brand-mark" src={appIcon} />
-        <strong data-tauri-drag-region>Operation Runner</strong>
+        <strong>Operation Runner</strong>
         <nav>
           <MenuButton
             active={activeMenu === "file"}
@@ -423,7 +440,7 @@ export default function App() {
             <MenuItem label="关于" onClick={() => setAboutOpen(true)} />
           </MenuButton>
         </nav>
-        <span className="connection-state" data-tauri-drag-region>
+        <span className="connection-state">
           {snapshot.monitor.sourceName
             ? `${snapshot.monitor.sourceName} · ${
                 snapshot.monitor.recordingProgress !== null &&
@@ -497,6 +514,29 @@ export default function App() {
             <span />
             {snapshot.recording ? "停止录轴" : "开始录轴"}
           </button>
+          <button
+            className={
+              snapshot.proxy.enabled ? "proxy-button active" : "proxy-button"
+            }
+            onClick={() => run(() => commands.requestProxyExecution())}
+            type="button"
+          >
+            {snapshot.proxy.status === "confirming"
+              ? "再次确认代理执行"
+              : snapshot.proxy.enabled
+                ? "关闭代理执行"
+                : "代理执行"}
+          </button>
+          {(snapshot.proxy.enabled ||
+            snapshot.proxy.status === "confirming") && (
+            <button
+              className="danger-button"
+              onClick={() => run(() => commands.emergencyStop())}
+              type="button"
+            >
+              急停 <kbd>F12</kbd>
+            </button>
+          )}
         </div>
       </section>
 
@@ -569,6 +609,7 @@ export default function App() {
           onEdit={setEditing}
           onMove={(id, frame) => run(() => commands.moveEvent(id, frame))}
           onSelect={setSelectedId}
+          onZoom={setZoom}
           selectedId={selectedId}
           zoom={zoom}
         />
@@ -641,6 +682,17 @@ export default function App() {
             <em title={snapshot.monitor.stageRecognition.warning}>
               {snapshot.monitor.stageRecognition.warning}
             </em>
+          )}
+          {snapshot.proxy.message && (
+            <em title={snapshot.proxy.message}>{snapshot.proxy.message}</em>
+          )}
+          {lastProxyRecord && (
+            <span
+              title={`${lastProxyRecord.eventId} · ${lastProxyRecord.message}`}
+            >
+              最近代理：F{lastProxyRecord.frame}{" "}
+              {lastProxyRecord.success ? "完成" : "失败"}
+            </span>
           )}
           <small>拖动改帧 · 右键编辑 · 双击空白新增</small>
         </div>

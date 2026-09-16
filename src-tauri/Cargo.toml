@@ -1,6 +1,6 @@
 [package]
 name = "arknights-operation-runner"
-version = "0.3.0"
+version = "0.4.0"
 description = "明日方舟实机计时与作战轴工具"
 authors = ["Kelin"]
 edition = "2024"
@@ -20,6 +20,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 regress = "=0.12.0"
 reqwest = { version = "=0.13.5", default-features = false, features = ["blocking", "rustls"] }
+image = { version = "=0.25.9", default-features = false, features = ["png"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 specta-typescript = "=0.0.12"
 tauri = { version = "=2.11.5", default-features = false, features = ["wry"] }
@@ -36,6 +37,10 @@ windows = { version = "=0.62.2", features = [
     "Graphics_Imaging",
     "Media_Ocr",
     "Storage_Streams",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Input_Pointer",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 windows-capture = "=2.0.1"
 

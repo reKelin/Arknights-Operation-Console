@@ -5,6 +5,7 @@ use thiserror::Error;
 
 use crate::{
     axis::{DraftAxis, DraftDirection, DraftEvent, DraftKind, DraftTile},
+    executor::ProxySnapshot,
     monitor::MonitorSnapshot,
     settings::AppSettings,
     stage::StageSafetySnapshot,
@@ -68,6 +69,7 @@ pub enum RunStrategy {
     Notify,
     Pause,
     DryRun,
+    Proxy,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
@@ -127,6 +129,7 @@ pub struct RunnerSnapshot {
     pub status: BattleStatus,
     pub recording: bool,
     pub strategy: RunStrategy,
+    pub proxy: ProxySnapshot,
     pub next_event: Option<DraftEvent>,
     pub countdown_frames: Option<i32>,
     pub error_frames: u16,

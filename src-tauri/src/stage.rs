@@ -262,10 +262,10 @@ impl StageRepository {
             .cache_root
             .join(self.catalog.source_revision())
             .join(&stage.level_path);
-        if let Ok(bytes) = fs::read(&cache_path) {
-            if let Ok(bounds) = parse_map(&bytes) {
-                return Ok(bounds);
-            }
+        if let Ok(bytes) = fs::read(&cache_path)
+            && let Ok(bounds) = parse_map(&bytes)
+        {
+            return Ok(bounds);
         }
         let bytes = download_map(&self.catalog.map_url(stage)?)?;
         let bounds = parse_map(&bytes)?;

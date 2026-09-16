@@ -9,6 +9,7 @@ use crate::{
         AxisMetadataInput, BattleStatus, CommandError, NoticeKind, RunNotice, RunStrategy,
         RunnerSnapshot, UpdateEventInput,
     },
+    executor::{ProxyExecutionRecord, ProxySnapshot, ProxyStatus},
     monitor::{
         ClockTransition, MonitorEvent, MonitorSnapshot, MonitorSourceKind, ObservationClock,
         ObservedBattleState,
@@ -22,6 +23,7 @@ use crate::{
 
 const NOTIFY_LEAD_FRAMES: u32 = 90;
 const CLEAR_CONFIRM_DURATION: Duration = Duration::from_secs(3);
+const PROXY_CONFIRM_DURATION: Duration = Duration::from_secs(5);
 const OBSERVATION_TIMEOUT: Duration = Duration::from_millis(250);
 
 pub struct RunnerState {
@@ -46,6 +48,9 @@ pub struct RunnerState {
     error_frames: u16,
     manual_stage: Option<StageCatalogEntry>,
     stage_bounds: Option<(String, StageMapBounds)>,
+    proxy: ProxySnapshot,
+    proxy_confirm_deadline: Option<Instant>,
+    pending_execution: Vec<DraftEvent>,
 }
 
 impl RunnerState {
@@ -81,6 +86,9 @@ impl RunnerState {
             error_frames: 0,
             manual_stage: None,
             stage_bounds: None,
+            proxy: ProxySnapshot::default(),
+            proxy_confirm_deadline: None,
+            pending_execution: Vec::new(),
         }
     }
 
@@ -90,6 +98,16 @@ impl RunnerState {
             .is_some_and(|deadline| now > deadline)
         {
             self.clear_pending_deadline = None;
+        }
+        if self
+            .proxy_confirm_deadline
+            .is_some_and(|deadline| now > deadline)
+        {
+            self.proxy_confirm_deadline = None;
+            if !self.proxy.enabled {
+                self.proxy.status = ProxyStatus::Disabled;
+                self.proxy.message = Some("代理执行确认已超时".to_string());
+            }
         }
         if self.monitor.source_kind != MonitorSourceKind::None
             && self
@@ -106,6 +124,7 @@ impl RunnerState {
             self.monitor.battle_state = ObservedBattleState::Unknown;
             self.last_observation_at = None;
             self.last_message = Some("监控观测已过期，计时已冻结".to_string());
+            self.disable_proxy("监控观测已过期，代理执行已关闭");
         }
     }
 
@@ -130,6 +149,7 @@ impl RunnerState {
             status: self.status,
             recording: self.recording,
             strategy: self.strategy,
+            proxy: self.proxy.clone(),
             next_event,
             countdown_frames,
             error_frames: self.error_frames,
@@ -230,11 +250,10 @@ impl RunnerState {
             input.tile.as_deref(),
             self.axis.stage_id.as_deref(),
             self.stage_bounds.as_ref(),
-        ) {
-            if stage_id == bounds_stage {
-                validate_tile_in_map(tile, *bounds)
-                    .map_err(|message| CommandError::field("invalid_tile", message, "tile"))?;
-            }
+        ) && stage_id == bounds_stage
+        {
+            validate_tile_in_map(tile, *bounds)
+                .map_err(|message| CommandError::field("invalid_tile", message, "tile"))?;
         }
         let event_id = input.id.clone();
         {
@@ -339,6 +358,99 @@ impl RunnerState {
         self.last_message = Some("运行策略已更新".to_string());
     }
 
+    pub fn request_proxy_execution(&mut self, now: Instant) -> Result<bool, CommandError> {
+        if self.proxy.enabled {
+            self.disable_proxy("代理执行已关闭");
+            return Ok(false);
+        }
+        if self
+            .proxy_confirm_deadline
+            .is_some_and(|deadline| now <= deadline)
+        {
+            if self.monitor.source_kind != MonitorSourceKind::Window
+                || self.monitor.window_id.is_none()
+                || !self.monitor.trusted
+                || self.stage_safety().status != StageSafetyStatus::Matched
+                || !matches!(self.status, BattleStatus::Running | BattleStatus::Paused)
+            {
+                return Err(CommandError::new(
+                    "proxy_not_ready",
+                    "代理执行要求前台可信游戏窗口、运行中关卡和匹配的轴关卡",
+                ));
+            }
+            if self.axis.events.iter().any(|event| !event.complete) {
+                return Err(CommandError::new(
+                    "proxy_axis_incomplete",
+                    "代理执行前必须补全全部操作点",
+                ));
+            }
+            self.proxy.status = ProxyStatus::Confirming;
+            self.proxy.message = Some("正在准备代理执行资源".to_string());
+            self.proxy_confirm_deadline = None;
+            self.strategy = RunStrategy::Proxy;
+            return Ok(true);
+        }
+        self.proxy.status = ProxyStatus::Confirming;
+        self.proxy.message =
+            Some("再次确认将发送 Windows 合成触摸；自动化可能存在账号或反作弊风险".to_string());
+        self.proxy_confirm_deadline = Some(now + PROXY_CONFIRM_DURATION);
+        Ok(false)
+    }
+
+    pub fn complete_proxy_enable(&mut self) -> Result<(), CommandError> {
+        if self.monitor.source_kind != MonitorSourceKind::Window
+            || !self.monitor.trusted
+            || self.stage_safety().status != StageSafetyStatus::Matched
+            || !matches!(self.status, BattleStatus::Running | BattleStatus::Paused)
+        {
+            self.disable_proxy("准备期间游戏状态已变化，代理执行未启用");
+            return Err(CommandError::new(
+                "proxy_not_ready",
+                "准备期间游戏状态已变化，代理执行未启用",
+            ));
+        }
+        self.proxy.enabled = true;
+        self.proxy.status = ProxyStatus::Ready;
+        self.proxy.message = Some("代理执行已启用；F12 可随时急停".to_string());
+        Ok(())
+    }
+
+    pub fn emergency_stop(&mut self) {
+        self.disable_proxy("F12 急停：代理执行已关闭");
+    }
+
+    pub fn take_pending_execution(&mut self) -> Vec<DraftEvent> {
+        std::mem::take(&mut self.pending_execution)
+    }
+
+    pub fn finish_proxy_execution(
+        &mut self,
+        records: Vec<ProxyExecutionRecord>,
+        error: Option<String>,
+    ) {
+        self.proxy.records.extend(records);
+        if self.proxy.records.len() > 50 {
+            self.proxy.records.drain(..self.proxy.records.len() - 50);
+        }
+        if let Some(message) = error {
+            self.disable_proxy(&message);
+            self.proxy.status = ProxyStatus::Error;
+            self.proxy.message = Some(message.clone());
+            self.last_message = Some(message);
+        } else {
+            self.proxy.status = ProxyStatus::Ready;
+            self.proxy.message = Some("代理执行批次完成".to_string());
+        }
+    }
+
+    fn disable_proxy(&mut self, message: &str) {
+        self.proxy.enabled = false;
+        self.proxy.status = ProxyStatus::Disabled;
+        self.proxy.message = Some(message.to_string());
+        self.proxy_confirm_deadline = None;
+        self.pending_execution.clear();
+    }
+
     pub fn set_always_on_top(&mut self, enabled: bool) {
         self.always_on_top = enabled;
     }
@@ -375,6 +487,7 @@ impl RunnerState {
         self.manual_stage = None;
         self.triggered.clear();
         self.notices.clear();
+        self.disable_proxy("监控源变化，代理执行已关闭");
         self.last_message = Some(message.to_string());
     }
 
@@ -426,9 +539,11 @@ impl RunnerState {
                         self.triggered.clear();
                         self.notices.clear();
                         self.manual_stage = None;
+                        self.disable_proxy("已离开关卡，代理执行已关闭");
                         self.last_message = Some("已离开关卡，计时已归零".to_string());
                     }
                     ClockTransition::Frozen => {
+                        self.disable_proxy("游戏状态不可信，代理执行已关闭");
                         self.last_message = Some("游戏状态不可信，计时已冻结".to_string());
                     }
                     ClockTransition::Paused => {
@@ -437,6 +552,7 @@ impl RunnerState {
                     ClockTransition::None | ClockTransition::Advanced => {}
                 }
                 if self.stage_safety().status == StageSafetyStatus::Mismatched {
+                    self.disable_proxy("观测关卡与当前轴不一致，代理执行已关闭");
                     self.last_message =
                         Some("观测关卡与当前轴不一致，调度和录轴已停止".to_string());
                 }
@@ -450,6 +566,7 @@ impl RunnerState {
                 self.error_frames = self.error_frames.max(1);
                 self.last_observation_at = None;
                 self.monitor.trusted = false;
+                self.disable_proxy("监控错误，代理执行已关闭");
                 self.last_message = Some(message);
             }
             MonitorEvent::RecordingProgress { .. } | MonitorEvent::RecordingReady { .. } => {}
@@ -496,6 +613,14 @@ impl RunnerState {
             }
             return;
         }
+        if self.strategy == RunStrategy::Proxy && !self.proxy.enabled {
+            for event in &self.axis.events {
+                if event.frame <= current_frame {
+                    self.triggered.insert(event.id.clone());
+                }
+            }
+            return;
+        }
         let due: Vec<DraftEvent> = self
             .axis
             .events
@@ -506,6 +631,22 @@ impl RunnerState {
             })
             .cloned()
             .collect();
+
+        if self.strategy == RunStrategy::Proxy {
+            let mut exact = Vec::new();
+            for event in due {
+                self.triggered.insert(event.id.clone());
+                if event.frame == current_frame {
+                    exact.push(event);
+                }
+            }
+            if !exact.is_empty() {
+                self.proxy.status = ProxyStatus::Executing;
+                self.proxy.message = Some(format!("正在代理执行 F{current_frame}"));
+                self.pending_execution.extend(exact);
+            }
+            return;
+        }
 
         if self.strategy == RunStrategy::Pause {
             let Some(first) = due.first() else {
@@ -539,6 +680,7 @@ impl RunnerState {
                     Some(event.id.clone()),
                     format!("预演：执行 {}", event_name(&event)),
                 ),
+                RunStrategy::Proxy => unreachable!("proxy handled above"),
                 RunStrategy::Pause => unreachable!("pause handled above"),
             }
         }
@@ -597,7 +739,7 @@ impl RunnerState {
 fn trigger_frame(event: &DraftEvent, strategy: RunStrategy) -> u32 {
     match strategy {
         RunStrategy::Notify => event.frame.saturating_sub(NOTIFY_LEAD_FRAMES),
-        RunStrategy::Pause | RunStrategy::DryRun => event.frame,
+        RunStrategy::Pause | RunStrategy::DryRun | RunStrategy::Proxy => event.frame,
     }
 }
 
@@ -854,5 +996,67 @@ mod tests {
 
         runner.apply_monitor_event(observation_with_stage(21_000_000_000, "main_00-01"), start);
         assert!(runner.notices.is_empty());
+    }
+
+    #[test]
+    fn proxy_batches_same_frame_events_in_stable_order() {
+        let start = Instant::now();
+        let mut runner = RunnerState::new(start);
+        confirm_axis_stage(&mut runner);
+        runner.monitor.source_kind = MonitorSourceKind::Window;
+        runner.monitor.window_id = Some("1".to_string());
+        runner.monitor.trusted = true;
+        runner.status = BattleStatus::Running;
+        runner.proxy.enabled = true;
+        runner.strategy = RunStrategy::Proxy;
+        runner.axis.events = vec![
+            DraftEvent {
+                id: "second".to_string(),
+                frame: 30,
+                order: 2,
+                kind: DraftKind::Skill,
+                operator: None,
+                tile: Some("A1".to_string()),
+                direction: None,
+                label: None,
+                complete: true,
+            },
+            DraftEvent {
+                id: "first".to_string(),
+                frame: 30,
+                order: 1,
+                kind: DraftKind::Retreat,
+                operator: None,
+                tile: Some("A1".to_string()),
+                direction: None,
+                label: None,
+                complete: true,
+            },
+        ];
+        runner.axis.sort_events();
+
+        runner.dispatch_events(30);
+        let requests = runner.take_pending_execution();
+
+        assert_eq!(requests[0].id, "first");
+        assert_eq!(requests[1].id, "second");
+    }
+
+    #[test]
+    fn emergency_stop_clears_pending_proxy_batch() {
+        let start = Instant::now();
+        let mut runner = RunnerState::new(start);
+        runner.proxy.enabled = true;
+        runner.pending_execution.push(DraftEvent::new(
+            "pending".to_string(),
+            0,
+            0,
+            DraftKind::Skill,
+        ));
+
+        runner.emergency_stop();
+
+        assert!(!runner.proxy.enabled);
+        assert!(runner.pending_execution.is_empty());
     }
 }

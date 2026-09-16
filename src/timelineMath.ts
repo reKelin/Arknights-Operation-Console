@@ -20,6 +20,14 @@ export function frameToX(frame: number, zoom: number): number {
   return TIMELINE_PADDING + Math.max(0, frame) * pixelsPerFrame(zoom);
 }
 
+export function zoomedScrollLeft(
+  anchorFrame: number,
+  pointerOffset: number,
+  zoom: number,
+): number {
+  return Math.max(0, frameToX(anchorFrame, zoom) - pointerOffset);
+}
+
 export function pointerToFrame(
   clientX: number,
   viewportLeft: number,

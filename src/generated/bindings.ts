@@ -16,6 +16,8 @@ export const commands = {
 	importAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("import_axis", { path })),
 	exportAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("export_axis", { path })),
 	setStrategy: (strategy: RunStrategy) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_strategy", { strategy })),
+	requestProxyExecution: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_proxy_execution")),
+	emergencyStop: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("emergency_stop")),
 	setAlwaysOnTop: (enabled: boolean) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_always_on_top", { enabled })),
 	updateSettings: (input: AppSettings) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_settings", { input })),
 	requestClearAxis: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_clear_axis")),
@@ -97,6 +99,7 @@ export type MonitorSnapshot = {
 	sourceKind: MonitorSourceKind,
 	connectionState: MonitorConnectionState,
 	sourceName: string | null,
+	windowId: string | null,
 	battleState: ObservedBattleState,
 	confidence: number,
 	costPhase: number | null,
@@ -115,6 +118,24 @@ export type MonitorSourceKind = "none" | "window" | "recording";
 export type NoticeKind = "info" | "notify" | "dryRun" | "paused";
 
 export type ObservedBattleState = "unknown" | "notInBattle" | "battleBegin" | "oneXRunning" | "twoXRunning" | "pointTwoXRunning" | "paused" | "deployingOperator" | "adjustingOperatorFacing";
+
+export type ProxyExecutionRecord = {
+	sequence: number,
+	frame: number,
+	eventId: string,
+	kind: DraftKind,
+	success: boolean,
+	message: string,
+};
+
+export type ProxySnapshot = {
+	enabled: boolean,
+	status: ProxyStatus,
+	message: string | null,
+	records: ProxyExecutionRecord[],
+};
+
+export type ProxyStatus = "disabled" | "confirming" | "ready" | "executing" | "error";
 
 export type RecordingSegment = {
 	index: number,
@@ -138,7 +159,7 @@ export type RunNotice = {
 	eventId: string | null,
 };
 
-export type RunStrategy = "notify" | "pause" | "dryRun";
+export type RunStrategy = "notify" | "pause" | "dryRun" | "proxy";
 
 export type RunnerSnapshot = {
 	axis: DraftAxis,
@@ -151,6 +172,7 @@ export type RunnerSnapshot = {
 	status: BattleStatus,
 	recording: boolean,
 	strategy: RunStrategy,
+	proxy: ProxySnapshot,
 	nextEvent: DraftEvent | null,
 	countdownFrames: number | null,
 	errorFrames: number,

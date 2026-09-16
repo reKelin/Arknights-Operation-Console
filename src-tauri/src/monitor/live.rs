@@ -18,6 +18,7 @@ use windows_capture::{
     window::Window,
 };
 
+use crate::executor::ExecutionVision;
 use crate::stage::{StageCatalog, StageMatchStatus, StageRecognition};
 
 use super::{
@@ -28,6 +29,7 @@ use super::{
 struct CaptureFlags {
     config: Arc<RwLock<VisionConfig>>,
     catalog: Arc<StageCatalog>,
+    execution_vision: Arc<ExecutionVision>,
     latest: Arc<Mutex<Option<MonitorEvent>>>,
 }
 
@@ -39,6 +41,8 @@ struct LiveFrameHandler {
     ocr_result: Arc<Mutex<Option<StageRecognition>>>,
     last_ocr_at: Option<Instant>,
     outside_frames: u8,
+    execution_vision: Arc<ExecutionVision>,
+    last_execution_capture: Instant,
 }
 
 impl GraphicsCaptureApiHandler for LiveFrameHandler {
@@ -56,13 +60,13 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
                 Ok(recognizer) => {
                     while let Ok(image) = ocr_receiver.recv() {
                         let recognition = recognizer.recognize(image);
-                        if let Ok(mut result) = worker_result.lock() {
-                            if result.as_ref().is_none_or(|current| {
+                        if let Ok(mut result) = worker_result.lock()
+                            && result.as_ref().is_none_or(|current| {
                                 current.status != StageMatchStatus::Matched
                                     || recognition.status == StageMatchStatus::Matched
-                            }) {
-                                *result = Some(recognition);
-                            }
+                            })
+                        {
+                            *result = Some(recognition);
                         }
                     }
                 }
@@ -84,6 +88,8 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
             ocr_result,
             last_ocr_at: None,
             outside_frames: 0,
+            execution_vision: context.flags.execution_vision,
+            last_execution_capture: Instant::now() - Duration::from_secs(1),
         })
     }
 
@@ -106,6 +112,11 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
         let height = buffer.height();
         let row_pitch = buffer.row_pitch();
         let config = self.config.read().map(|config| *config).unwrap_or_default();
+        if self.last_execution_capture.elapsed() >= Duration::from_millis(100) {
+            self.execution_vision
+                .publish(buffer.as_raw_buffer(), width, height, row_pitch);
+            self.last_execution_capture = Instant::now();
+        }
         let timestamp = self.started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         let event = match analyze_bgra(
             buffer.as_raw_buffer(),
@@ -172,6 +183,7 @@ impl LiveSession {
         id: &str,
         config: Arc<RwLock<VisionConfig>>,
         catalog: Arc<StageCatalog>,
+        execution_vision: Arc<ExecutionVision>,
         latest: Arc<Mutex<Option<MonitorEvent>>>,
     ) -> Result<(Self, GameWindowCandidate), String> {
         let (window, candidate) = find_window(id)?;
@@ -186,6 +198,7 @@ impl LiveSession {
             CaptureFlags {
                 config,
                 catalog,
+                execution_vision,
                 latest,
             },
         );

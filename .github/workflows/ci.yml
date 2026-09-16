@@ -41,9 +41,11 @@ jobs:
 
       - name: Regenerate stage catalog
         run: npm run stages:sync
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Check generated stage catalog
-        run: git diff --exit-code -- src-tauri/data/stages.json
+        run: git diff --exit-code -- src-tauri/data/stages.json src-tauri/data/operators.json
 
       - name: Regenerate bindings
         run: npm run bindings

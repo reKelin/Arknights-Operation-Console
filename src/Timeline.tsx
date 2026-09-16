@@ -1,6 +1,7 @@
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
   useEffect,
   useMemo,
   useRef,
@@ -18,6 +19,7 @@ import {
   stackPositions,
   TIMELINE_PADDING,
   timelineWidth,
+  zoomedScrollLeft,
 } from "./timelineMath";
 
 type TimelineProps = {
@@ -31,6 +33,7 @@ type TimelineProps = {
   onCreate: (frame: number, kind: DraftKind) => void;
   onMove: (id: string, frame: number) => void;
   onEdit: (event: DraftEvent) => void;
+  onZoom: (zoom: number) => void;
 };
 
 type DragState = {
@@ -59,6 +62,7 @@ export default function Timeline({
   onCreate,
   onMove,
   onEdit,
+  onZoom,
 }: TimelineProps) {
   const viewportRef = useRef<HTMLFieldSetElement>(null);
   const [viewportWidth, setViewportWidth] = useState(760);
@@ -162,10 +166,41 @@ export default function Timeline({
     setCreate({ frame: frameFromPointer(event.clientX) });
   }
 
+  function handleWheel(event: ReactWheelEvent<HTMLFieldSetElement>) {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    event.preventDefault();
+    if (!event.altKey) {
+      viewport.scrollLeft += event.deltaX || event.deltaY;
+      return;
+    }
+    const nextZoom = Math.min(
+      4,
+      Math.max(0.5, zoom + (event.deltaY < 0 ? 0.25 : -0.25)),
+    );
+    if (nextZoom === zoom) {
+      return;
+    }
+    const rect = viewport.getBoundingClientRect();
+    const anchorFrame = frameFromPointer(event.clientX);
+    const anchorOffset = event.clientX - rect.left;
+    onZoom(nextZoom);
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = zoomedScrollLeft(
+        anchorFrame,
+        anchorOffset,
+        nextZoom,
+      );
+    });
+  }
+
   return (
     <fieldset
       className="timeline-viewport"
       onDoubleClick={openCreate}
+      onWheel={handleWheel}
       ref={viewportRef}
     >
       <legend className="visually-hidden">作战轴时间线</legend>
@@ -208,7 +243,7 @@ export default function Timeline({
           const frame = eventFrame(event);
           const passed = frame <= currentFrame;
           const stack = eventStacks.get(event.id) ?? { index: 0, count: 1 };
-          const stackOffset = (stack.index - (stack.count - 1) / 2) * 12;
+          const stackOffset = (stack.index - (stack.count - 1) / 2) * 11;
           return (
             <button
               aria-label={`${event.label || KIND_LABELS[event.kind]}，F${frame}`}
@@ -232,7 +267,8 @@ export default function Timeline({
               onPointerMove={updateDrag}
               onPointerUp={finishDrag}
               style={{
-                left: frameToX(frame, zoom) + stackOffset,
+                left: frameToX(frame, zoom),
+                transform: `translate(-50%, ${stackOffset}px)`,
                 zIndex: selectedId === event.id ? 10 : stack.index + 4,
               }}
               title="拖动改帧，右键编辑"
@@ -240,7 +276,7 @@ export default function Timeline({
             >
               <span
                 className={
-                  stack.index === 0
+                  stack.index === 0 || selectedId === event.id
                     ? "axis-point__label"
                     : "axis-point__label axis-point__label--hidden"
                 }

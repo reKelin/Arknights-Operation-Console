@@ -252,16 +252,14 @@ fn analyze_file(
         )?;
         if observation.battle_state == super::ObservedBattleState::BattleBegin
             && source_frame.is_multiple_of(15)
-        {
-            if let (Ok(recognizer), Ok(image)) = (
+            && let (Ok(recognizer), Ok(image)) = (
                 recognizer.as_ref(),
                 crop_title(&buffer, metadata.width, metadata.height, metadata.width * 4),
-            ) {
-                let candidate = recognizer.recognize(image);
-                if recognition_rank(candidate.status) >= recognition_rank(stage_recognition.status)
-                {
-                    stage_recognition = candidate;
-                }
+            )
+        {
+            let candidate = recognizer.recognize(image);
+            if recognition_rank(candidate.status) >= recognition_rank(stage_recognition.status) {
+                stage_recognition = candidate;
             }
         }
         if stage_recognition.status != StageMatchStatus::Unavailable
