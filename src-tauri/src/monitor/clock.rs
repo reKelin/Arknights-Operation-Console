@@ -210,6 +210,7 @@ mod tests {
             cost_total: 30,
             cost_full: false,
             stage_recognition: None,
+            title_candidate: false,
         }
     }
 

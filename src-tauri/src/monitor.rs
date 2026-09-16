@@ -6,7 +6,10 @@ mod vision;
 #[cfg(windows)]
 mod live;
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::{
+    sync::{Arc, Mutex, RwLock},
+    time::{Duration, Instant},
+};
 
 use crate::executor::ExecutionVision;
 use crate::stage::{StageCatalog, StageRecognition};
@@ -81,8 +84,10 @@ impl ObservedBattleState {
 pub struct GameWindowCandidate {
     pub id: String,
     pub title: String,
+    pub process_name: String,
     pub width: u32,
     pub height: u32,
+    pub warning: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Type)]
@@ -147,6 +152,7 @@ pub struct MonitorManager {
     #[cfg(windows)]
     live: Option<live::LiveSession>,
     recording: Option<recording::RecordingSession>,
+    connection_deadline: Option<Instant>,
 }
 
 impl MonitorManager {
@@ -164,6 +170,7 @@ impl MonitorManager {
             #[cfg(windows)]
             live: None,
             recording: None,
+            connection_deadline: None,
         }
     }
 
@@ -178,10 +185,23 @@ impl MonitorManager {
     }
 
     pub fn poll(&mut self) -> Option<MonitorEvent> {
-        let event = self.latest.lock().ok()?.take()?;
+        let event = self.latest.lock().ok()?.take();
+        if event.is_none()
+            && self
+                .connection_deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.connection_deadline = None;
+            let message = "WGC 已启动，但两秒内没有收到首帧".to_string();
+            self.snapshot.connection_state = MonitorConnectionState::Error;
+            self.snapshot.error = Some(message.clone());
+            return Some(MonitorEvent::Error(message));
+        }
+        let event = event?;
         match event {
             MonitorEvent::Observation(observation) => {
                 self.snapshot.connection_state = MonitorConnectionState::Watching;
+                self.connection_deadline = None;
                 self.snapshot.battle_state = observation.battle_state;
                 self.snapshot.confidence = observation.confidence;
                 self.snapshot.cost_phase = observation.cost_phase;
@@ -248,9 +268,29 @@ impl MonitorManager {
         live::list_game_windows()
     }
 
+    #[cfg(windows)]
+    pub fn foreground_game_window() -> Result<GameWindowCandidate, String> {
+        live::foreground_game_window()
+    }
+
+    #[cfg(windows)]
+    pub fn is_game_foreground(id: &str) -> bool {
+        live::is_foreground(id)
+    }
+
     #[cfg(not(windows))]
     pub fn list_game_windows() -> Result<Vec<GameWindowCandidate>, String> {
         Err("游戏窗口监控仅支持 Windows 10/11".to_string())
+    }
+
+    #[cfg(not(windows))]
+    pub fn foreground_game_window() -> Result<GameWindowCandidate, String> {
+        Err("游戏窗口监控仅支持 Windows 10/11".to_string())
+    }
+
+    #[cfg(not(windows))]
+    pub fn is_game_foreground(_id: &str) -> bool {
+        false
     }
 
     #[cfg(windows)]
@@ -264,6 +304,7 @@ impl MonitorManager {
             Arc::clone(&self.latest),
         )?;
         self.live = Some(session);
+        self.connection_deadline = Some(Instant::now() + Duration::from_secs(2));
         self.snapshot = MonitorSnapshot {
             source_kind: MonitorSourceKind::Window,
             connection_state: MonitorConnectionState::Connecting,
@@ -296,6 +337,7 @@ impl MonitorManager {
             *latest = None;
         }
         self.snapshot = MonitorSnapshot::default();
+        self.connection_deadline = None;
     }
 
     pub fn analyze_recording(&mut self, path: &str) -> Result<(), String> {

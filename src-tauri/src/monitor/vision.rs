@@ -35,6 +35,7 @@ pub struct VisualObservation {
     pub cost_total: u16,
     pub cost_full: bool,
     pub stage_recognition: Option<StageRecognition>,
+    pub title_candidate: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -109,6 +110,9 @@ pub fn analyze_bgra(
         title_bright: frame.threshold_ratio(frame.reference_rect(500, 300, 1420, 760), 180),
     };
     let (battle_state, confidence) = classify_battle(features);
+    let title_candidate = features.gear_ratio < 0.04
+        && features.sampled_luma < 105.0
+        && features.title_bright >= 0.01;
 
     let (cost_phase, cost_full) = if has_battle_anchor {
         frame
@@ -127,6 +131,7 @@ pub fn analyze_bgra(
         cost_total: config.frames_per_cost,
         cost_full,
         stage_recognition: None,
+        title_candidate,
     })
 }
 

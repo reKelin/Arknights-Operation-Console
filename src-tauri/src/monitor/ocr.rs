@@ -8,6 +8,43 @@ pub struct OcrImage {
     height: u32,
 }
 
+pub struct StageOcrAccumulator {
+    catalog: Arc<StageCatalog>,
+    lines: Vec<String>,
+}
+
+impl StageOcrAccumulator {
+    pub fn new(catalog: Arc<StageCatalog>) -> Self {
+        Self {
+            catalog,
+            lines: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, text: &str) -> StageRecognition {
+        for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+            if !self.lines.iter().any(|current| current == line) {
+                self.lines.push(line.to_string());
+            }
+        }
+        let raw_text = self.lines.join("\n");
+        let matching_text = self
+            .lines
+            .iter()
+            .filter(|line| !line.eq_ignore_ascii_case("OPERATION"))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut result = self.catalog.match_ocr(&matching_text);
+        result.raw_text = raw_text;
+        result
+    }
+
+    pub fn reset(&mut self) {
+        self.lines.clear();
+    }
+}
+
 pub fn crop_title(
     data: &[u8],
     width: u32,
@@ -26,10 +63,10 @@ pub fn crop_title(
     let offset_y = (height as f64 - 1080.0 * scale) / 2.0;
     let reference =
         |value: u32, offset: f64| (offset + value as f64 * scale).round().max(0.0) as u32;
-    let left = reference(420, offset_x).min(width);
-    let right = reference(1500, offset_x).min(width);
-    let top = reference(180, offset_y).min(height);
-    let bottom = reference(500, offset_y).min(height);
+    let left = reference(0, offset_x).min(width);
+    let right = reference(1920, offset_x).min(width);
+    let top = reference(0, offset_y).min(height);
+    let bottom = reference(1080, offset_y).min(height);
     if left >= right || top >= bottom {
         return Err("OCR 标题区域无效".to_string());
     }
@@ -53,7 +90,7 @@ pub fn crop_title(
 
 #[cfg(windows)]
 pub struct StageOcrRecognizer {
-    catalog: Arc<StageCatalog>,
+    _catalog: Arc<StageCatalog>,
     engine: windows::Media::Ocr::OcrEngine,
 }
 
@@ -71,25 +108,22 @@ impl StageOcrRecognizer {
         }
         let engine = OcrEngine::TryCreateFromLanguage(&language)
             .map_err(|error| format!("创建 Windows OCR 引擎失败：{error}"))?;
-        Ok(Self { catalog, engine })
+        Ok(Self {
+            _catalog: catalog,
+            engine,
+        })
     }
 
-    pub fn recognize(&self, image: OcrImage) -> StageRecognition {
-        match self.recognize_text(image) {
-            Ok(text) => self.catalog.match_ocr(&text),
-            Err(warning) => StageRecognition {
-                warning: Some(warning),
-                ..StageRecognition::default()
-            },
-        }
-    }
-
-    fn recognize_text(&self, image: OcrImage) -> Result<String, String> {
+    pub fn recognize_text(&self, mut image: OcrImage) -> Result<String, String> {
         use windows::{
             Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap},
             Storage::Streams::DataWriter,
         };
 
+        let max = windows::Media::Ocr::OcrEngine::MaxImageDimension().unwrap_or(2600);
+        if image.width.max(image.height) > max {
+            image = resize_bgra(image, max);
+        }
         let width = i32::try_from(image.width).map_err(|_| "OCR 标题区域宽度过大".to_string())?;
         let height = i32::try_from(image.height).map_err(|_| "OCR 标题区域高度过大".to_string())?;
         let writer =
@@ -112,21 +146,40 @@ impl StageOcrRecognizer {
     }
 }
 
+fn resize_bgra(image: OcrImage, max_dimension: u32) -> OcrImage {
+    let scale = f64::from(max_dimension) / f64::from(image.width.max(image.height));
+    let width = (f64::from(image.width) * scale).round().max(1.0) as u32;
+    let height = (f64::from(image.height) * scale).round().max(1.0) as u32;
+    let mut pixels = vec![0; (width * height * 4) as usize];
+    for y in 0..height {
+        for x in 0..width {
+            let source_x = (u64::from(x) * u64::from(image.width) / u64::from(width)) as u32;
+            let source_y = (u64::from(y) * u64::from(image.height) / u64::from(height)) as u32;
+            let source = ((source_y * image.width + source_x) * 4) as usize;
+            let target = ((y * width + x) * 4) as usize;
+            pixels[target..target + 4].copy_from_slice(&image.pixels[source..source + 4]);
+        }
+    }
+    OcrImage {
+        pixels,
+        width,
+        height,
+    }
+}
+
 #[cfg(not(windows))]
 pub struct StageOcrRecognizer {
-    catalog: Arc<StageCatalog>,
+    _catalog: Arc<StageCatalog>,
 }
 
 #[cfg(not(windows))]
 impl StageOcrRecognizer {
     pub fn new(catalog: Arc<StageCatalog>) -> Result<Self, String> {
-        Ok(Self { catalog })
+        Ok(Self { _catalog: catalog })
     }
 
-    pub fn recognize(&self, _image: OcrImage) -> StageRecognition {
-        let mut result = self.catalog.match_ocr("");
-        result.warning = Some("关卡 OCR 仅支持 Windows 10/11".to_string());
-        result
+    pub fn recognize_text(&self, _image: OcrImage) -> Result<String, String> {
+        Err("关卡 OCR 仅支持 Windows 10/11".to_string())
     }
 }
 
@@ -144,5 +197,20 @@ mod tests {
         let crop = crop_title(&frame, width, height, row_pitch).unwrap();
 
         assert_eq!(crop.pixels.len(), (crop.width * crop.height * 4) as usize);
+    }
+
+    #[test]
+    fn accumulator_keeps_later_code_and_name_after_operation_line() {
+        let catalog = Arc::new(StageCatalog::embedded().unwrap());
+        let mut accumulator = StageOcrAccumulator::new(catalog);
+
+        assert!(accumulator.push("OPERATION").stage.is_none());
+        assert!(accumulator.push("SR-EX-4").stage.is_none());
+        let result = accumulator.push("反乌托邦");
+
+        assert_eq!(
+            result.stage.as_ref().map(|stage| stage.code.as_str()),
+            Some("SR-EX-4")
+        );
     }
 }

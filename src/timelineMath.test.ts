@@ -27,6 +27,10 @@ describe("timelineMath", () => {
     expect(timelineWidth(3_600, 1, 100)).toBeGreaterThan(TIMELINE_PADDING * 2);
   });
 
+  it("supports approximately ten pixels per frame at maximum zoom", () => {
+    expect(frameToX(10, 32) - frameToX(0, 32)).toBeGreaterThanOrEqual(100);
+  });
+
   it("assigns a separate stack position to same-frame operations", () => {
     const positions = stackPositions([
       { id: "a", frame: 30 },
