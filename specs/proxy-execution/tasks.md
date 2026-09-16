@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: proxy-execution
 depends_on:
   - specs/proxy-execution/requirements.md
