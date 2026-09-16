@@ -68,7 +68,7 @@
 - 开发过程中只保留可快速验证的基础检查：生成文件漂移、Biome、`tsc`、rustfmt、Clippy 和 Rust 测试；不得执行 `tauri build --release` 或启动冒烟。正式发布时才执行 release 构建与启动冒烟。
 - 前端首版不引入 React Testing Library 或端到端测试框架；Vitest 只覆盖时间轴帧/像素换算、滚动范围和拖动落点等纯逻辑。
 - 非平凡的分支、循环、解析器和状态转换至少保留一个能在错误时失败的最小检查。
-- 快速开发阶段不要求独立 Agent 审查。创建 PR 并确认可以合并后立即使用 merge commit 合入 `main`，不等待完整 CI。
+- 快速开发阶段不要求独立 Agent 审查。创建 PR 并确认可以合并后立即使用 squash merge 合入 `main`，不等待完整 CI。
 - 不等待任何 CI 流程；CI 始终在后台运行，不主动 watch、poll 或阻塞等待，收到失败结果后再定位、修复并提交。开发速度优先。
 - 只报告实际执行过的检查；失败时修复原因，不跳过 hooks 或删除测试。
 
@@ -80,8 +80,9 @@
 - 一个 commit 只有一个可独立回滚的逻辑目的。提交信息使用 `<type>(<scope>): <简洁中文动作>`。
 - 只暂存当前 commit 的明确文件或 hunks；提交前检查 staged diff 和 `git diff --check`。
 - 未经用户明确授权，不得 commit、push、merge、amend、rebase、squash、force push、跳过 hooks、删除分支或丢弃工作区内容。
-- 主题分支通过 GitHub Pull Request 的 merge commit 合入 `main`，不使用 squash merge。
-- Release 说明固定使用 `## 亮点`（每项使用 `###` 标题和描述）、`## 新增`、`## 改进`、`## 修复`、`## 文档`、`## 其他`；空分类保留标题。
+- PR 以边界明确、可整体验收的特定功能更新为单位创建，可以包含完成该功能所需的规范、代码、测试、文档及同一功能范围内的小缺陷修复；不按发布版本聚合无关功能，也不机械地为一个版本或单个小缺陷各建一个 PR。
+- 主题分支通过 GitHub Pull Request 的 squash merge 合入 `main`，不使用 merge commit。
+- Release 说明固定使用 `## 亮点`、`## 新增`、`## 改进`、`## 修复`、`## 文档`、`## 其他`；`## 亮点` 下每项使用 `###` 标题和描述，其余分类中的每个条目末尾必须补充指向对应 GitHub Pull Request 的 PR 编号超链接，格式为 `([#12](https://github.com/<owner>/<repo>/pull/12))`；空分类保留标题。
 
 ## 文档与规范
 
