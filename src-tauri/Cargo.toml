@@ -1,6 +1,6 @@
 [package]
 name = "arknights-operation-runner"
-version = "0.4.0"
+version = "0.5.0"
 description = "明日方舟实机计时与作战轴工具"
 authors = ["Kelin"]
 edition = "2024"
@@ -39,6 +39,7 @@ windows = { version = "=0.62.2", features = [
     "Storage_Streams",
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    "Win32_System_Threading",
     "Win32_UI_Input_Pointer",
     "Win32_UI_WindowsAndMessaging",
 ] }

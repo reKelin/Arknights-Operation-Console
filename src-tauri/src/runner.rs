@@ -215,6 +215,24 @@ impl RunnerState {
         Ok(())
     }
 
+    pub fn record_bookmark(&mut self) -> Result<(), CommandError> {
+        if !self.recording {
+            return Err(CommandError::new("recording_disabled", "实时录轴尚未开启"));
+        }
+        if !matches!(self.status, BattleStatus::Running | BattleStatus::Paused) {
+            return Err(CommandError::new(
+                "battle_not_running",
+                "当前不在运行中的关卡内",
+            ));
+        }
+        let id = self.insert_draft(self.frame, DraftKind::Bookmark);
+        if let Some(event) = self.axis.events.iter_mut().find(|event| event.id == id) {
+            event.label = Some(format!("书签 {}", event.order + 1));
+        }
+        self.last_message = Some(format!("已在 F{} 添加书签", self.frame));
+        Ok(())
+    }
+
     pub fn add_event(&mut self, frame: u32, kind: DraftKind) -> Result<(), CommandError> {
         validate_frame(frame)?;
         self.insert_draft(frame, kind);
@@ -271,7 +289,11 @@ impl RunnerState {
                 None
             };
             event.label = normalized_optional(input.label);
-            event.tile = normalized_optional(input.tile);
+            event.tile = if event.kind == DraftKind::Bookmark {
+                None
+            } else {
+                normalized_optional(input.tile)
+            };
             if matches!(event.kind, DraftKind::Deploy) {
                 event.direction = input.direction;
             } else {
@@ -311,6 +333,60 @@ impl RunnerState {
         self.rebuild_triggered();
         self.last_message = Some(format!("已删除操作点 {id}"));
         Ok(())
+    }
+
+    pub fn shift_events(&mut self, ids: &[String], delta: i32) -> Result<(), CommandError> {
+        if ids.is_empty() {
+            return Err(CommandError::new("no_events", "没有选择要平移的标记"));
+        }
+        for event in self
+            .axis
+            .events
+            .iter_mut()
+            .filter(|event| ids.contains(&event.id))
+        {
+            event.frame = if delta.is_negative() {
+                event.frame.saturating_sub(delta.unsigned_abs())
+            } else {
+                event
+                    .frame
+                    .saturating_add(delta as u32)
+                    .min(i32::MAX as u32)
+            };
+        }
+        self.axis.sort_events();
+        self.rebuild_triggered();
+        self.last_message = Some(format!("已平移 {} 个标记", ids.len()));
+        Ok(())
+    }
+
+    pub fn reorder_event(&mut self, id: &str, direction: i8) -> Result<(), CommandError> {
+        let index = self
+            .axis
+            .events
+            .iter()
+            .position(|event| event.id == id)
+            .ok_or_else(|| CommandError::new("event_not_found", "未找到标记"))?;
+        let target = if direction < 0 {
+            index.checked_sub(1)
+        } else {
+            (index + 1 < self.axis.events.len()).then_some(index + 1)
+        }
+        .ok_or_else(|| CommandError::new("event_order_boundary", "标记已经位于边界"))?;
+        let order = self.axis.events[index].order;
+        self.axis.events[index].order = self.axis.events[target].order;
+        self.axis.events[target].order = order;
+        self.axis.sort_events();
+        self.last_message = Some("标记顺序已更新".to_string());
+        Ok(())
+    }
+
+    pub fn clear_bookmarks(&mut self) {
+        self.axis
+            .events
+            .retain(|event| event.kind != DraftKind::Bookmark);
+        self.rebuild_triggered();
+        self.last_message = Some("未分类书签已清空".to_string());
     }
 
     pub fn set_axis_metadata(&mut self, input: AxisMetadataInput) -> Result<(), CommandError> {
@@ -705,7 +781,7 @@ impl RunnerState {
         self.next_notice = self.next_notice.saturating_add(1);
     }
 
-    fn insert_draft(&mut self, frame: u32, kind: DraftKind) {
+    fn insert_draft(&mut self, frame: u32, kind: DraftKind) -> String {
         self.clear_pending_deadline = None;
         let id = loop {
             let candidate = format!("draft-{:06}", self.next_id);
@@ -722,6 +798,7 @@ impl RunnerState {
         self.axis.sort_events();
         self.rebuild_triggered();
         self.last_message = Some(format!("已记录操作点 {id}"));
+        id
     }
 
     fn rebuild_triggered(&mut self) {
@@ -752,6 +829,7 @@ fn event_name(event: &DraftEvent) -> String {
 
 fn kind_name(kind: DraftKind) -> &'static str {
     match kind {
+        DraftKind::Bookmark => "书签",
         DraftKind::Deploy => "部署",
         DraftKind::Skill => "技能",
         DraftKind::Retreat => "撤退",
@@ -799,6 +877,7 @@ mod tests {
             cost_total: 30,
             cost_full: false,
             stage_recognition: None,
+            title_candidate: false,
         })
     }
 
@@ -826,6 +905,7 @@ mod tests {
                 candidates: vec![stage(id)],
                 warning: None,
             }),
+            title_candidate: false,
         })
     }
 

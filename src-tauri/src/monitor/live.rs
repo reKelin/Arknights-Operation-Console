@@ -7,6 +7,17 @@ use std::{
     time::{Duration, Instant},
 };
 
+use windows::{
+    Win32::{
+        Foundation::CloseHandle,
+        System::Threading::{
+            OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+            QueryFullProcessImageNameW,
+        },
+        UI::WindowsAndMessaging::GetForegroundWindow,
+    },
+    core::PWSTR,
+};
 use windows_capture::{
     capture::{CaptureControl, Context, GraphicsCaptureApiHandler},
     frame::Frame,
@@ -23,8 +34,13 @@ use crate::stage::{StageCatalog, StageMatchStatus, StageRecognition};
 
 use super::{
     GameWindowCandidate, MonitorEvent, ObservedBattleState, VisionConfig, analyze_bgra,
-    ocr::{OcrImage, StageOcrRecognizer, crop_title},
+    ocr::{OcrImage, StageOcrAccumulator, StageOcrRecognizer, crop_title},
 };
+
+enum OcrCommand {
+    Analyze(OcrImage),
+    Reset,
+}
 
 struct CaptureFlags {
     config: Arc<RwLock<VisionConfig>>,
@@ -37,7 +53,7 @@ struct LiveFrameHandler {
     config: Arc<RwLock<VisionConfig>>,
     latest: Arc<Mutex<Option<MonitorEvent>>>,
     started: Instant,
-    ocr_sender: SyncSender<OcrImage>,
+    ocr_sender: SyncSender<OcrCommand>,
     ocr_result: Arc<Mutex<Option<StageRecognition>>>,
     last_ocr_at: Option<Instant>,
     outside_frames: u8,
@@ -56,29 +72,46 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
         let catalog = context.flags.catalog;
         thread::Builder::new()
             .name("stage-ocr".to_string())
-            .spawn(move || match StageOcrRecognizer::new(catalog) {
-                Ok(recognizer) => {
-                    while let Ok(image) = ocr_receiver.recv() {
-                        let recognition = recognizer.recognize(image);
-                        if let Ok(mut result) = worker_result.lock()
-                            && result.as_ref().is_none_or(|current| {
-                                current.status != StageMatchStatus::Matched
-                                    || recognition.status == StageMatchStatus::Matched
-                            })
-                        {
-                            *result = Some(recognition);
+            .spawn(
+                move || match StageOcrRecognizer::new(Arc::clone(&catalog)) {
+                    Ok(recognizer) => {
+                        let mut accumulator = StageOcrAccumulator::new(catalog);
+                        while let Ok(command) = ocr_receiver.recv() {
+                            let recognition = match command {
+                                OcrCommand::Analyze(image) => {
+                                    match recognizer.recognize_text(image) {
+                                        Ok(text) => accumulator.push(&text),
+                                        Err(warning) => StageRecognition {
+                                            warning: Some(warning),
+                                            ..StageRecognition::default()
+                                        },
+                                    }
+                                }
+                                OcrCommand::Reset => {
+                                    accumulator.reset();
+                                    StageRecognition::default()
+                                }
+                            };
+                            if let Ok(mut result) = worker_result.lock()
+                                && result.as_ref().is_none_or(|current| {
+                                    current.status != StageMatchStatus::Matched
+                                        || recognition.status == StageMatchStatus::Matched
+                                })
+                            {
+                                *result = Some(recognition);
+                            }
                         }
                     }
-                }
-                Err(warning) => {
-                    if let Ok(mut result) = worker_result.lock() {
-                        *result = Some(StageRecognition {
-                            warning: Some(warning),
-                            ..StageRecognition::default()
-                        });
+                    Err(warning) => {
+                        if let Ok(mut result) = worker_result.lock() {
+                            *result = Some(StageRecognition {
+                                warning: Some(warning),
+                                ..StageRecognition::default()
+                            });
+                        }
                     }
-                }
-            })
+                },
+            )
             .map_err(|error| format!("启动关卡 OCR 线程失败：{error}"))?;
         Ok(Self {
             config: context.flags.config,
@@ -98,7 +131,7 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
         frame: &mut Frame<'_>,
         _capture_control: InternalCaptureControl,
     ) -> Result<(), Self::Error> {
-        let mut buffer = match frame.buffer_without_title_bar() {
+        let mut buffer = match frame.buffer() {
             Ok(buffer) => buffer,
             Err(error) => {
                 let message = format!("读取 WGC 帧失败：{error}");
@@ -127,17 +160,17 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
             config,
         ) {
             Ok(mut observation) => {
-                if observation.battle_state == ObservedBattleState::BattleBegin {
+                if observation.title_candidate {
                     self.outside_frames = 0;
                     let now = Instant::now();
                     if self.last_ocr_at.is_none_or(|last| {
-                        now.saturating_duration_since(last) >= Duration::from_millis(500)
+                        now.saturating_duration_since(last) >= Duration::from_millis(200)
                     }) {
                         self.last_ocr_at = Some(now);
                         if let Ok(image) =
                             crop_title(buffer.as_raw_buffer(), width, height, row_pitch)
                         {
-                            let _ = self.ocr_sender.try_send(image);
+                            let _ = self.ocr_sender.try_send(OcrCommand::Analyze(image));
                         }
                     }
                 } else if observation.battle_state == ObservedBattleState::NotInBattle {
@@ -147,6 +180,7 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
                             *result = Some(StageRecognition::default());
                         }
                         self.last_ocr_at = None;
+                        let _ = self.ocr_sender.try_send(OcrCommand::Reset);
                     }
                 } else {
                     self.outside_frames = 0;
@@ -229,23 +263,38 @@ pub fn list_game_windows() -> Result<Vec<GameWindowCandidate>, String> {
     Ok(candidates)
 }
 
+pub fn foreground_game_window() -> Result<GameWindowCandidate, String> {
+    let window = Window::foreground().map_err(|error| format!("读取前台窗口失败：{error}"))?;
+    candidate_for_window(window)
+}
+
+pub fn is_foreground(id: &str) -> bool {
+    usize::from_str_radix(id, 16)
+        .is_ok_and(|raw| unsafe { GetForegroundWindow().0 as usize == raw })
+}
+
 fn find_window(id: &str) -> Result<(Window, GameWindowCandidate), String> {
-    let windows = Window::enumerate().map_err(|error| format!("扫描游戏窗口失败：{error}"))?;
-    windows
-        .into_iter()
-        .filter_map(|window| {
-            let candidate = candidate_for_window(window).ok()?;
-            (candidate.id == id).then_some((window, candidate))
-        })
-        .next()
-        .ok_or_else(|| "所选 Arknights.exe 窗口已失效，请重新扫描".to_string())
+    let raw = usize::from_str_radix(id, 16).map_err(|_| "游戏窗口 ID 无效".to_string())?;
+    let window = Window::from_raw_hwnd(raw as *mut core::ffi::c_void);
+    let candidate = candidate_for_window(window)?;
+    Ok((window, candidate))
 }
 
 fn candidate_for_window(window: Window) -> Result<GameWindowCandidate, String> {
-    let process_name = window
-        .process_name()
-        .map_err(|error| format!("读取窗口进程失败：{error}"))?;
-    if !process_name.eq_ignore_ascii_case("Arknights.exe") || !window.is_valid() {
+    if !window.is_valid() {
+        return Err("不是可捕获的顶层窗口".to_string());
+    }
+    let title = window
+        .title()
+        .map_err(|error| format!("读取窗口标题失败：{error}"))?;
+    let process_name = limited_process_name(&window);
+    let title_matches =
+        title.trim() == "明日方舟" || title.trim().eq_ignore_ascii_case("Arknights");
+    if !process_name
+        .as_deref()
+        .is_some_and(|name| name.eq_ignore_ascii_case("Arknights.exe"))
+        && !title_matches
+    {
         return Err("不是可捕获的 Arknights.exe 窗口".to_string());
     }
     let width = window
@@ -259,10 +308,36 @@ fn candidate_for_window(window: Window) -> Result<GameWindowCandidate, String> {
     }
     Ok(GameWindowCandidate {
         id: format!("{:x}", window.as_raw_hwnd() as usize),
-        title: window
-            .title()
-            .map_err(|error| format!("读取窗口标题失败：{error}"))?,
+        title,
+        process_name: process_name
+            .clone()
+            .unwrap_or_else(|| "Arknights.exe".to_string()),
         width: width as u32,
         height: height as u32,
+        warning: process_name
+            .is_none()
+            .then(|| "进程路径受限，已通过窗口标题确认".to_string()),
     })
+}
+
+fn limited_process_name(window: &Window) -> Option<String> {
+    let process_id = window.process_id().ok()?;
+    let process =
+        unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id) }.ok()?;
+    let mut buffer = vec![0_u16; 32_768];
+    let mut length = buffer.len() as u32;
+    let result = unsafe {
+        QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut length,
+        )
+    };
+    let _ = unsafe { CloseHandle(process) };
+    result.ok()?;
+    std::path::Path::new(&String::from_utf16_lossy(&buffer[..length as usize]))
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
 }

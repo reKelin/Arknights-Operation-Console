@@ -249,6 +249,7 @@ impl ProxyExecutor {
             .ok_or_else(|| "操作点缺少格子".to_string())?;
         let front = client_point(project_tile(tile, map, false)?, client);
         match event.kind {
+            DraftKind::Bookmark => Err("未分类书签不能代理执行".to_string()),
             DraftKind::Deploy => {
                 let operator = event
                     .operator

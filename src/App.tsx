@@ -27,6 +27,7 @@ type TypedResult<T> =
 type MenuName = "file" | "axis" | "monitor" | "view" | "help";
 
 const KIND_LABELS: Record<DraftKind, string> = {
+  bookmark: "书签",
   deploy: "部署",
   skill: "技能",
   retreat: "撤退",
@@ -116,6 +117,7 @@ export default function App() {
   const [recordingSegmentIndex, setRecordingSegmentIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [bookmarkOpen, setBookmarkOpen] = useState(false);
   const lastNoticeSequence = useRef(0);
 
   const selected = useMemo(
@@ -152,6 +154,17 @@ export default function App() {
       disposed = true;
       unlisten?.();
     };
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    events.openBookmarkList
+      .listen(() => setBookmarkOpen(true))
+      .then((stop) => {
+        unlisten = stop;
+      })
+      .catch((reason) => setError(messageOf(reason)));
+    return () => unlisten?.();
   }, []);
 
   useEffect(() => {
@@ -256,6 +269,15 @@ export default function App() {
       setError(messageOf(reason));
     } finally {
       setScanningWindows(false);
+    }
+  }
+
+  async function selectForegroundGameWindow() {
+    try {
+      const candidate = unwrap(await commands.foregroundGameWindow());
+      await run(() => commands.selectGameWindow(candidate.id));
+    } catch (reason) {
+      setError(messageOf(reason));
     }
   }
 
@@ -365,6 +387,10 @@ export default function App() {
           >
             <MenuItem label="轴属性" onClick={() => setMetadataOpen(true)} />
             <MenuItem
+              label="书签列表（H）"
+              onClick={() => setBookmarkOpen(true)}
+            />
+            <MenuItem
               checked={snapshot.recording}
               label="实时录轴"
               onClick={() =>
@@ -392,6 +418,10 @@ export default function App() {
             <MenuItem
               label={scanningWindows ? "正在扫描…" : "选择游戏窗口"}
               onClick={scanGameWindows}
+            />
+            <MenuItem
+              label="使用当前前台游戏窗口"
+              onClick={selectForegroundGameWindow}
             />
             <MenuItem label="分析游戏录屏" onClick={chooseRecording} />
             <MenuItem label="手动确认当前关卡" onClick={openStagePicker} />
@@ -565,6 +595,13 @@ export default function App() {
             ),
           )}
           <button
+            className="quick-action bookmark-action"
+            onClick={() => run(() => commands.recordBookmark())}
+            type="button"
+          >
+            书签 <kbd>P</kbd>
+          </button>
+          <button
             className={
               snapshot.clearPending ? "clear-axis pending" : "clear-axis"
             }
@@ -580,20 +617,6 @@ export default function App() {
             </button>
             <button onClick={exportAxis} type="button">
               导出
-            </button>
-            <button
-              aria-label="缩小时间轴"
-              onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
-              type="button"
-            >
-              −
-            </button>
-            <button
-              aria-label="放大时间轴"
-              onClick={() => setZoom(Math.min(4, zoom + 0.25))}
-              type="button"
-            >
-              ＋
             </button>
           </div>
         </div>
@@ -619,7 +642,9 @@ export default function App() {
             <>
               <b>{KIND_LABELS[selected.kind]}</b>
               <span>{selected.label || selected.id}</span>
-              <span>{selected.tile || "未填写格子"}</span>
+              {selected.kind !== "bookmark" && (
+                <span>{selected.tile || "未填写格子"}</span>
+              )}
               <span>
                 {`${frameTime(
                   selected.frame,
@@ -775,6 +800,24 @@ export default function App() {
         />
       )}
 
+      {bookmarkOpen && (
+        <BookmarkEditor
+          events={snapshot.axis.events}
+          onCancel={() => setBookmarkOpen(false)}
+          onClear={() => run(() => commands.clearBookmarks())}
+          onDelete={(id) => run(() => commands.deleteEvent(id))}
+          onEdit={(event) => {
+            setBookmarkOpen(false);
+            setSelectedId(event.id);
+            setEditing(event);
+          }}
+          onReorder={(id, direction) =>
+            run(() => commands.reorderEvent(id, direction))
+          }
+          onShift={(ids, delta) => run(() => commands.shiftEvents(ids, delta))}
+        />
+      )}
+
       {aboutOpen && (
         <div className="modal-backdrop">
           <section className="compact-dialog about-dialog">
@@ -865,7 +908,8 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
             frame: Math.max(0, Number.parseInt(frame, 10) || 0),
             kind,
             operator: kind === "deploy" ? operator || null : null,
-            tile: tile.trim().toUpperCase() || null,
+            tile:
+              kind === "bookmark" ? null : tile.trim().toUpperCase() || null,
             direction: kind === "deploy" ? direction : null,
             label: label || null,
           });
@@ -878,11 +922,13 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
             onChange={(event) => setKind(event.target.value as DraftKind)}
             value={kind}
           >
-            {(["deploy", "skill", "retreat"] as DraftKind[]).map((value) => (
-              <option key={value} value={value}>
-                {KIND_LABELS[value]}
-              </option>
-            ))}
+            {(["bookmark", "deploy", "skill", "retreat"] as DraftKind[]).map(
+              (value) => (
+                <option key={value} value={value}>
+                  {KIND_LABELS[value]}
+                </option>
+              ),
+            )}
           </select>
         </label>
         <label>
@@ -904,16 +950,18 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
             />
           </label>
         )}
-        <label>
-          格子
-          <input
-            maxLength={3}
-            onChange={(event) => setTile(event.target.value.toUpperCase())}
-            pattern="[A-I](?:[1-9]|[12][0-9]|3[0-6])"
-            placeholder="C5"
-            value={tile}
-          />
-        </label>
+        {kind !== "bookmark" && (
+          <label>
+            格子
+            <input
+              maxLength={3}
+              onChange={(event) => setTile(event.target.value.toUpperCase())}
+              pattern="[A-I](?:[1-9]|[12][0-9]|3[0-6])"
+              placeholder="C5"
+              value={tile}
+            />
+          </label>
+        )}
         {kind === "deploy" && (
           <label>
             朝向
@@ -1151,8 +1199,9 @@ function WindowPicker({
               >
                 <strong>{candidate.title || "明日方舟"}</strong>
                 <span>
-                  {candidate.width}×{candidate.height}
+                  {candidate.processName} · {candidate.width}×{candidate.height}
                 </span>
+                {candidate.warning && <em>{candidate.warning}</em>}
               </button>
             ))
           )}
@@ -1227,6 +1276,153 @@ function StagePicker({
           <span />
           <button onClick={onCancel} type="button">
             取消
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+type BookmarkEditorProps = {
+  events: DraftEvent[];
+  onEdit: (event: DraftEvent) => void;
+  onDelete: (id: string) => void;
+  onClear: () => void;
+  onShift: (ids: string[], delta: number) => void;
+  onReorder: (id: string, direction: number) => void;
+  onCancel: () => void;
+};
+
+function BookmarkEditor({
+  events,
+  onEdit,
+  onDelete,
+  onClear,
+  onShift,
+  onReorder,
+  onCancel,
+}: BookmarkEditorProps) {
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<"all" | DraftKind>("all");
+  const [selectedId, setSelectedId] = useState(events[0]?.id ?? "");
+  const [delta, setDelta] = useState("0");
+  const visible = events.filter(
+    (event) =>
+      (kind === "all" || event.kind === kind) &&
+      (!query ||
+        event.id.toLowerCase().includes(query.toLowerCase()) ||
+        event.label?.toLowerCase().includes(query.toLowerCase())),
+  );
+  const selected = events.find((event) => event.id === selectedId) ?? null;
+  return (
+    <div className="modal-backdrop">
+      <section className="compact-dialog bookmark-editor">
+        <h2>书签与操作点</h2>
+        <div className="bookmark-filters">
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索标题或 ID"
+            value={query}
+          />
+          <select
+            onChange={(event) =>
+              setKind(event.target.value as "all" | DraftKind)
+            }
+            value={kind}
+          >
+            <option value="all">全部</option>
+            {(["bookmark", "deploy", "skill", "retreat"] as DraftKind[]).map(
+              (value) => (
+                <option key={value} value={value}>
+                  {KIND_LABELS[value]}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
+        <div className="bookmark-list">
+          {visible.map((event) => (
+            <button
+              className={event.id === selectedId ? "selected" : ""}
+              key={event.id}
+              onClick={() => setSelectedId(event.id)}
+              onDoubleClick={() => onEdit(event)}
+              type="button"
+            >
+              <span>{frameTime(event.frame, 30)}</span>
+              <strong>{event.label || KIND_LABELS[event.kind]}</strong>
+              <em>{KIND_LABELS[event.kind]}</em>
+            </button>
+          ))}
+        </div>
+        <div className="bookmark-actions">
+          <button
+            disabled={!selected}
+            onClick={() => selected && onEdit(selected)}
+            type="button"
+          >
+            编辑
+          </button>
+          <button
+            disabled={!selected}
+            onClick={() => selected && onDelete(selected.id)}
+            type="button"
+          >
+            删除
+          </button>
+          <button
+            disabled={!selected}
+            onClick={() => selected && onReorder(selected.id, -1)}
+            type="button"
+          >
+            上移
+          </button>
+          <button
+            disabled={!selected}
+            onClick={() => selected && onReorder(selected.id, 1)}
+            type="button"
+          >
+            下移
+          </button>
+          <button onClick={onClear} type="button">
+            清空书签
+          </button>
+        </div>
+        <div className="bookmark-shift">
+          <label>
+            平移帧
+            <input
+              onChange={(event) => setDelta(event.target.value)}
+              type="number"
+              value={delta}
+            />
+          </label>
+          <button
+            disabled={!selected}
+            onClick={() =>
+              selected &&
+              onShift([selected.id], Number.parseInt(delta, 10) || 0)
+            }
+            type="button"
+          >
+            平移所选
+          </button>
+          <button
+            onClick={() =>
+              onShift(
+                visible.map((event) => event.id),
+                Number.parseInt(delta, 10) || 0,
+              )
+            }
+            type="button"
+          >
+            平移列表
+          </button>
+        </div>
+        <footer>
+          <span />
+          <button onClick={onCancel} type="button">
+            关闭
           </button>
         </footer>
       </section>

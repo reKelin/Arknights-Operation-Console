@@ -16,7 +16,7 @@ use serde::Deserialize;
 use super::{
     ClockTransition, MonitorEvent, ObservationClock, RecordingSegment, RecordingTracePoint,
     VisionConfig, analyze_bgra,
-    ocr::{StageOcrRecognizer, crop_title},
+    ocr::{StageOcrAccumulator, StageOcrRecognizer, crop_title},
 };
 
 const OUTPUT_FPS: u64 = 30;
@@ -215,6 +215,7 @@ fn analyze_file(
     let mut clock = ObservationClock::default();
     let mut trace = Vec::new();
     let mut segments = Vec::new();
+    let mut ocr_accumulator = StageOcrAccumulator::new(Arc::clone(&catalog));
     let recognizer = StageOcrRecognizer::new(catalog);
     let mut stage_recognition = match &recognizer {
         Ok(_) => StageRecognition::default(),
@@ -250,14 +251,20 @@ fn analyze_file(
             timestamp_ns,
             config,
         )?;
-        if observation.battle_state == super::ObservedBattleState::BattleBegin
-            && source_frame.is_multiple_of(15)
+        if observation.title_candidate
+            && source_frame.is_multiple_of(6)
             && let (Ok(recognizer), Ok(image)) = (
                 recognizer.as_ref(),
                 crop_title(&buffer, metadata.width, metadata.height, metadata.width * 4),
             )
         {
-            let candidate = recognizer.recognize(image);
+            let candidate = recognizer
+                .recognize_text(image)
+                .map(|text| ocr_accumulator.push(&text))
+                .unwrap_or_else(|warning| StageRecognition {
+                    warning: Some(warning),
+                    ..StageRecognition::default()
+                });
             if recognition_rank(candidate.status) >= recognition_rank(stage_recognition.status) {
                 stage_recognition = candidate;
             }
@@ -278,6 +285,7 @@ fn analyze_file(
                     push_segment(&mut segments, start, last_inside, duration, recognition);
                 }
                 stage_recognition = StageRecognition::default();
+                ocr_accumulator.reset();
             }
             _ => {
                 if let Some((_, duration, last_inside, recognition)) = &mut active_segment {

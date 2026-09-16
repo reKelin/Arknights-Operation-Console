@@ -2,7 +2,7 @@ export const TIMELINE_PADDING = 36;
 export const BASE_PIXELS_PER_FRAME = 0.32;
 
 export function pixelsPerFrame(zoom: number): number {
-  return BASE_PIXELS_PER_FRAME * Math.min(4, Math.max(0.5, zoom));
+  return BASE_PIXELS_PER_FRAME * Math.min(32, Math.max(0.5, zoom));
 }
 
 export function timelineWidth(

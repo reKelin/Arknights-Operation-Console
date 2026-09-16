@@ -46,6 +46,7 @@ type CreateState = {
 };
 
 const KIND_LABELS: Record<DraftKind, string> = {
+  bookmark: "书签",
   deploy: "部署",
   skill: "技能",
   retreat: "撤退",
@@ -81,7 +82,18 @@ export default function Timeline({
   );
   const contentWidth = timelineWidth(maxFrame, zoom, viewportWidth);
   const marks = useMemo(() => {
-    const step = zoom >= 2 ? 300 : zoom >= 1 ? 600 : 900;
+    const step =
+      zoom >= 24
+        ? 10
+        : zoom >= 12
+          ? 30
+          : zoom >= 6
+            ? 60
+            : zoom >= 3
+              ? 150
+              : zoom >= 1
+                ? 300
+                : 900;
     return Array.from(
       { length: Math.floor(maxFrame / step) + 1 },
       (_, index) => index * step,
@@ -111,6 +123,20 @@ export default function Timeline({
     observer.observe(viewport);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const selected = events.find((event) => event.id === selectedId);
+    if (viewport && selected) {
+      viewport.scrollTo({
+        left: Math.max(
+          0,
+          frameToX(selected.frame, zoom) - viewport.clientWidth / 2,
+        ),
+        behavior: "smooth",
+      });
+    }
+  }, [events, selectedId, zoom]);
 
   function eventFrame(event: DraftEvent): number {
     return drag?.id === event.id ? drag.frame : event.frame;
@@ -177,8 +203,8 @@ export default function Timeline({
       return;
     }
     const nextZoom = Math.min(
-      4,
-      Math.max(0.5, zoom + (event.deltaY < 0 ? 0.25 : -0.25)),
+      32,
+      Math.max(0.5, zoom * (event.deltaY < 0 ? 1.25 : 0.8)),
     );
     if (nextZoom === zoom) {
       return;

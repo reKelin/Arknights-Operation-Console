@@ -8,6 +8,10 @@ export const commands = {
 	getSnapshot: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("get_snapshot")),
 	setRecording: (enabled: boolean) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_recording", { enabled })),
 	recordEvent: (kind: DraftKind) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("record_event", { kind })),
+	recordBookmark: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("record_bookmark")),
+	shiftEvents: (ids: string[], delta: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("shift_events", { ids, delta })),
+	reorderEvent: (id: string, direction: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("reorder_event", { id, direction })),
+	clearBookmarks: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("clear_bookmarks")),
 	addEvent: (input: AddEventInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("add_event", { input })),
 	updateEvent: (input: UpdateEventInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_event", { input })),
 	moveEvent: (id: string, frame: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("move_event", { id, frame })),
@@ -22,6 +26,7 @@ export const commands = {
 	updateSettings: (input: AppSettings) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_settings", { input })),
 	requestClearAxis: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_clear_axis")),
 	listGameWindows: () => typedError<GameWindowCandidate[], CommandError>(__TAURI_INVOKE("list_game_windows")),
+	foregroundGameWindow: () => typedError<GameWindowCandidate, CommandError>(__TAURI_INVOKE("foreground_game_window")),
 	listStages: (query: string) => typedError<StageCatalogEntry[], CommandError>(__TAURI_INVOKE("list_stages", { query })),
 	setManualStage: (stageId: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_manual_stage", { stageId })),
 	selectGameWindow: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_game_window", { id })),
@@ -33,6 +38,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	openBookmarkList: makeEvent<OpenBookmarkListEvent>("openBookmarkList"),
 	runnerSnapshot: makeEvent<RunnerSnapshotEvent>("runnerSnapshot"),
 };
 
@@ -84,13 +90,15 @@ export type DraftEvent = {
 	complete: boolean,
 };
 
-export type DraftKind = "deploy" | "skill" | "retreat";
+export type DraftKind = "bookmark" | "deploy" | "skill" | "retreat";
 
 export type GameWindowCandidate = {
 	id: string,
 	title: string,
+	processName: string,
 	width: number,
 	height: number,
+	warning: string | null,
 };
 
 export type MonitorConnectionState = "idle" | "connecting" | "watching" | "analyzing" | "ready" | "error";
@@ -118,6 +126,8 @@ export type MonitorSourceKind = "none" | "window" | "recording";
 export type NoticeKind = "info" | "notify" | "dryRun" | "paused";
 
 export type ObservedBattleState = "unknown" | "notInBattle" | "battleBegin" | "oneXRunning" | "twoXRunning" | "pointTwoXRunning" | "paused" | "deployingOperator" | "adjustingOperatorFacing";
+
+export type OpenBookmarkListEvent = null;
 
 export type ProxyExecutionRecord = {
 	sequence: number,

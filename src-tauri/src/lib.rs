@@ -14,8 +14,8 @@ use std::{
 
 use axis::{DraftAxis, DraftKind};
 use bindings::{
-    AddEventInput, AxisMetadataInput, CommandError, RunStrategy, RunnerSnapshot,
-    RunnerSnapshotEvent, UpdateEventInput,
+    AddEventInput, AxisMetadataInput, CommandError, OpenBookmarkListEvent, RunStrategy,
+    RunnerSnapshot, RunnerSnapshotEvent, UpdateEventInput,
 };
 use executor::SharedExecutor;
 use monitor::{GameWindowCandidate, MonitorManager, VisionConfig};
@@ -34,7 +34,7 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 #[cfg(feature = "desktop-app")]
-use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, ShortcutState};
 #[cfg(feature = "desktop-app")]
 use tauri_specta::Event;
 
@@ -85,6 +85,46 @@ fn record_event(
 ) -> Result<RunnerSnapshot, CommandError> {
     let mut runner = locked(&state)?;
     runner.record_event(kind)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn record_bookmark(state: tauri::State<'_, SharedRunner>) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.record_bookmark()?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn shift_events(
+    ids: Vec<String>,
+    delta: i32,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.shift_events(&ids, delta)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn reorder_event(
+    id: String,
+    direction: i8,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.reorder_event(&id, direction)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn clear_bookmarks(state: tauri::State<'_, SharedRunner>) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.clear_bookmarks();
     Ok(runner.snapshot())
 }
 
@@ -314,6 +354,13 @@ fn list_game_windows() -> Result<Vec<GameWindowCandidate>, CommandError> {
 
 #[tauri::command]
 #[specta::specta]
+fn foreground_game_window() -> Result<GameWindowCandidate, CommandError> {
+    MonitorManager::foreground_game_window()
+        .map_err(|message| CommandError::new("window_discovery", message))
+}
+
+#[tauri::command]
+#[specta::specta]
 fn list_stages(
     query: String,
     state: tauri::State<'_, SharedStages>,
@@ -430,6 +477,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             get_snapshot,
             set_recording,
             record_event,
+            record_bookmark,
+            shift_events,
+            reorder_event,
+            clear_bookmarks,
             add_event,
             update_event,
             move_event,
@@ -444,6 +495,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             update_settings,
             request_clear_axis,
             list_game_windows,
+            foreground_game_window,
             list_stages,
             set_manual_stage,
             select_game_window,
@@ -452,7 +504,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             hide_to_tray,
             close_app,
         ])
-        .events(tauri_specta::collect_events![RunnerSnapshotEvent])
+        .events(tauri_specta::collect_events![
+            RunnerSnapshotEvent,
+            OpenBookmarkListEvent
+        ])
 }
 
 pub fn export_bindings(path: PathBuf) -> Result<(), String> {
@@ -469,6 +524,8 @@ fn emit_snapshot(app: &AppHandle, snapshot: RunnerSnapshot) {
 #[cfg(feature = "desktop-app")]
 fn start_runtime(app: AppHandle) {
     thread::spawn(move || {
+        let mut bookmark_shortcuts_registered = false;
+        let mut shortcut_check = Instant::now() - Duration::from_secs(1);
         loop {
             thread::sleep(Duration::from_millis(16));
             let (monitor_event, monitor_snapshot) = {
@@ -519,6 +576,22 @@ fn start_runtime(app: AppHandle) {
             if !snapshot.proxy.enabled {
                 app.state::<SharedExecutor>().set_capture_enabled(false);
             }
+            if shortcut_check.elapsed() >= Duration::from_millis(250) {
+                shortcut_check = Instant::now();
+                let should_register = snapshot
+                    .monitor
+                    .window_id
+                    .as_deref()
+                    .is_some_and(MonitorManager::is_game_foreground);
+                if should_register != bookmark_shortcuts_registered {
+                    let result = if should_register {
+                        app.global_shortcut().register_multiple(["P", "H"])
+                    } else {
+                        app.global_shortcut().unregister_multiple(["P", "H"])
+                    };
+                    bookmark_shortcuts_registered = should_register && result.is_ok();
+                }
+            }
             if RunnerSnapshotEvent(snapshot).emit(&app).is_err() {
                 break;
             }
@@ -567,6 +640,8 @@ fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let emergency = shortcut.matches(Modifiers::empty(), Code::F12);
                 let clear = shortcut.matches(Modifiers::empty(), Code::F4);
+                let bookmark = shortcut.matches(Modifiers::empty(), Code::KeyP);
+                let open_bookmarks = shortcut.matches(Modifiers::empty(), Code::KeyH);
                 let kind = if shortcut.matches(Modifiers::empty(), Code::F1) {
                     Some(DraftKind::Deploy)
                 } else if shortcut.matches(Modifiers::empty(), Code::F2) {
@@ -576,7 +651,12 @@ fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
-                if !emergency && !clear && kind.is_none() {
+                if !emergency && !clear && !bookmark && !open_bookmarks && kind.is_none() {
+                    return;
+                }
+                if open_bookmarks {
+                    show_main_window(app);
+                    let _ = OpenBookmarkListEvent(()).emit(app);
                     return;
                 }
                 if emergency {
@@ -588,6 +668,8 @@ fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                         runner.emergency_stop();
                     } else if clear {
                         runner.request_clear_axis(Instant::now());
+                    } else if bookmark {
+                        let _ = runner.record_bookmark();
                     } else if let Some(kind) = kind {
                         let _ = runner.record_event(kind);
                     }

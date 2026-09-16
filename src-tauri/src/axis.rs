@@ -11,6 +11,7 @@ typify::import_types!("../protocol/axislink.schema.json");
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum DraftKind {
+    Bookmark,
     Deploy,
     Skill,
     Retreat,
@@ -19,6 +20,7 @@ pub enum DraftKind {
 impl DraftKind {
     fn as_str(self) -> &'static str {
         match self {
+            Self::Bookmark => "bookmark",
             Self::Deploy => "deploy",
             Self::Skill => "skill",
             Self::Retreat => "retreat",
@@ -83,6 +85,7 @@ impl DraftEvent {
         let tile_complete = self.tile.as_deref().is_some_and(valid_tile_code);
         self.complete = tile_complete
             && match self.kind {
+                DraftKind::Bookmark => false,
                 DraftKind::Deploy => {
                     self.operator.as_deref().is_some_and(valid_operator_id)
                         && self.direction.is_some()
@@ -159,6 +162,13 @@ impl DraftAxis {
 
         let mut events = Vec::with_capacity(self.events.len());
         for event in &self.events {
+            if event.kind == DraftKind::Bookmark {
+                return Err(CommandError::field(
+                    "bookmark_not_exportable",
+                    format!("书签 {} 必须先转换为操作或删除", event.id),
+                    format!("events.{}", event.id),
+                ));
+            }
             if !event.complete {
                 return Err(CommandError::field(
                     "event_incomplete",
@@ -237,6 +247,13 @@ fn complete_event(id: &str, frame: u32, order: u32, kind: DraftKind, label: &str
 }
 
 fn event_to_value(event: &DraftEvent) -> Result<Value, CommandError> {
+    if event.kind == DraftKind::Bookmark {
+        return Err(CommandError::field(
+            "bookmark_not_exportable",
+            format!("书签 {} 必须先转换为操作或删除", event.id),
+            format!("events.{}", event.id),
+        ));
+    }
     let tile = event
         .tile
         .as_deref()

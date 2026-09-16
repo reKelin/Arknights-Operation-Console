@@ -428,7 +428,7 @@ button {
   position: relative;
   min-width: 0;
   height: 100%;
-  min-height: 86px;
+  min-height: 180px;
   margin: 0;
   padding: 0;
   overflow-x: auto;
@@ -487,9 +487,9 @@ button {
 
 .recording-trace-marker {
   position: absolute;
-  top: calc(62% - 4px);
-  width: 8px;
-  height: 8px;
+  top: calc(62% - 5px);
+  width: 10px;
+  height: 10px;
   z-index: 2;
   background: var(--text-faint);
   border: 2px solid var(--timeline);
@@ -539,9 +539,9 @@ button {
 
 .axis-point__dot {
   display: block;
-  width: 8px;
-  height: 8px;
-  margin: 5px auto 0;
+  width: 14px;
+  height: 14px;
+  margin: 2px auto 0;
   border: 2px solid var(--timeline);
   border-radius: 50%;
   background: var(--text-faint);
@@ -555,6 +555,10 @@ button {
 
 .axis-point--deploy .axis-point__dot {
   background: #5caaf0;
+}
+
+.axis-point--bookmark .axis-point__dot {
+  background: #bd7bff;
 }
 
 .axis-point--skill .axis-point__dot {
@@ -576,9 +580,9 @@ button {
 }
 
 .axis-point--selected .axis-point__dot {
-  width: 10px;
-  height: 10px;
-  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+  margin-top: 0;
   border-color: var(--text);
 }
 
@@ -590,21 +594,18 @@ button {
 .timeline-playhead {
   position: absolute;
   z-index: 3;
-  top: 16px;
-  bottom: 0;
-  width: 1px;
+  top: calc(62% - 10px);
+  width: 20px;
+  height: 20px;
   background: var(--accent);
+  border: 3px solid var(--timeline);
+  border-radius: 50%;
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
 .timeline-playhead span {
-  position: absolute;
-  top: 0;
-  left: -4px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--accent);
+  display: none;
 }
 
 .create-menu {
@@ -827,6 +828,55 @@ button {
 .metadata-editor select[size] {
   height: auto;
   margin-top: 5px;
+}
+
+.bookmark-editor {
+  width: min(720px, calc(100vw - 24px));
+}
+
+.bookmark-filters,
+.bookmark-shift {
+  display: grid;
+  grid-template-columns: 1fr 180px;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.bookmark-list {
+  display: grid;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--stroke);
+}
+
+.bookmark-list > button {
+  display: grid;
+  grid-template-columns: 110px 1fr 70px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid var(--stroke-faint);
+  text-align: left;
+}
+
+.bookmark-list > button.selected {
+  background: var(--accent-soft);
+}
+
+.bookmark-list em {
+  color: var(--text-faint);
+  font-style: normal;
+  text-align: right;
+}
+
+.bookmark-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.bookmark-shift {
+  grid-template-columns: 1fr auto auto;
+  margin-top: 7px;
 }
 
 .about-dialog p {

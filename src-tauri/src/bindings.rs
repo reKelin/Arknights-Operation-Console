@@ -143,3 +143,8 @@ pub struct RunnerSnapshot {
 #[serde(transparent)]
 #[tauri_specta(event_name = "runnerSnapshot")]
 pub struct RunnerSnapshotEvent(pub RunnerSnapshot);
+
+#[derive(Clone, Debug, Serialize, Type, Event)]
+#[serde(transparent)]
+#[tauri_specta(event_name = "openBookmarkList")]
+pub struct OpenBookmarkListEvent(pub ());
