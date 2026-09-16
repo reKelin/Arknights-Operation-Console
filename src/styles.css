@@ -288,6 +288,8 @@ button {
 
 .button,
 .record-button,
+.proxy-button,
+.timer-actions .danger-button,
 .quick-action,
 .axis-toolbar button,
 .compact-dialog button {
@@ -302,6 +304,8 @@ button {
 
 .button:hover,
 .record-button:hover,
+.proxy-button:hover,
+.timer-actions .danger-button:hover,
 .quick-action:hover,
 .axis-toolbar button:hover,
 .compact-dialog button:hover {
@@ -338,6 +342,20 @@ button {
 .record-button.active > span {
   background: var(--danger);
   border-color: var(--danger);
+}
+
+.proxy-button,
+.timer-actions .danger-button {
+  padding: 0 9px;
+}
+
+.proxy-button.active {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.timer-actions .danger-button {
+  color: var(--danger);
 }
 
 .axis-panel {
@@ -469,12 +487,15 @@ button {
 
 .recording-trace-marker {
   position: absolute;
-  top: 35px;
-  width: 2px;
-  height: 24px;
+  top: calc(62% - 4px);
+  width: 8px;
+  height: 8px;
   z-index: 2;
   background: var(--text-faint);
+  border: 2px solid var(--timeline);
+  border-radius: 50%;
   opacity: 0.7;
+  transform: translateX(-50%);
 }
 
 .recording-trace-marker.trace--oneXRunning,

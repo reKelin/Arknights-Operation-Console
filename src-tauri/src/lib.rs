@@ -1,5 +1,6 @@
 mod axis;
 mod bindings;
+mod executor;
 mod monitor;
 mod runner;
 mod settings;
@@ -16,6 +17,7 @@ use bindings::{
     AddEventInput, AxisMetadataInput, CommandError, RunStrategy, RunnerSnapshot,
     RunnerSnapshotEvent, UpdateEventInput,
 };
+use executor::SharedExecutor;
 use monitor::{GameWindowCandidate, MonitorManager, VisionConfig};
 use runner::RunnerState;
 use settings::AppSettings;
@@ -214,6 +216,44 @@ fn set_strategy(
 
 #[tauri::command]
 #[specta::specta]
+fn request_proxy_execution(
+    runner_state: tauri::State<'_, SharedRunner>,
+    executor: tauri::State<'_, SharedExecutor>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let (enabled, axis) = {
+        let mut runner = locked(&runner_state)?;
+        let enabled = runner.request_proxy_execution(Instant::now())?;
+        (enabled, runner.axis().clone())
+    };
+    if enabled {
+        if let Err(message) = executor.prepare(&axis) {
+            executor.emergency_stop();
+            let mut runner = locked(&runner_state)?;
+            runner.finish_proxy_execution(Vec::new(), Some(message));
+            return Ok(runner.snapshot());
+        }
+        locked(&runner_state)?.complete_proxy_enable()?;
+        executor.set_capture_enabled(true);
+    } else {
+        executor.emergency_stop();
+    }
+    Ok(locked(&runner_state)?.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn emergency_stop(
+    runner_state: tauri::State<'_, SharedRunner>,
+    executor: tauri::State<'_, SharedExecutor>,
+) -> Result<RunnerSnapshot, CommandError> {
+    executor.emergency_stop();
+    let mut runner = locked(&runner_state)?;
+    runner.emergency_stop();
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
 fn set_always_on_top(
     enabled: bool,
     app: AppHandle,
@@ -316,7 +356,9 @@ fn select_game_window(
     id: String,
     monitor_state: tauri::State<'_, SharedMonitor>,
     runner_state: tauri::State<'_, SharedRunner>,
+    executor: tauri::State<'_, SharedExecutor>,
 ) -> Result<RunnerSnapshot, CommandError> {
+    executor.emergency_stop();
     let mut monitor = locked_monitor(&monitor_state)?;
     monitor
         .select_game_window(&id)
@@ -335,7 +377,9 @@ fn analyze_recording(
     path: String,
     monitor_state: tauri::State<'_, SharedMonitor>,
     runner_state: tauri::State<'_, SharedRunner>,
+    executor: tauri::State<'_, SharedExecutor>,
 ) -> Result<RunnerSnapshot, CommandError> {
+    executor.emergency_stop();
     let mut monitor = locked_monitor(&monitor_state)?;
     monitor
         .analyze_recording(&path)
@@ -353,7 +397,9 @@ fn analyze_recording(
 fn stop_monitor(
     monitor_state: tauri::State<'_, SharedMonitor>,
     runner_state: tauri::State<'_, SharedRunner>,
+    executor: tauri::State<'_, SharedExecutor>,
 ) -> Result<RunnerSnapshot, CommandError> {
+    executor.emergency_stop();
     locked_monitor(&monitor_state)?.stop();
     let mut runner = locked(&runner_state)?;
     runner.set_monitor_snapshot(Default::default());
@@ -392,6 +438,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             import_axis,
             export_axis,
             set_strategy,
+            request_proxy_execution,
+            emergency_stop,
             set_always_on_top,
             update_settings,
             request_clear_axis,
@@ -431,19 +479,46 @@ fn start_runtime(app: AppHandle) {
                 let event = monitor.poll();
                 (event, monitor.snapshot())
             };
-            let snapshot = {
+            let (mut snapshot, execution) = {
                 let state = app.state::<SharedRunner>();
                 let Ok(mut runner) = state.0.lock() else {
                     break;
                 };
-                runner.set_monitor_snapshot(monitor_snapshot);
+                runner.set_monitor_snapshot(monitor_snapshot.clone());
                 let now = Instant::now();
                 if let Some(event) = monitor_event {
                     runner.apply_monitor_event(event, now);
                 }
                 runner.refresh(now);
-                runner.snapshot()
+                let requests = runner.take_pending_execution();
+                let execution = (!requests.is_empty()).then(|| {
+                    (
+                        requests,
+                        runner.snapshot().frame,
+                        runner.axis().stage_id.clone().unwrap_or_default(),
+                        monitor_snapshot.window_id.clone().unwrap_or_default(),
+                        monitor_snapshot,
+                    )
+                });
+                (runner.snapshot(), execution)
             };
+            if let Some((requests, frame, stage_id, window_id, monitor)) = execution {
+                let result = app
+                    .state::<SharedExecutor>()
+                    .execute(&requests, frame, &stage_id, &window_id, &monitor);
+                let state = app.state::<SharedRunner>();
+                let Ok(mut runner) = state.0.lock() else {
+                    break;
+                };
+                if result.error.is_some() {
+                    app.state::<SharedExecutor>().set_capture_enabled(false);
+                }
+                runner.finish_proxy_execution(result.records, result.error);
+                snapshot = runner.snapshot();
+            }
+            if !snapshot.proxy.enabled {
+                app.state::<SharedExecutor>().set_capture_enabled(false);
+            }
             if RunnerSnapshotEvent(snapshot).emit(&app).is_err() {
                 break;
             }
@@ -485,11 +560,12 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.handle().plugin(
         tauri_plugin_global_shortcut::Builder::new()
-            .with_shortcuts(["F1", "F2", "F3", "F4"])?
+            .with_shortcuts(["F1", "F2", "F3", "F4", "F12"])?
             .with_handler(|app, shortcut, event| {
                 if event.state != ShortcutState::Pressed {
                     return;
                 }
+                let emergency = shortcut.matches(Modifiers::empty(), Code::F12);
                 let clear = shortcut.matches(Modifiers::empty(), Code::F4);
                 let kind = if shortcut.matches(Modifiers::empty(), Code::F1) {
                     Some(DraftKind::Deploy)
@@ -500,12 +576,17 @@ fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
-                if !clear && kind.is_none() {
+                if !emergency && !clear && kind.is_none() {
                     return;
+                }
+                if emergency {
+                    app.state::<SharedExecutor>().emergency_stop();
                 }
                 let state = app.state::<SharedRunner>();
                 if let Ok(mut runner) = state.0.lock() {
-                    if clear {
+                    if emergency {
+                        runner.emergency_stop();
+                    } else if clear {
                         runner.request_clear_axis(Instant::now());
                     } else if let Some(kind) = kind {
                         let _ = runner.record_event(kind);
@@ -528,11 +609,12 @@ pub fn run() {
         .setup(move |app| {
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let stage_cache = app.path().app_cache_dir()?.join("stage-maps");
-            let catalog = Arc::new(
-                stage::StageCatalog::embedded()
-                    .map_err(|message| std::io::Error::other(message))?,
-            );
+            let execution_cache = app.path().app_cache_dir()?.join("execution");
+            let catalog = Arc::new(stage::StageCatalog::embedded().map_err(std::io::Error::other)?);
             let (settings, warning) = AppSettings::load(&settings_path);
+            let executor = SharedExecutor::new(execution_cache, Arc::clone(&catalog))
+                .map_err(std::io::Error::other)?;
+            let execution_vision = executor.vision();
             app.manage(SharedRunner(Mutex::new(RunnerState::with_settings(
                 Instant::now(),
                 settings.clone(),
@@ -541,7 +623,9 @@ pub fn run() {
             app.manage(SharedMonitor(Mutex::new(MonitorManager::new(
                 VisionConfig::from(&settings),
                 Arc::clone(&catalog),
+                execution_vision,
             ))));
+            app.manage(executor);
             app.manage(SharedStages(Arc::new(StageRepository::new(
                 catalog,
                 stage_cache,
@@ -551,8 +635,9 @@ pub fn run() {
             if let Err(error) = setup_shortcuts(app) {
                 let state = app.state::<SharedRunner>();
                 if let Ok(mut runner) = state.0.lock() {
-                    runner
-                        .set_runtime_warning(format!("全局 F1–F4 注册失败，应用仍可使用：{error}"));
+                    runner.set_runtime_warning(format!(
+                        "全局 F1–F4/F12 注册失败，应用仍可使用：{error}"
+                    ));
                 }
             }
             start_runtime(app.handle().clone());

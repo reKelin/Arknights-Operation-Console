@@ -8,6 +8,7 @@ mod live;
 
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::executor::ExecutionVision;
 use crate::stage::{StageCatalog, StageRecognition};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -90,6 +91,7 @@ pub struct MonitorSnapshot {
     pub source_kind: MonitorSourceKind,
     pub connection_state: MonitorConnectionState,
     pub source_name: Option<String>,
+    pub window_id: Option<String>,
     pub battle_state: ObservedBattleState,
     pub confidence: u8,
     pub cost_phase: Option<u16>,
@@ -139,6 +141,7 @@ pub enum MonitorEvent {
 pub struct MonitorManager {
     config: Arc<RwLock<VisionConfig>>,
     catalog: Arc<StageCatalog>,
+    execution_vision: Arc<ExecutionVision>,
     latest: Arc<Mutex<Option<MonitorEvent>>>,
     snapshot: MonitorSnapshot,
     #[cfg(windows)]
@@ -147,10 +150,15 @@ pub struct MonitorManager {
 }
 
 impl MonitorManager {
-    pub fn new(config: VisionConfig, catalog: Arc<StageCatalog>) -> Self {
+    pub fn new(
+        config: VisionConfig,
+        catalog: Arc<StageCatalog>,
+        execution_vision: Arc<ExecutionVision>,
+    ) -> Self {
         Self {
             config: Arc::new(RwLock::new(config)),
             catalog,
+            execution_vision,
             latest: Arc::new(Mutex::new(None)),
             snapshot: MonitorSnapshot::default(),
             #[cfg(windows)]
@@ -252,6 +260,7 @@ impl MonitorManager {
             id,
             Arc::clone(&self.config),
             Arc::clone(&self.catalog),
+            Arc::clone(&self.execution_vision),
             Arc::clone(&self.latest),
         )?;
         self.live = Some(session);
@@ -259,6 +268,7 @@ impl MonitorManager {
             source_kind: MonitorSourceKind::Window,
             connection_state: MonitorConnectionState::Connecting,
             source_name: Some(candidate.title),
+            window_id: Some(candidate.id),
             cost_total: self
                 .config
                 .read()
