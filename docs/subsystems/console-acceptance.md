@@ -5,6 +5,7 @@ depends_on:
   - docs/product/roadmap.md
   - specs/manual-recording/requirements.md
   - specs/proxy-execution/requirements.md
+  - specs/paused-execution/requirements.md
   - specs/takeover-recording/requirements.md
   - specs/recording-candidates/requirements.md
   - specs/recording-continuation/requirements.md
