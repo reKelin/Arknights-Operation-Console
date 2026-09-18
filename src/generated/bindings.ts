@@ -64,6 +64,27 @@ export type AxisMetadataInput = {
 
 export type BattleStatus = "waiting" | "running" | "paused" | "ended";
 
+export type ClockAnchor = {
+	frame: number,
+	sourceTimestampNs: number | null,
+};
+
+export type ClockMode = "human" | "proxy";
+
+export type ClockQuality = "waiting" | "trusted" | "uncertain" | "lost";
+
+export type ClockSnapshot = {
+	mode: ClockMode,
+	active: boolean,
+	receivingObservations: boolean,
+	frame: number,
+	speedFifths: number,
+	quality: ClockQuality,
+	uncertaintyFrames: number,
+	sourceTimestampNs: number | null,
+	anchor: ClockAnchor | null,
+};
+
 export type CommandError = {
 	code: string,
 	message: string,
@@ -114,6 +135,10 @@ export type MonitorSnapshot = {
 	costTotal: number,
 	trusted: boolean,
 	error: string | null,
+	captureWarning: string | null,
+	lastEventSequence: number | null,
+	lastSourceTimestampNs: number | null,
+	droppedObservations: number,
 	recordingProgress: number | null,
 	traceDurationFrames: number | null,
 	tracePoints: RecordingTracePoint[],
@@ -157,7 +182,11 @@ export type RecordingSegment = {
 
 export type RecordingTracePoint = {
 	sourceFrame: number,
+	sourceTimestampNs: number | null,
 	gameFrame: number,
+	gameFrameMin: number,
+	gameFrameMax: number,
+	clockQuality: ClockQuality,
 	battleState: ObservedBattleState,
 	costPhase: number | null,
 };
@@ -175,6 +204,7 @@ export type RunnerSnapshot = {
 	axis: DraftAxis,
 	settings: AppSettings,
 	monitor: MonitorSnapshot,
+	clock: ClockSnapshot,
 	stageSafety: StageSafetySnapshot,
 	frame: number,
 	time: string,

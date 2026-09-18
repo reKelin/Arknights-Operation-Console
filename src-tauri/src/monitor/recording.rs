@@ -14,8 +14,8 @@ use crate::stage::{StageCatalog, StageMatchStatus, StageRecognition};
 use serde::Deserialize;
 
 use super::{
-    ClockTransition, MonitorEvent, ObservationClock, RecordingSegment, RecordingTracePoint,
-    VisionConfig, analyze_bgra,
+    ClockTransition, MonitorEvent, MonitorEventQueue, ObservationClock, RecordingSegment,
+    RecordingTracePoint, VisionConfig, analyze_bgra,
     ocr::{StageOcrAccumulator, StageOcrRecognizer, crop_title},
 };
 
@@ -30,7 +30,7 @@ impl RecordingSession {
         path: &str,
         config: VisionConfig,
         catalog: Arc<StageCatalog>,
-        latest: Arc<Mutex<Option<MonitorEvent>>>,
+        events: Arc<Mutex<MonitorEventQueue>>,
     ) -> Result<(Self, String, u16), String> {
         let path = Path::new(path);
         validate_recording_path(path)?;
@@ -47,9 +47,9 @@ impl RecordingSession {
             .name("recording-analysis".to_string())
             .spawn(move || {
                 if let Err(message) =
-                    analyze_file(&path, metadata, config, catalog, &task_cancelled, &latest)
+                    analyze_file(&path, metadata, config, catalog, &task_cancelled, &events)
                 {
-                    publish(&latest, MonitorEvent::Error(message));
+                    publish(&events, MonitorEvent::Error(message));
                 }
             })
             .map_err(|error| format!("启动录屏分析线程失败：{error}"))?;
@@ -180,7 +180,7 @@ fn analyze_file(
     config: VisionConfig,
     catalog: Arc<StageCatalog>,
     cancelled: &AtomicBool,
-    latest: &Mutex<Option<MonitorEvent>>,
+    events: &Mutex<MonitorEventQueue>,
 ) -> Result<(), String> {
     let frame_size = usize::try_from(metadata.width)
         .ok()
@@ -303,7 +303,11 @@ fn analyze_file(
         }
         let point = RecordingTracePoint {
             source_frame: source_frame.min(u64::from(u32::MAX)) as u32,
+            source_timestamp_ns: timestamp_ns as f64,
             game_frame: update.frame,
+            game_frame_min: update.frame.saturating_sub(update.uncertainty_frames),
+            game_frame_max: update.frame.saturating_add(update.uncertainty_frames),
+            clock_quality: update.quality,
             battle_state: observation.battle_state,
             cost_phase: observation.cost_phase,
         };
@@ -318,7 +322,7 @@ fn analyze_file(
         if progress != last_progress {
             last_progress = progress;
             publish(
-                latest,
+                events,
                 MonitorEvent::RecordingProgress {
                     progress,
                     observation,
@@ -347,7 +351,7 @@ fn analyze_file(
         .max()
         .unwrap_or(0);
     publish(
-        latest,
+        events,
         MonitorEvent::RecordingReady {
             trace,
             segments,
@@ -382,9 +386,9 @@ fn recognition_rank(status: StageMatchStatus) -> u8 {
     }
 }
 
-fn publish(latest: &Mutex<Option<MonitorEvent>>, event: MonitorEvent) {
-    if let Ok(mut latest) = latest.lock() {
-        *latest = Some(event);
+fn publish(events: &Mutex<MonitorEventQueue>, event: MonitorEvent) {
+    if let Ok(mut events) = events.lock() {
+        events.publish(event);
     }
 }
 

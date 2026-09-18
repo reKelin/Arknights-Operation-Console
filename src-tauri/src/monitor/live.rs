@@ -19,9 +19,9 @@ use windows::{
     core::PWSTR,
 };
 use windows_capture::{
-    capture::{CaptureControl, Context, GraphicsCaptureApiHandler},
+    capture::{CaptureControl, Context, GraphicsCaptureApiError, GraphicsCaptureApiHandler},
     frame::Frame,
-    graphics_capture_api::InternalCaptureControl,
+    graphics_capture_api::{Error as CaptureApiError, InternalCaptureControl},
     settings::{
         ColorFormat, CursorCaptureSettings, DirtyRegionSettings, DrawBorderSettings,
         MinimumUpdateIntervalSettings, SecondaryWindowSettings, Settings,
@@ -33,7 +33,8 @@ use crate::executor::ExecutionVision;
 use crate::stage::{StageCatalog, StageMatchStatus, StageRecognition};
 
 use super::{
-    GameWindowCandidate, MonitorEvent, ObservedBattleState, VisionConfig, analyze_bgra,
+    GameWindowCandidate, MonitorEvent, MonitorEventQueue, ObservedBattleState, VisionConfig,
+    analyze_bgra,
     ocr::{OcrImage, StageOcrAccumulator, StageOcrRecognizer, crop_title},
 };
 
@@ -46,12 +47,12 @@ struct CaptureFlags {
     config: Arc<RwLock<VisionConfig>>,
     catalog: Arc<StageCatalog>,
     execution_vision: Arc<ExecutionVision>,
-    latest: Arc<Mutex<Option<MonitorEvent>>>,
+    events: Arc<Mutex<MonitorEventQueue>>,
 }
 
 struct LiveFrameHandler {
     config: Arc<RwLock<VisionConfig>>,
-    latest: Arc<Mutex<Option<MonitorEvent>>>,
+    events: Arc<Mutex<MonitorEventQueue>>,
     started: Instant,
     ocr_sender: SyncSender<OcrCommand>,
     ocr_result: Arc<Mutex<Option<StageRecognition>>>,
@@ -115,7 +116,7 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
             .map_err(|error| format!("启动关卡 OCR 线程失败：{error}"))?;
         Ok(Self {
             config: context.flags.config,
-            latest: context.flags.latest,
+            events: context.flags.events,
             started: Instant::now(),
             ocr_sender,
             ocr_result,
@@ -135,8 +136,8 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
             Ok(buffer) => buffer,
             Err(error) => {
                 let message = format!("读取 WGC 帧失败：{error}");
-                if let Ok(mut latest) = self.latest.lock() {
-                    *latest = Some(MonitorEvent::Error(message.clone()));
+                if let Ok(mut events) = self.events.lock() {
+                    events.publish(MonitorEvent::Error(message.clone()));
                 }
                 return Err(message);
             }
@@ -194,15 +195,15 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
             }
             Err(message) => MonitorEvent::Error(message),
         };
-        if let Ok(mut latest) = self.latest.lock() {
-            *latest = Some(event);
+        if let Ok(mut events) = self.events.lock() {
+            events.publish(event);
         }
         Ok(())
     }
 
     fn on_closed(&mut self) -> Result<(), Self::Error> {
-        if let Ok(mut latest) = self.latest.lock() {
-            *latest = Some(MonitorEvent::Error("游戏窗口已关闭".to_string()));
+        if let Ok(mut events) = self.events.lock() {
+            events.publish(MonitorEvent::Error("游戏窗口已关闭".to_string()));
         }
         Ok(())
     }
@@ -218,31 +219,44 @@ impl LiveSession {
         config: Arc<RwLock<VisionConfig>>,
         catalog: Arc<StageCatalog>,
         execution_vision: Arc<ExecutionVision>,
-        latest: Arc<Mutex<Option<MonitorEvent>>>,
-    ) -> Result<(Self, GameWindowCandidate), String> {
+        events: Arc<Mutex<MonitorEventQueue>>,
+    ) -> Result<(Self, GameWindowCandidate, Option<String>), String> {
         let (window, candidate) = find_window(id)?;
-        let settings = Settings::new(
-            window,
-            CursorCaptureSettings::Default,
-            DrawBorderSettings::Default,
-            SecondaryWindowSettings::Default,
-            MinimumUpdateIntervalSettings::Default,
-            DirtyRegionSettings::Default,
-            ColorFormat::Bgra8,
-            CaptureFlags {
-                config,
-                catalog,
-                execution_vision,
-                latest,
-            },
-        );
-        let control = LiveFrameHandler::start_free_threaded(settings)
-            .map_err(|error| format!("启动 WGC 捕获失败：{error}"))?;
+        let start = |border| {
+            LiveFrameHandler::start_free_threaded(Settings::new(
+                window,
+                CursorCaptureSettings::Default,
+                border,
+                SecondaryWindowSettings::Default,
+                MinimumUpdateIntervalSettings::Default,
+                DirtyRegionSettings::Default,
+                ColorFormat::Bgra8,
+                CaptureFlags {
+                    config: Arc::clone(&config),
+                    catalog: Arc::clone(&catalog),
+                    execution_vision: Arc::clone(&execution_vision),
+                    events: Arc::clone(&events),
+                },
+            ))
+        };
+        let (control, capture_warning) = match start(DrawBorderSettings::WithoutBorder) {
+            Ok(control) => (control, None),
+            Err(error) if is_border_compatibility_error(&error) => {
+                let control = start(DrawBorderSettings::Default)
+                    .map_err(|fallback| format!("启动 WGC 捕获失败：{fallback}"))?;
+                (
+                    control,
+                    Some("系统不支持或未授权关闭 WGC 捕获边框，已使用兼容捕获；游戏窗口可能显示黄色边框".to_string()),
+                )
+            }
+            Err(error) => return Err(format!("启动 WGC 捕获失败：{error}")),
+        };
         Ok((
             Self {
                 control: Some(control),
             },
             candidate,
+            capture_warning,
         ))
     }
 
@@ -250,6 +264,18 @@ impl LiveSession {
         if let Some(control) = self.control.take() {
             let _ = control.stop();
         }
+    }
+}
+
+fn is_border_compatibility_error(error: &GraphicsCaptureApiError<String>) -> bool {
+    match error {
+        GraphicsCaptureApiError::GraphicsCaptureApiError(
+            CaptureApiError::BorderConfigUnsupported,
+        ) => true,
+        GraphicsCaptureApiError::GraphicsCaptureApiError(CaptureApiError::WindowsError(error)) => {
+            matches!(error.code().0, -2_147_024_891 | -2_147_467_263)
+        }
+        _ => false,
     }
 }
 
