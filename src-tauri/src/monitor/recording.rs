@@ -19,10 +19,13 @@ use super::{
     ocr::{StageOcrAccumulator, StageOcrRecognizer, crop_title},
 };
 
-#[cfg(test)]
-mod analysis;
+pub mod analysis;
 
-const OUTPUT_FPS: u64 = 30;
+use analysis::{
+    CandidateObservation, GameFrameRange, SourceFrameTimeline, extract_operation_candidates,
+};
+
+const MIN_GAP_THRESHOLD_NS: u64 = 250_000_000;
 
 pub struct RecordingSession {
     cancelled: Arc<AtomicBool>,
@@ -82,11 +85,12 @@ struct ProbeFormat {
     duration: String,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct RecordingMetadata {
     width: u32,
     height: u32,
-    duration_seconds: f64,
+    gap_threshold_ns: u64,
+    source_timeline: SourceFrameTimeline,
 }
 
 fn validate_recording_path(path: &Path) -> Result<(), String> {
@@ -111,8 +115,9 @@ fn probe(path: &Path) -> Result<RecordingMetadata, String> {
             "error",
             "-select_streams",
             "v:0",
+            "-show_frames",
             "-show_entries",
-            "stream=width,height,avg_frame_rate:format=duration",
+            "stream=width,height,avg_frame_rate,time_base:frame=best_effort_timestamp:format=duration",
             "-of",
             "json",
         ])
@@ -146,6 +151,8 @@ fn parse_probe_output(bytes: &[u8]) -> Result<RecordingMetadata, String> {
     if !(1.0..=240.0).contains(&frame_rate) {
         return Err(format!("录屏帧率无效：{frame_rate}"));
     }
+    let source_timeline =
+        SourceFrameTimeline::parse_ffprobe_json(bytes).map_err(|error| error.to_string())?;
     let duration_seconds = probe
         .format
         .duration
@@ -154,10 +161,12 @@ fn parse_probe_output(bytes: &[u8]) -> Result<RecordingMetadata, String> {
     if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
         return Err("录屏时长必须大于 0".to_string());
     }
+    let expected_frame_interval_ns = (1_000_000_000.0 / frame_rate).ceil() as u64;
     Ok(RecordingMetadata {
         width: stream.width,
         height: stream.height,
-        duration_seconds,
+        gap_threshold_ns: MIN_GAP_THRESHOLD_NS.max(expected_frame_interval_ns.saturating_mul(4)),
+        source_timeline,
     })
 }
 
@@ -199,7 +208,18 @@ fn analyze_file(
         .args(["-loglevel", "error", "-i"])
         .arg(path)
         .args([
-            "-vf", "fps=30", "-f", "rawvideo", "-pix_fmt", "bgra", "-an", "-sn", "-dn", "pipe:1",
+            "-map",
+            "0:v:0",
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgra",
+            "-an",
+            "-sn",
+            "-dn",
+            "pipe:1",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -210,14 +230,14 @@ fn analyze_file(
         .stdout
         .take()
         .ok_or_else(|| "ffmpeg 没有提供视频输出".to_string())?;
-    let expected_frames = (metadata.duration_seconds * OUTPUT_FPS as f64)
-        .ceil()
-        .max(1.0) as u64;
+    let expected_frames = metadata.source_timeline.timestamps.len() as u64;
     let mut buffer = vec![0_u8; frame_size];
-    let mut source_frame = 0_u64;
+    let mut source_frame = 0_usize;
+    let mut previous_timestamp_ns = None;
     let mut clock = ObservationClock::default();
     let mut trace = Vec::new();
     let mut segments = Vec::new();
+    let mut candidate_observations = Vec::new();
     let mut ocr_accumulator = StageOcrAccumulator::new(Arc::clone(&catalog));
     let recognizer = StageOcrRecognizer::new(catalog);
     let mut stage_recognition = match &recognizer {
@@ -227,7 +247,7 @@ fn analyze_file(
             ..StageRecognition::default()
         },
     };
-    let mut active_segment: Option<(u32, u32, u32, StageRecognition)> = None;
+    let mut active_segment: Option<(u32, u32, u32, u32, StageRecognition)> = None;
     let mut last_progress = u8::MAX;
 
     loop {
@@ -245,7 +265,21 @@ fn analyze_file(
                 return Err(format!("读取 ffmpeg 解码帧失败：{error}"));
             }
         }
-        let timestamp_ns = source_frame.saturating_mul(1_000_000_000) / OUTPUT_FPS;
+        let source_timestamp = metadata
+            .source_timeline
+            .timestamp_for_decoded_frame(source_frame)
+            .map_err(|error| error.to_string())?
+            .clone();
+        let timestamp_ns = source_timestamp
+            .nanoseconds()
+            .map_err(|_| format!("录屏第 {source_frame} 帧的原始展示时间戳无法换算"))?;
+        let discontinuity_before = previous_timestamp_ns.is_some_and(|previous| {
+            timestamp_ns.saturating_sub(previous) > metadata.gap_threshold_ns
+        });
+        if discontinuity_before {
+            clock.mark_observation_gap(1);
+        }
+        previous_timestamp_ns = Some(timestamp_ns);
         let mut observation = analyze_bgra(
             &buffer,
             metadata.width,
@@ -280,18 +314,20 @@ fn analyze_file(
         let update = clock.observe(&observation);
         match update.transition {
             ClockTransition::Started => {
-                let source = source_frame.min(u64::from(u32::MAX)) as u32;
-                active_segment = Some((source, 0, source, stage_recognition.clone()));
+                let source = source_frame.min(u32::MAX as usize) as u32;
+                let index = segments.len().min(u32::MAX as usize) as u32;
+                active_segment = Some((index, source, 0, source, stage_recognition.clone()));
             }
             ClockTransition::Exited => {
-                if let Some((start, duration, last_inside, recognition)) = active_segment.take() {
+                if let Some((_, start, duration, last_inside, recognition)) = active_segment.take()
+                {
                     push_segment(&mut segments, start, last_inside, duration, recognition);
                 }
                 stage_recognition = StageRecognition::default();
                 ocr_accumulator.reset();
             }
             _ => {
-                if let Some((_, duration, last_inside, recognition)) = &mut active_segment {
+                if let Some((_, _, duration, last_inside, recognition)) = &mut active_segment {
                     *duration = (*duration).max(update.frame);
                     if recognition_rank(stage_recognition.status)
                         >= recognition_rank(recognition.status)
@@ -299,13 +335,29 @@ fn analyze_file(
                         *recognition = stage_recognition.clone();
                     }
                     if observation.battle_state.is_in_battle() {
-                        *last_inside = source_frame.min(u64::from(u32::MAX)) as u32;
+                        *last_inside = source_frame.min(u32::MAX as usize) as u32;
                     }
                 }
             }
         }
+        if let Some((segment_index, ..)) = active_segment.as_ref()
+            && observation.battle_state.is_in_battle()
+        {
+            candidate_observations.push(CandidateObservation {
+                source_timestamp,
+                segment_index: *segment_index,
+                game_frame_range: GameFrameRange {
+                    start: update.frame.saturating_sub(update.uncertainty_frames),
+                    end: update.frame.saturating_add(update.uncertainty_frames),
+                },
+                battle_state: observation.battle_state,
+                observation_confidence: observation.confidence,
+                mapping_trusted: update.quality == super::ClockQuality::Trusted,
+                discontinuity_before,
+            });
+        }
         let point = RecordingTracePoint {
-            source_frame: source_frame.min(u64::from(u32::MAX)) as u32,
+            source_frame: source_frame.min(u32::MAX as usize) as u32,
             source_timestamp_ns: timestamp_ns as f64,
             game_frame: update.frame,
             game_frame_min: update.frame.saturating_sub(update.uncertainty_frames),
@@ -316,12 +368,16 @@ fn analyze_file(
         };
         if trace.last().is_none_or(|previous: &RecordingTracePoint| {
             previous.game_frame != point.game_frame
+                || previous.game_frame_min != point.game_frame_min
+                || previous.game_frame_max != point.game_frame_max
+                || previous.clock_quality != point.clock_quality
                 || previous.battle_state != point.battle_state
                 || previous.cost_phase != point.cost_phase
         }) {
             trace.push(point);
         }
-        let progress = ((source_frame.saturating_mul(100) / expected_frames).min(99)) as u8;
+        let progress =
+            (((source_frame as u64).saturating_mul(100) / expected_frames).min(99)) as u8;
         if progress != last_progress {
             last_progress = progress;
             publish(
@@ -345,9 +401,14 @@ fn analyze_file(
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    if let Some((start, duration, last_inside, recognition)) = active_segment {
+    metadata
+        .source_timeline
+        .verify_decoded_frame_count(source_frame)
+        .map_err(|error| error.to_string())?;
+    if let Some((_, start, duration, last_inside, recognition)) = active_segment {
         push_segment(&mut segments, start, last_inside, duration, recognition);
     }
+    let candidates = extract_operation_candidates(&candidate_observations);
     let duration_frames = trace
         .iter()
         .map(|point| point.game_frame)
@@ -358,6 +419,7 @@ fn analyze_file(
         MonitorEvent::RecordingReady {
             trace,
             segments,
+            candidates,
             duration_frames,
         },
     );
@@ -416,8 +478,13 @@ mod tests {
                 "streams": [{
                     "width": 1920,
                     "height": 1080,
-                    "avg_frame_rate": "60000/1001"
+                    "avg_frame_rate": "60000/1001",
+                    "time_base": "1/90000"
                 }],
+                "frames": [
+                    { "best_effort_timestamp": "0" },
+                    { "best_effort_timestamp": "1502" }
+                ],
                 "format": { "duration": "153.749" }
             }"#,
         )
@@ -425,7 +492,7 @@ mod tests {
 
         assert_eq!(metadata.width, 1920);
         assert_eq!(metadata.height, 1080);
-        assert_eq!(metadata.duration_seconds, 153.749);
+        assert_eq!(metadata.source_timeline.timestamps.len(), 2);
     }
 
     #[test]

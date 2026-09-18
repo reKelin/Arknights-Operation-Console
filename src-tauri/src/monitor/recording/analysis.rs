@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::fmt;
 
 use super::super::ObservedBattleState;
@@ -6,7 +7,7 @@ use super::super::ObservedBattleState;
 const MIN_STABLE_OBSERVATIONS: usize = 2;
 const MIN_OBSERVATION_CONFIDENCE: u8 = 70;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceTimeBase {
     pub numerator: u32,
@@ -34,10 +35,10 @@ impl SourceTimeBase {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceTimestamp {
-    pub raw_pts: i64,
+    pub raw_pts: String,
     pub time_base: SourceTimeBase,
 }
 
@@ -46,14 +47,28 @@ impl SourceTimestamp {
         let raw_pts = raw_pts
             .parse::<i64>()
             .map_err(|_| SourceTimestampError::InvalidPts)?;
-        Ok(Self { raw_pts, time_base })
+        Ok(Self::from_raw_pts(raw_pts, time_base))
     }
 
-    pub fn nanoseconds(self) -> Result<u64, SourceTimestampError> {
-        if self.raw_pts < 0 {
+    pub fn from_raw_pts(raw_pts: i64, time_base: SourceTimeBase) -> Self {
+        Self {
+            raw_pts: raw_pts.to_string(),
+            time_base,
+        }
+    }
+
+    fn raw_pts_value(&self) -> Result<i64, SourceTimestampError> {
+        self.raw_pts
+            .parse::<i64>()
+            .map_err(|_| SourceTimestampError::InvalidPts)
+    }
+
+    pub fn nanoseconds(&self) -> Result<u64, SourceTimestampError> {
+        let raw_pts = self.raw_pts_value()?;
+        if raw_pts < 0 {
             return Err(SourceTimestampError::NegativePts);
         }
-        let nanos = i128::from(self.raw_pts)
+        let nanos = i128::from(raw_pts)
             .checked_mul(i128::from(self.time_base.numerator))
             .and_then(|value| value.checked_mul(1_000_000_000))
             .ok_or(SourceTimestampError::Overflow)?
@@ -87,19 +102,21 @@ impl SourceFrameTimeline {
         let time_base = SourceTimeBase::parse(&stream.time_base)
             .map_err(|_| SourceTimelineError::InvalidTimeBase(stream.time_base.clone()))?;
         let mut timestamps = Vec::with_capacity(probe.frames.len());
+        let mut previous_raw_pts = None;
         for (ordinal, frame) in probe.frames.into_iter().enumerate() {
             let raw_pts = frame
                 .best_effort_timestamp
                 .ok_or(SourceTimelineError::MissingPts { ordinal })?
                 .parse()
                 .map_err(|_| SourceTimelineError::InvalidPts { ordinal })?;
-            if timestamps
-                .last()
-                .is_some_and(|previous: &SourceTimestamp| previous.raw_pts >= raw_pts)
-            {
+            if previous_raw_pts.is_some_and(|previous| previous >= raw_pts) {
                 return Err(SourceTimelineError::NonIncreasingPts { ordinal });
             }
-            timestamps.push(SourceTimestamp { raw_pts, time_base });
+            previous_raw_pts = Some(raw_pts);
+            timestamps.push(
+                SourceTimestamp::parse(&raw_pts.to_string(), time_base)
+                    .map_err(|_| SourceTimelineError::InvalidPts { ordinal })?,
+            );
         }
         if timestamps.is_empty() {
             return Err(SourceTimelineError::NoVideoFrames);
@@ -113,12 +130,12 @@ impl SourceFrameTimeline {
     pub fn timestamp_for_decoded_frame(
         &self,
         decoded_ordinal: usize,
-    ) -> Result<SourceTimestamp, SourceTimelineError> {
-        self.timestamps.get(decoded_ordinal).copied().ok_or(
-            SourceTimelineError::DecodedFrameWithoutPts {
+    ) -> Result<&SourceTimestamp, SourceTimelineError> {
+        self.timestamps
+            .get(decoded_ordinal)
+            .ok_or(SourceTimelineError::DecodedFrameWithoutPts {
                 ordinal: decoded_ordinal,
-            },
-        )
+            })
     }
 
     pub fn verify_decoded_frame_count(
@@ -221,7 +238,7 @@ impl ProbeTimestamp {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GameFrameRange {
     pub start: u32,
@@ -234,7 +251,7 @@ impl GameFrameRange {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CandidateObservation {
     pub source_timestamp: SourceTimestamp,
@@ -246,7 +263,7 @@ pub struct CandidateObservation {
     pub discontinuity_before: bool,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum CandidateActionKind {
     Deploy,
@@ -254,7 +271,7 @@ pub enum CandidateActionKind {
     Retreat,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum CandidateEvidence {
     DeploymentGesture,
@@ -262,7 +279,7 @@ pub enum CandidateEvidence {
     InterruptedInteraction,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum UnconfirmedField {
     ActionKind,
@@ -272,7 +289,7 @@ pub enum UnconfirmedField {
     Direction,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisCandidate {
     pub id: String,
@@ -289,7 +306,7 @@ pub struct AnalysisCandidate {
     pub unconfirmed_fields: Vec<UnconfirmedField>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum FacingDirection {
     Up,
@@ -298,7 +315,8 @@ pub enum FacingDirection {
     Left,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg(test)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CandidateConfirmation {
     pub kind: CandidateActionKind,
@@ -308,7 +326,9 @@ pub struct CandidateConfirmation {
     pub direction: Option<FacingDirection>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg(test)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfirmedOperation {
     pub candidate_id: String,
     pub kind: CandidateActionKind,
@@ -318,12 +338,14 @@ pub struct ConfirmedOperation {
     pub direction: Option<FacingDirection>,
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmationError {
     pub field: &'static str,
     pub message: &'static str,
 }
 
+#[cfg(test)]
 pub fn confirm_candidate(
     candidate: &AnalysisCandidate,
     confirmation: CandidateConfirmation,
@@ -401,7 +423,7 @@ pub fn extract_operation_candidates(
     candidates
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct StableRun {
     segment_index: u32,
     state: ObservedBattleState,
@@ -437,13 +459,16 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
             && run.segment_index == observation.segment_index
             && run.state == observation.battle_state
         {
-            run.source_end = observation.source_timestamp;
+            run.source_end = observation.source_timestamp.clone();
             run.game_frame_range.end = observation.game_frame_range.end;
             run.confidence = run.confidence.min(observation.observation_confidence);
             run.observations += 1;
             continue;
         }
-        if current.is_some_and(|run| run.segment_index != observation.segment_index) {
+        if current
+            .as_ref()
+            .is_some_and(|run| run.segment_index != observation.segment_index)
+        {
             push_run(&mut runs, current.take());
             push_group(&mut groups, &mut runs);
         } else {
@@ -452,8 +477,8 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
         current = Some(StableRun {
             segment_index: observation.segment_index,
             state: observation.battle_state,
-            source_start: observation.source_timestamp,
-            source_end: observation.source_timestamp,
+            source_start: observation.source_timestamp.clone(),
+            source_end: observation.source_timestamp.clone(),
             game_frame_range: observation.game_frame_range,
             confidence: observation.observation_confidence,
             observations: 1,
@@ -597,8 +622,8 @@ fn candidate_from_runs(
     AnalysisCandidate {
         id: String::new(),
         segment_index: first.segment_index,
-        source_start: first.source_start,
-        source_end: last.source_end,
+        source_start: first.source_start.clone(),
+        source_end: last.source_end.clone(),
         game_frame_range: GameFrameRange {
             start: first.game_frame_range.start,
             end: last.game_frame_range.end,
@@ -624,6 +649,7 @@ fn is_running_state(state: ObservedBattleState) -> bool {
     )
 }
 
+#[cfg(test)]
 fn valid_tile_code(value: &str) -> bool {
     let bytes = value.as_bytes();
     (2..=3).contains(&bytes.len())
@@ -633,6 +659,7 @@ fn valid_tile_code(value: &str) -> bool {
             .is_ok_and(|column| (1..=36).contains(&column))
 }
 
+#[cfg(test)]
 fn valid_operator_id(value: &str) -> bool {
     value.len() <= 128
         && value.strip_prefix("char_").is_some_and(|rest| {
@@ -679,7 +706,7 @@ mod tests {
     fn preserves_fractional_source_pts() {
         let time_base = SourceTimeBase::parse("1/90000").unwrap();
         let timestamp = SourceTimestamp::parse("3003", time_base).unwrap();
-        assert_eq!(timestamp.raw_pts, 3003);
+        assert_eq!(timestamp.raw_pts, "3003");
         assert_eq!(timestamp.nanoseconds().unwrap(), 33_366_666);
     }
 
@@ -694,10 +721,10 @@ mod tests {
             timeline.time_base,
             SourceTimeBase::parse("1/90000").unwrap()
         );
-        assert_eq!(timeline.timestamps[1].raw_pts, 3003);
+        assert_eq!(timeline.timestamps[1].raw_pts, "3003");
         assert_eq!(
             timeline.timestamp_for_decoded_frame(2).unwrap().raw_pts,
-            7507
+            "7507"
         );
         assert!(timeline.verify_decoded_frame_count(4).is_ok());
         assert_eq!(
@@ -746,10 +773,7 @@ mod tests {
                 .observations
                 .into_iter()
                 .map(|observation| CandidateObservation {
-                    source_timestamp: SourceTimestamp {
-                        raw_pts: observation.pts,
-                        time_base,
-                    },
+                    source_timestamp: SourceTimestamp::from_raw_pts(observation.pts, time_base),
                     segment_index: observation.segment,
                     game_frame_range: GameFrameRange {
                         start: observation.game_start,
@@ -823,14 +847,8 @@ mod tests {
         AnalysisCandidate {
             id: "recording-0-0".to_string(),
             segment_index: 0,
-            source_start: SourceTimestamp {
-                raw_pts: 100,
-                time_base,
-            },
-            source_end: SourceTimestamp {
-                raw_pts: 200,
-                time_base,
-            },
+            source_start: SourceTimestamp::from_raw_pts(100, time_base),
+            source_end: SourceTimestamp::from_raw_pts(200, time_base),
             game_frame_range: GameFrameRange { start: 30, end: 34 },
             kind: None,
             operator: None,

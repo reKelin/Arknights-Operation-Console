@@ -21,6 +21,7 @@ pub use clock::{
     ClockAnchor, ClockMode, ClockQuality, ClockSnapshot, ClockTransition, ClockUpdate, HumanClock,
     ObservationClock, ProxyClock,
 };
+pub use recording::analysis::AnalysisCandidate;
 pub use vision::{VisionConfig, VisualObservation, analyze_bgra};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, Type)]
@@ -116,6 +117,7 @@ pub struct MonitorSnapshot {
     pub trace_duration_frames: Option<u32>,
     pub trace_points: Vec<RecordingTracePoint>,
     pub recording_segments: Vec<RecordingSegment>,
+    pub recording_candidates: Vec<AnalysisCandidate>,
     pub stage_recognition: StageRecognition,
 }
 
@@ -152,6 +154,7 @@ pub enum MonitorEvent {
     RecordingReady {
         trace: Vec<RecordingTracePoint>,
         segments: Vec<RecordingSegment>,
+        candidates: Vec<AnalysisCandidate>,
         duration_frames: u32,
     },
     Error(String),
@@ -333,6 +336,7 @@ impl MonitorManager {
             MonitorEvent::RecordingReady {
                 trace,
                 segments,
+                candidates,
                 duration_frames,
             } if self.snapshot.source_kind == MonitorSourceKind::Recording => {
                 if segments.is_empty() {
@@ -340,6 +344,7 @@ impl MonitorManager {
                     self.snapshot.connection_state = MonitorConnectionState::Error;
                     self.snapshot.recording_progress = Some(100);
                     self.snapshot.trace_points = trace;
+                    self.snapshot.recording_candidates = candidates;
                     self.snapshot.trusted = false;
                     self.snapshot.error = Some(message.clone());
                     self.recording = None;
@@ -351,6 +356,7 @@ impl MonitorManager {
                 self.snapshot.trace_duration_frames = Some(duration_frames);
                 self.snapshot.trace_points = trace;
                 self.snapshot.recording_segments = segments;
+                self.snapshot.recording_candidates = candidates;
                 self.snapshot.trusted = true;
                 self.recording = None;
                 None
