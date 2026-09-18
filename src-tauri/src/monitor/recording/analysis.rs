@@ -418,7 +418,10 @@ pub fn extract_operation_candidates(
         extract_group_candidates(&runs, &mut candidates);
     }
     for (index, candidate) in candidates.iter_mut().enumerate() {
-        candidate.id = format!("recording-{}-{index}", candidate.segment_index);
+        candidate.id = format!(
+            "recording-{}-{}-{index}",
+            candidate.segment_index, candidate.source_start.raw_pts
+        );
     }
     candidates
 }
@@ -786,6 +789,12 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let candidates = extract_operation_candidates(&observations);
+            for candidate in &candidates {
+                assert!(candidate.id.starts_with(&format!(
+                    "recording-{}-{}-",
+                    candidate.segment_index, candidate.source_start.raw_pts
+                )));
+            }
             let actual = candidates
                 .iter()
                 .map(|candidate| candidate.evidence)
