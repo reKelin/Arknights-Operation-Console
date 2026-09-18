@@ -15,7 +15,7 @@ depends_on:
 - REQ-CONTINUATION-003：新版本必须完整保留父版本中的已执行前缀，并且只合入录屏源锚点之后的已确认候选。
   - AC-CONTINUATION-003：父版本事件原样保留；位于或早于源锚点的候选不进入结果；合入事件的帧和帧范围使用同一个已确认偏移校正。
 - REQ-CONTINUATION-004：重复检测必须使用稳定来源标识和执行回执标识，不得按四舍五入后的游戏帧删除操作。
-  - AC-CONTINUATION-004：父版本或本批次已包含同一 `candidateId` 时拒绝；同帧不同来源的操作按父前缀优先、候选来源顺序稳定保留。
+  - AC-CONTINUATION-004：父版本或本批次已包含同一 `recordingAnalysisId + segmentIndex + candidateId` 来源时拒绝；不同分析任务即使候选局部 ID 相同也不得误判为重复；同帧不同来源的操作按父前缀优先、候选来源顺序稳定保留。
 - REQ-CONTINUATION-005：参数缺失、时间未确认和同格同类冲突必须进入人工校对，未经解决不得创建可导出或可代理的版本。
   - AC-CONTINUATION-005：待分类、字段不完整、`timeConfirmation=unconfirmed` 的候选拒绝进入合并计划；同帧同格同类但来源不同的操作要求用户明确保留或排除候选。
 - REQ-CONTINUATION-006：完成校对后必须通过 E 的会话入口创建 `recordingMerge` 子版本，不得覆盖父版本或建立第二套版本存储。

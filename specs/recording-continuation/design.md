@@ -9,7 +9,7 @@ depends_on:
 
 ## 权威边界
 
-录屏接续不持有版本列表。纯合并器读取 E 的父 `AxisRevision` 和 F 已人工确认的录屏候选，生成一份新的 `DraftAxis` 与来源清单；Runner 随后调用 E 的 `OperationSession::create_revision` 创建 `source=recordingMerge` 的子版本。React 只提交选择、对齐和冲突决议。
+录屏接续不持有版本列表。纯合并器读取 E 的父 `AxisRevision` 和 F 已人工确认的录屏候选，生成一份新的 `DraftAxis` 与来源清单；Runner 随后调用 E 的 `OperationSession::create_recording_merge_revision` 创建 `source=recordingMerge` 的子版本。React 只提交选择、对齐和冲突决议。
 
 F 的候选确认结果在创建合并版本前属于会话内暂存数据，不能直接修改父版本。每个暂存事件保留稳定 `candidateId`、`segmentIndex`、原始 PTS、游戏帧范围和时间确认状态。AxisLink v2 导出继续忽略这些内部来源字段。
 
@@ -23,7 +23,7 @@ F 的候选确认结果在创建合并版本前属于会话内暂存数据，不
 
 父版本事件先按原有稳定顺序复制。候选按源帧、原 `order` 和 `candidateId` 排序，再分配父版本最大 `order` 之后的连续顺序；因此同帧已执行前缀始终在接续候选之前，同时不会按帧删除不同来源操作。
 
-`candidateId` 在父版本和本批次中必须唯一。相同 ID 是重复来源并直接拒绝。不同来源若映射到同一帧、同一格子和同一操作类型，则生成冲突项；用户必须逐项选择保留候选或排除候选，不能由语义近似自动判重。
+`recordingAnalysisId + segmentIndex + candidateId` 组成稳定来源身份，在父版本和本批次中必须唯一；候选局部 ID 可以在另一次分析中重新出现，不能据此跨分析误判重复。相同来源身份直接拒绝。不同来源若映射到同一帧、同一格子和同一操作类型，则生成冲突项；用户必须逐项选择保留候选或排除候选，不能由语义近似自动判重。
 
 ## 创建版本
 
