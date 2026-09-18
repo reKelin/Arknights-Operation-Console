@@ -614,7 +614,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let mut builder = TrayIconBuilder::new()
-        .tooltip("Arknights Operation Runner")
+        .tooltip("Arknights Operation Console")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -726,5 +726,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("启动 Arknights Operation Runner 失败");
+        .expect("启动 Arknights Operation Console 失败");
 }

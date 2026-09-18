@@ -4,7 +4,6 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import appIcon from "../assets/app-icon-small.png";
 import {
   type AppSettings,
-  type AppTheme,
   type CommandError,
   commands,
   type DraftDirection,
@@ -14,34 +13,26 @@ import {
   type GameWindowCandidate,
   type ObservedBattleState,
   type RunnerSnapshot,
-  type RunStrategy,
   type StageCatalogEntry,
   type UpdateEventInput,
 } from "./generated/bindings";
 import Timeline from "./Timeline";
+import { clampViewFrames } from "./timelineMath";
 
 type TypedResult<T> =
   | { status: "ok"; data: T }
   | { status: "error"; error: CommandError };
-
-type MenuName = "file" | "axis" | "monitor" | "view" | "help";
+type Mode = "live" | "video" | "proxy";
+type Page = "work" | "settings" | "editor";
 
 const KIND_LABELS: Record<DraftKind, string> = {
-  bookmark: "书签",
+  bookmark: "待分类",
   deploy: "部署",
   skill: "技能",
   retreat: "撤退",
 };
-
-const STRATEGY_LABELS: Record<RunStrategy, string> = {
-  notify: "提前提示",
-  pause: "到点暂停请求",
-  dryRun: "执行预演",
-  proxy: "代理执行",
-};
-
-const OBSERVED_STATE_LABELS: Record<ObservedBattleState, string> = {
-  unknown: "未知",
+const STATE_LABELS: Record<ObservedBattleState, string> = {
+  unknown: "状态未知",
   notInBattle: "关卡外",
   battleBegin: "正在进入关卡",
   oneXRunning: "1× 运行",
@@ -53,9 +44,7 @@ const OBSERVED_STATE_LABELS: Record<ObservedBattleState, string> = {
 };
 
 function unwrap<T>(result: TypedResult<T>): T {
-  if (result.status === "error") {
-    throw result.error;
-  }
+  if (result.status === "error") throw result.error;
   return result.data;
 }
 
@@ -71,53 +60,35 @@ function messageOf(error: unknown): string {
   return String(error);
 }
 
-function countdownText(frames: number | null): string {
-  if (frames === null) {
-    return "—";
-  }
-  return `−${(frames / 30).toFixed(2)}`;
+function frameTime(frame: number, denominator = 30): string {
+  const seconds = Math.floor(frame / denominator);
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}:${String(frame % denominator).padStart(2, "0")}`;
 }
 
-function frameTime(frame: number, denominator: number): string {
-  const totalSeconds = Math.floor(frame / denominator);
-  return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(
-    totalSeconds % 60,
-  ).padStart(
-    2,
-    "0",
-  )}:${String(frame % denominator).padStart(2, "0")}/${denominator}`;
-}
-
-function eventSummary(event: DraftEvent | null): string {
-  if (!event) {
-    return "未选择操作点";
-  }
-  return `${KIND_LABELS[event.kind]} · ${event.label || event.id}`;
+function rangeLabel(frames: number): string {
+  if (frames < 30) return `${frames} 帧`;
+  const seconds = Math.round(frames / 30);
+  return seconds < 60 ? `${seconds} 秒` : `${Math.round(seconds / 60)} 分钟`;
 }
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<RunnerSnapshot | null>(null);
+  const [mode, setMode] = useState<Mode>("live");
+  const [page, setPage] = useState<Page>("work");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [activeMenu, setActiveMenu] = useState<MenuName | null>(null);
-  const [editing, setEditing] = useState<DraftEvent | null>(null);
-  const [metadataOpen, setMetadataOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [viewFrames, setViewFrames] = useState(900);
+  const [tracePreviewFrame, setTracePreviewFrame] = useState<number | null>(
+    null,
+  );
+  const [recordingSegmentIndex, setRecordingSegmentIndex] = useState(0);
   const [windowPickerOpen, setWindowPickerOpen] = useState(false);
   const [gameWindows, setGameWindows] = useState<GameWindowCandidate[]>([]);
-  const [scanningWindows, setScanningWindows] = useState(false);
   const [stagePickerOpen, setStagePickerOpen] = useState(false);
   const [stageCandidates, setStageCandidates] = useState<StageCatalogEntry[]>(
     [],
   );
   const [stageSearching, setStageSearching] = useState(false);
-  const [tracePreviewFrame, setTracePreviewFrame] = useState<number | null>(
-    null,
-  );
-  const [recordingSegmentIndex, setRecordingSegmentIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [aboutOpen, setAboutOpen] = useState(false);
-  const [bookmarkOpen, setBookmarkOpen] = useState(false);
   const lastNoticeSequence = useRef(0);
 
   const selected = useMemo(
@@ -129,27 +100,20 @@ export default function App() {
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
-
     commands
       .getSnapshot()
       .then((result) => {
-        if (!disposed) {
-          setSnapshot(unwrap(result));
-        }
+        if (!disposed) setSnapshot(unwrap(result));
       })
       .catch((reason) => setError(messageOf(reason)));
-
     events.runnerSnapshot
       .listen((event) => {
-        if (!disposed) {
-          setSnapshot(event.payload);
-        }
+        if (!disposed) setSnapshot(event.payload);
       })
       .then((stop) => {
         unlisten = stop;
       })
       .catch((reason) => setError(messageOf(reason)));
-
     return () => {
       disposed = true;
       unlisten?.();
@@ -159,7 +123,7 @@ export default function App() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     events.openBookmarkList
-      .listen(() => setBookmarkOpen(true))
+      .listen(() => setPage("editor"))
       .then((stop) => {
         unlisten = stop;
       })
@@ -168,12 +132,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (snapshot)
+      document.documentElement.dataset.theme = snapshot.settings.theme;
+  }, [snapshot]);
+
+  useEffect(() => {
     const notices =
       snapshot?.notices.filter(
         (notice) => notice.sequence > lastNoticeSequence.current,
       ) ?? [];
     const audible = notices.filter((notice) => notice.kind === "notify");
-    if (audible.length > 0) {
+    if (audible.length) {
       const context = new AudioContext();
       audible.forEach((_, index) => {
         const startsAt = context.currentTime + index * 0.12;
@@ -197,21 +166,6 @@ export default function App() {
     }
   }, [snapshot?.notices]);
 
-  useEffect(() => {
-    if (snapshot) {
-      document.documentElement.dataset.theme = snapshot.settings.theme;
-    }
-  }, [snapshot]);
-
-  useEffect(() => {
-    if (snapshot?.monitor.connectionState === "ready") {
-      setRecordingSegmentIndex(0);
-      setTracePreviewFrame(0);
-    } else {
-      setTracePreviewFrame(null);
-    }
-  }, [snapshot?.monitor.connectionState]);
-
   async function run(
     operation: () => Promise<TypedResult<RunnerSnapshot>>,
   ): Promise<boolean> {
@@ -225,9 +179,7 @@ export default function App() {
     }
   }
 
-  async function runVoid(
-    operation: () => Promise<TypedResult<null>>,
-  ): Promise<void> {
+  async function runVoid(operation: () => Promise<TypedResult<null>>) {
     try {
       unwrap(await operation());
       setError(null);
@@ -241,47 +193,51 @@ export default function App() {
       multiple: false,
       filters: [{ name: "AxisLink JSON", extensions: ["json"] }],
     });
-    if (typeof path === "string") {
-      if (await run(() => commands.importAxis(path))) {
-        setSelectedId(null);
-      }
+    if (
+      typeof path === "string" &&
+      (await run(() => commands.importAxis(path)))
+    ) {
+      setSelectedId(null);
     }
   }
 
   async function exportAxis() {
+    if (!snapshot) return;
     const path = await save({
-      defaultPath: `${snapshot?.axis.title || "未命名轴"}.axis.json`,
+      defaultPath: `${snapshot.axis.title || "未命名轴"}.axis.json`,
       filters: [{ name: "AxisLink JSON", extensions: ["json"] }],
     });
-    if (path) {
-      await run(() => commands.exportAxis(path));
-    }
+    if (path) await run(() => commands.exportAxis(path));
   }
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const editing = ["INPUT", "SELECT", "TEXTAREA"].includes(
+        (event.target as HTMLElement).tagName,
+      );
+      if (event.ctrlKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        exportAxis();
+      } else if (!editing && event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        setPage("editor");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   async function scanGameWindows() {
-    setScanningWindows(true);
     try {
-      const candidates = unwrap(await commands.listGameWindows());
-      setGameWindows(candidates);
+      setGameWindows(unwrap(await commands.listGameWindows()));
       setWindowPickerOpen(true);
       setError(null);
     } catch (reason) {
       setError(messageOf(reason));
-    } finally {
-      setScanningWindows(false);
     }
   }
 
-  async function selectForegroundGameWindow() {
-    try {
-      const candidate = unwrap(await commands.foregroundGameWindow());
-      await run(() => commands.selectGameWindow(candidate.id));
-    } catch (reason) {
-      setError(messageOf(reason));
-    }
-  }
-
-  async function searchStages(query: string): Promise<StageCatalogEntry[]> {
+  async function searchStages(query: string) {
     setStageSearching(true);
     try {
       const candidates = unwrap(await commands.listStages(query));
@@ -296,17 +252,13 @@ export default function App() {
     }
   }
 
-  async function openStagePicker() {
-    setStagePickerOpen(true);
-    await searchStages("");
-  }
-
   async function chooseRecording() {
     const path = await open({
       multiple: false,
       filters: [{ name: "游戏录屏", extensions: ["mkv", "mp4"] }],
     });
     if (typeof path === "string") {
+      setMode("video");
       await run(() => commands.analyzeRecording(path));
     }
   }
@@ -314,30 +266,12 @@ export default function App() {
   if (!snapshot) {
     return (
       <main className="loading-shell">
-        <span>正在启动 Runner…</span>
+        <span>正在启动 Arknights Operation Console…</span>
         {error && <span className="error-text">{error}</span>}
       </main>
     );
   }
 
-  const statusLabel = {
-    waiting: "等待进关",
-    running: "战斗中 · 自动计时",
-    paused: "计时已冻结",
-    ended: "关卡结束",
-  }[snapshot.status];
-  const stageWarning =
-    snapshot.monitor.sourceKind !== "none" &&
-    snapshot.stageSafety.status !== "matched"
-      ? snapshot.stageSafety.status === "mismatched"
-        ? "关卡不匹配"
-        : "关卡未确认"
-      : null;
-  const displayedFrame = tracePreviewFrame ?? snapshot.frame;
-  const displayedTime =
-    tracePreviewFrame === null
-      ? snapshot.time
-      : frameTime(tracePreviewFrame, snapshot.settings.framesPerCost);
   const recordingSegment =
     snapshot.monitor.recordingSegments[recordingSegmentIndex] ?? null;
   const visibleTracePoints = recordingSegment
@@ -350,18 +284,23 @@ export default function App() {
   const traceDurationFrames =
     recordingSegment?.gameDurationFrames ??
     snapshot.monitor.traceDurationFrames;
-  const lastProxyRecord = snapshot.proxy.records.at(-1) ?? null;
+  const displayedFrame =
+    mode === "video" && tracePreviewFrame !== null
+      ? tracePreviewFrame
+      : snapshot.frame;
+  const displayedTime =
+    mode === "video" && tracePreviewFrame !== null
+      ? frameTime(displayedFrame)
+      : snapshot.time;
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell page--${page}`}>
       <header
         className="titlebar"
         onPointerDown={(event) => {
           if (
             event.button === 0 &&
-            !(event.target as HTMLElement).closest(
-              "button, nav, input, select, a",
-            )
+            !(event.target as HTMLElement).closest("button, input, select")
           ) {
             getCurrentWindow()
               .startDragging()
@@ -369,120 +308,47 @@ export default function App() {
           }
         }}
       >
-        <img alt="" className="brand-mark" src={appIcon} />
-        <strong>Operation Runner</strong>
-        <nav>
-          <MenuButton
-            active={activeMenu === "file"}
-            label="文件"
-            onClick={() => setActiveMenu(activeMenu === "file" ? null : "file")}
-          >
-            <MenuItem label="导入 AxisLink" onClick={importAxis} />
-            <MenuItem label="导出 AxisLink" onClick={exportAxis} />
-          </MenuButton>
-          <MenuButton
-            active={activeMenu === "axis"}
-            label="轴"
-            onClick={() => setActiveMenu(activeMenu === "axis" ? null : "axis")}
-          >
-            <MenuItem label="轴属性" onClick={() => setMetadataOpen(true)} />
-            <MenuItem
-              label="书签列表（H）"
-              onClick={() => setBookmarkOpen(true)}
-            />
-            <MenuItem
-              checked={snapshot.recording}
-              label="实时录轴"
-              onClick={() =>
-                run(() => commands.setRecording(!snapshot.recording))
-              }
-            />
-            {(["notify", "pause", "dryRun"] as RunStrategy[]).map(
-              (strategy) => (
-                <MenuItem
-                  checked={snapshot.strategy === strategy}
-                  key={strategy}
-                  label={STRATEGY_LABELS[strategy]}
-                  onClick={() => run(() => commands.setStrategy(strategy))}
-                />
-              ),
-            )}
-          </MenuButton>
-          <MenuButton
-            active={activeMenu === "monitor"}
-            label="监控"
-            onClick={() =>
-              setActiveMenu(activeMenu === "monitor" ? null : "monitor")
-            }
-          >
-            <MenuItem
-              label={scanningWindows ? "正在扫描…" : "选择游戏窗口"}
-              onClick={scanGameWindows}
-            />
-            <MenuItem
-              label="使用当前前台游戏窗口"
-              onClick={selectForegroundGameWindow}
-            />
-            <MenuItem label="分析游戏录屏" onClick={chooseRecording} />
-            <MenuItem label="手动确认当前关卡" onClick={openStagePicker} />
-            <MenuItem
-              label="停止监控"
-              onClick={() => run(() => commands.stopMonitor())}
-            />
-          </MenuButton>
-          <MenuButton
-            active={activeMenu === "view"}
-            label="视图"
-            onClick={() => setActiveMenu(activeMenu === "view" ? null : "view")}
-          >
-            <MenuItem
-              checked={snapshot.alwaysOnTop}
-              label="窗口置顶"
-              onClick={() =>
-                run(() => commands.setAlwaysOnTop(!snapshot.alwaysOnTop))
-              }
-            />
-            <MenuItem
-              label="显示与监控设置"
-              onClick={() => setSettingsOpen(true)}
-            />
-            {(["dark", "light"] as AppTheme[]).map((theme) => (
-              <MenuItem
-                checked={snapshot.settings.theme === theme}
-                key={theme}
-                label={theme === "dark" ? "深色外观" : "浅色外观"}
-                onClick={() =>
-                  run(() =>
-                    commands.updateSettings({
-                      ...snapshot.settings,
-                      theme,
-                    }),
-                  )
-                }
-              />
+        <div className="brand">
+          <img alt="" className="brand-mark" src={appIcon} />
+          <strong>Arknights Operation Console</strong>
+        </div>
+        {page === "work" && (
+          <div aria-label="工作模式" className="mode-tabs" role="tablist">
+            {(
+              [
+                ["live", "人工录轴"],
+                ["video", "录屏分析"],
+                ["proxy", "代理指挥"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                aria-selected={mode === value}
+                key={value}
+                onClick={() => setMode(value)}
+                role="tab"
+                type="button"
+              >
+                {label}
+              </button>
             ))}
-          </MenuButton>
-          <MenuButton
-            active={activeMenu === "help"}
-            label="帮助"
-            onClick={() => setActiveMenu(activeMenu === "help" ? null : "help")}
-          >
-            <MenuItem label="关于" onClick={() => setAboutOpen(true)} />
-          </MenuButton>
-        </nav>
-        <span className="connection-state">
+          </div>
+        )}
+        <span
+          className="source-status"
+          title={snapshot.monitor.sourceName ?? ""}
+        >
           {snapshot.monitor.sourceName
-            ? `${snapshot.monitor.sourceName} · ${
-                snapshot.monitor.recordingProgress !== null &&
-                snapshot.monitor.connectionState === "analyzing"
-                  ? `分析 ${snapshot.monitor.recordingProgress}%`
-                  : OBSERVED_STATE_LABELS[snapshot.monitor.battleState]
-              }`
-            : "未选择监控源"}
-          {snapshot.stageSafety.observedStage
-            ? ` · ${snapshot.stageSafety.observedStage.code} ${snapshot.stageSafety.observedStage.name}`
-            : ""}
+            ? `${snapshot.monitor.sourceName} · ${STATE_LABELS[snapshot.monitor.battleState]}`
+            : "未选择游戏窗口"}
         </span>
+        <button
+          aria-label={page === "settings" ? "返回工作台" : "打开设置"}
+          className="icon-button"
+          onClick={() => setPage(page === "settings" ? "work" : "settings")}
+          type="button"
+        >
+          {page === "settings" ? "←" : "⚙"}
+        </button>
         <button
           aria-label="最小化到托盘"
           className="window-button"
@@ -503,331 +369,187 @@ export default function App() {
         </button>
       </header>
 
-      <section className="timer-strip">
-        <div className="timer-primary">
-          <strong>{displayedTime}</strong>
-          <div>
-            <span>F{displayedFrame.toString().padStart(5, "0")}</span>
-            <span>30 Hz · 费用秒 {snapshot.settings.framesPerCost}f</span>
-            <span
-              className={`status status--${
-                stageWarning ? "paused" : snapshot.status
-              }`}
-            >
-              {stageWarning ??
-                (snapshot.monitor.sourceKind === "none"
-                  ? statusLabel
-                  : OBSERVED_STATE_LABELS[snapshot.monitor.battleState])}
-            </span>
-            <span className="accuracy">
-              {snapshot.monitor.sourceKind === "none"
-                ? `±${snapshot.errorFrames} 帧`
-                : `可信度 ${snapshot.monitor.confidence}%`}
-            </span>
-          </div>
-        </div>
-        <div className="next-action">
-          <span>下一操作</span>
-          <strong>{eventSummary(snapshot.nextEvent)}</strong>
-          <b>{countdownText(snapshot.countdownFrames)}</b>
-        </div>
-        <div className="timer-actions">
-          <button
-            className={
-              snapshot.recording ? "record-button active" : "record-button"
-            }
-            onClick={() =>
+      {page === "settings" ? (
+        <SettingsPage
+          snapshot={snapshot}
+          onBack={() => setPage("work")}
+          onRun={run}
+          onScanWindows={scanGameWindows}
+          onSelectForeground={() =>
+            commands
+              .foregroundGameWindow()
+              .then((result) => commands.selectGameWindow(unwrap(result).id))
+              .then((result) => setSnapshot(unwrap(result)))
+              .catch((reason) => setError(messageOf(reason)))
+          }
+          onSelectStage={async () => {
+            setStagePickerOpen(true);
+            await searchStages("");
+          }}
+        />
+      ) : page === "editor" ? (
+        <AxisEditor
+          selectedId={selectedId}
+          snapshot={snapshot}
+          onBack={() => setPage("work")}
+          onRun={run}
+          onSearchStages={searchStages}
+          onSelect={setSelectedId}
+        />
+      ) : (
+        <section className="work-page">
+          <ModeHero
+            displayedFrame={displayedFrame}
+            displayedTime={displayedTime}
+            mode={mode}
+            onChooseRecording={chooseRecording}
+            onEdit={() => setPage("editor")}
+            onToggleRecording={() =>
               run(() => commands.setRecording(!snapshot.recording))
             }
-            type="button"
-          >
-            <span />
-            {snapshot.recording ? "停止录轴" : "开始录轴"}
-          </button>
-          <button
-            className={
-              snapshot.proxy.enabled ? "proxy-button active" : "proxy-button"
-            }
-            onClick={() => run(() => commands.requestProxyExecution())}
-            type="button"
-          >
-            {snapshot.proxy.status === "confirming"
-              ? "再次确认代理执行"
-              : snapshot.proxy.enabled
-                ? "关闭代理执行"
-                : "代理执行"}
-          </button>
-          {(snapshot.proxy.enabled ||
-            snapshot.proxy.status === "confirming") && (
+            snapshot={snapshot}
+          />
+
+          <div className="axis-heading">
             <button
-              className="danger-button"
-              onClick={() => run(() => commands.emergencyStop())}
+              className="axis-title"
+              onClick={() => setPage("editor")}
               type="button"
             >
-              急停 <kbd>F12</kbd>
+              <strong>{snapshot.axis.title}</strong>
+              <span>{snapshot.axis.events.length} 个操作</span>
             </button>
-          )}
-        </div>
-      </section>
-
-      <section className="axis-panel">
-        <div className="axis-toolbar">
-          <strong>当前轴</strong>
-          <span className="axis-name">{snapshot.axis.title}.axis.json</span>
-          <span
-            className={
-              snapshot.recording ? "recording-state active" : "recording-state"
-            }
-          >
-            {snapshot.recording ? "实时录轴" : "编辑"}
-          </span>
-          {(["deploy", "skill", "retreat"] as DraftKind[]).map(
-            (kind, index) => (
+            <div className="axis-actions">
+              <button onClick={importAxis} type="button">
+                导入
+              </button>
+              <button onClick={exportAxis} type="button">
+                导出 <kbd>Ctrl S</kbd>
+              </button>
+              <button onClick={() => setPage("editor")} type="button">
+                整理 <kbd>H</kbd>
+              </button>
               <button
-                className="quick-action"
-                key={kind}
-                onClick={() => run(() => commands.recordEvent(kind))}
+                aria-label="缩小时间轴"
+                onClick={() => setViewFrames(clampViewFrames(viewFrames * 1.5))}
                 type="button"
               >
-                {KIND_LABELS[kind]}
-                <kbd>F{index + 1}</kbd>
+                −
               </button>
-            ),
-          )}
-          <button
-            className="quick-action bookmark-action"
-            onClick={() => run(() => commands.recordBookmark())}
-            type="button"
-          >
-            书签 <kbd>P</kbd>
-          </button>
-          <button
-            className={
-              snapshot.clearPending ? "clear-axis pending" : "clear-axis"
-            }
-            onClick={() => run(() => commands.requestClearAxis())}
-            type="button"
-          >
-            {snapshot.clearPending ? "再次清空" : "清空"}
-            <kbd>F4</kbd>
-          </button>
-          <div className="axis-toolbar__end">
-            <button onClick={importAxis} type="button">
-              导入
-            </button>
-            <button onClick={exportAxis} type="button">
-              导出
-            </button>
+              <span>{rangeLabel(viewFrames)}</span>
+              <button
+                aria-label="放大时间轴"
+                onClick={() => setViewFrames(clampViewFrames(viewFrames / 1.5))}
+                type="button"
+              >
+                +
+              </button>
+            </div>
           </div>
-        </div>
 
-        <Timeline
-          currentFrame={displayedFrame}
-          events={snapshot.axis.events}
-          traceDurationFrames={traceDurationFrames}
-          tracePoints={visibleTracePoints}
-          onCreate={(frame, kind) =>
-            run(() => commands.addEvent({ frame, kind }))
-          }
-          onEdit={setEditing}
-          onMove={(id, frame) => run(() => commands.moveEvent(id, frame))}
-          onSelect={setSelectedId}
-          onZoom={setZoom}
-          selectedId={selectedId}
-          zoom={zoom}
-        />
+          <Timeline
+            currentFrame={displayedFrame}
+            events={snapshot.axis.events}
+            onCreate={(frame, kind) =>
+              run(() => commands.addEvent({ frame, kind }))
+            }
+            onEdit={(event) => {
+              setSelectedId(event.id);
+              setPage("editor");
+            }}
+            onMove={(id, frame) => run(() => commands.moveEvent(id, frame))}
+            onSelect={setSelectedId}
+            onViewFrames={setViewFrames}
+            selectedId={selectedId}
+            traceDurationFrames={mode === "video" ? traceDurationFrames : null}
+            tracePoints={mode === "video" ? visibleTracePoints : []}
+            viewFrames={viewFrames}
+          />
 
-        <div className="event-summary">
-          {selected ? (
-            <>
-              <b>{KIND_LABELS[selected.kind]}</b>
-              <span>{selected.label || selected.id}</span>
-              {selected.kind !== "bookmark" && (
-                <span>{selected.tile || "未填写格子"}</span>
-              )}
-              <span>
-                {`${frameTime(
-                  selected.frame,
-                  snapshot.settings.framesPerCost,
-                )} · F${selected.frame}`}
-              </span>
-              {!selected.complete && <em>待补全</em>}
-            </>
-          ) : (
-            <span>{snapshot.lastMessage || "双击时间轴新增操作点"}</span>
-          )}
-          {traceDurationFrames !== null && (
-            <label className="recording-trace-control">
-              {snapshot.monitor.recordingSegments.length > 1 ? (
-                <select
-                  aria-label="关卡区段"
-                  onChange={(event) => {
-                    setRecordingSegmentIndex(
-                      Number.parseInt(event.target.value, 10),
-                    );
-                    setTracePreviewFrame(0);
-                  }}
-                  value={recordingSegmentIndex}
-                >
-                  {snapshot.monitor.recordingSegments.map((segment) => (
-                    <option key={segment.index} value={segment.index}>
-                      {segment.stageRecognition.stage
-                        ? `${segment.stageRecognition.stage.code} ${segment.stageRecognition.stage.name}`
-                        : `关卡 ${segment.index + 1}（未确认）`}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                "录屏轨迹"
-              )}
-              <input
-                max={traceDurationFrames}
-                min="0"
-                onChange={(event) =>
-                  setTracePreviewFrame(Number.parseInt(event.target.value, 10))
-                }
-                type="range"
-                value={tracePreviewFrame ?? 0}
-              />
-            </label>
-          )}
-          {snapshot.monitor.stageRecognition.rawText && (
-            <span
-              className="stage-ocr"
-              title={snapshot.monitor.stageRecognition.rawText}
-            >
-              OCR：
-              {snapshot.monitor.stageRecognition.rawText.replaceAll(
-                "\n",
-                " / ",
-              )}
+          <div className="timeline-footer">
+            <span>
+              {selected
+                ? `${KIND_LABELS[selected.kind]} · ${selected.label || selected.id} · F${selected.frame}${selected.complete ? "" : " · 待补全"}`
+                : snapshot.lastMessage || "右键操作点编辑；双击轨道新增操作"}
             </span>
-          )}
-          {snapshot.monitor.stageRecognition.warning && (
-            <em title={snapshot.monitor.stageRecognition.warning}>
-              {snapshot.monitor.stageRecognition.warning}
-            </em>
-          )}
-          {snapshot.proxy.message && (
-            <em title={snapshot.proxy.message}>{snapshot.proxy.message}</em>
-          )}
-          {lastProxyRecord && (
-            <span
-              title={`${lastProxyRecord.eventId} · ${lastProxyRecord.message}`}
-            >
-              最近代理：F{lastProxyRecord.frame}{" "}
-              {lastProxyRecord.success ? "完成" : "失败"}
-            </span>
-          )}
-          <small>拖动改帧 · 右键编辑 · 双击空白新增</small>
-        </div>
-      </section>
-
-      {editing && (
-        <EventEditor
-          event={editing}
-          onCancel={() => setEditing(null)}
-          onDelete={async () => {
-            if (await run(() => commands.deleteEvent(editing.id))) {
-              setEditing(null);
-              setSelectedId(null);
-            }
-          }}
-          onSave={async (input) => {
-            if (await run(() => commands.updateEvent(input))) {
-              setEditing(null);
-            }
-          }}
-        />
-      )}
-
-      {metadataOpen && (
-        <MetadataEditor
-          snapshot={snapshot}
-          onCancel={() => setMetadataOpen(false)}
-          onSearchStages={searchStages}
-          onSave={async (title, stageId) => {
-            if (
-              await run(() =>
-                commands.setAxisMetadata({
-                  title,
-                  stageId: stageId || null,
-                }),
-              )
-            ) {
-              setMetadataOpen(false);
-            }
-          }}
-        />
-      )}
-
-      {settingsOpen && (
-        <SettingsEditor
-          settings={snapshot.settings}
-          onCancel={() => setSettingsOpen(false)}
-          onSave={async (settings) => {
-            if (await run(() => commands.updateSettings(settings))) {
-              setSettingsOpen(false);
-            }
-          }}
-        />
+            {mode === "video" && traceDurationFrames !== null && (
+              <label className="trace-control">
+                {snapshot.monitor.recordingSegments.length > 1 && (
+                  <select
+                    aria-label="录屏关卡区段"
+                    onChange={(event) => {
+                      setRecordingSegmentIndex(Number(event.target.value));
+                      setTracePreviewFrame(0);
+                    }}
+                    value={recordingSegmentIndex}
+                  >
+                    {snapshot.monitor.recordingSegments.map((segment) => (
+                      <option key={segment.index} value={segment.index}>
+                        {segment.stageRecognition.stage?.code ??
+                          `区段 ${segment.index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <input
+                  aria-label="录屏时间预览"
+                  max={traceDurationFrames}
+                  min="0"
+                  onChange={(event) =>
+                    setTracePreviewFrame(Number(event.target.value))
+                  }
+                  type="range"
+                  value={tracePreviewFrame ?? 0}
+                />
+              </label>
+            )}
+          </div>
+        </section>
       )}
 
       {windowPickerOpen && (
-        <WindowPicker
-          candidates={gameWindows}
-          onCancel={() => setWindowPickerOpen(false)}
-          onRefresh={scanGameWindows}
-          onSelect={async (id) => {
-            if (await run(() => commands.selectGameWindow(id))) {
-              setWindowPickerOpen(false);
-            }
-          }}
-        />
+        <Picker
+          title="选择明日方舟窗口"
+          onClose={() => setWindowPickerOpen(false)}
+        >
+          {gameWindows.length ? (
+            gameWindows.map((candidate) => (
+              <button
+                className="picker-row"
+                key={candidate.id}
+                onClick={async () => {
+                  if (
+                    await run(() => commands.selectGameWindow(candidate.id))
+                  ) {
+                    setWindowPickerOpen(false);
+                  }
+                }}
+                type="button"
+              >
+                <strong>{candidate.title || "明日方舟"}</strong>
+                <span>
+                  {candidate.processName} · {candidate.width}×{candidate.height}
+                </span>
+                {candidate.warning && <em>{candidate.warning}</em>}
+              </button>
+            ))
+          ) : (
+            <p>未发现可捕获的 Arknights.exe 窗口。</p>
+          )}
+        </Picker>
       )}
 
       {stagePickerOpen && (
         <StagePicker
           candidates={stageCandidates}
           searching={stageSearching}
-          onCancel={() => setStagePickerOpen(false)}
+          onClose={() => setStagePickerOpen(false)}
           onSearch={searchStages}
-          onSelect={async (stageId) => {
-            if (await run(() => commands.setManualStage(stageId))) {
+          onSelect={async (id) => {
+            if (await run(() => commands.setManualStage(id)))
               setStagePickerOpen(false);
-            }
           }}
         />
-      )}
-
-      {bookmarkOpen && (
-        <BookmarkEditor
-          events={snapshot.axis.events}
-          onCancel={() => setBookmarkOpen(false)}
-          onClear={() => run(() => commands.clearBookmarks())}
-          onDelete={(id) => run(() => commands.deleteEvent(id))}
-          onEdit={(event) => {
-            setBookmarkOpen(false);
-            setSelectedId(event.id);
-            setEditing(event);
-          }}
-          onReorder={(id, direction) =>
-            run(() => commands.reorderEvent(id, direction))
-          }
-          onShift={(ids, delta) => run(() => commands.shiftEvents(ids, delta))}
-        />
-      )}
-
-      {aboutOpen && (
-        <div className="modal-backdrop">
-          <section className="compact-dialog about-dialog">
-            <h2>Arknights Operation Runner</h2>
-            <p>实机视觉时钟 · AxisLink 30 Hz 作战轴</p>
-            <button onClick={() => setAboutOpen(false)} type="button">
-              关闭
-            </button>
-          </section>
-        </div>
       )}
 
       {error && (
@@ -843,51 +565,521 @@ export default function App() {
   );
 }
 
-type MenuButtonProps = {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-  children: ReactNode;
+type ModeHeroProps = {
+  mode: Mode;
+  snapshot: RunnerSnapshot;
+  displayedFrame: number;
+  displayedTime: string;
+  onToggleRecording: () => void;
+  onChooseRecording: () => void;
+  onEdit: () => void;
 };
 
-function MenuButton({ active, label, onClick, children }: MenuButtonProps) {
+function ModeHero({
+  mode,
+  snapshot,
+  displayedFrame,
+  displayedTime,
+  onToggleRecording,
+  onChooseRecording,
+  onEdit,
+}: ModeHeroProps) {
+  const stageWarning =
+    snapshot.monitor.sourceKind !== "none" &&
+    snapshot.stageSafety.status !== "matched"
+      ? snapshot.stageSafety.status === "mismatched"
+        ? "关卡不匹配"
+        : "关卡未确认"
+      : null;
+  const statusLabel =
+    stageWarning ?? STATE_LABELS[snapshot.monitor.battleState];
+  const next = snapshot.nextEvent;
+
   return (
-    <div className="menu-root">
-      <button
-        className={active ? "menu-trigger active" : "menu-trigger"}
-        onClick={onClick}
-        type="button"
-      >
-        {label}
-      </button>
-      {active && <div className="menu-popover">{children}</div>}
+    <section className={`mode-hero mode-hero--${mode}`}>
+      <div className="clock-block">
+        <strong>{displayedTime}</strong>
+        <span>F{displayedFrame.toString().padStart(5, "0")} · 30 Hz</span>
+        <span className={snapshot.monitor.trusted ? "trust trusted" : "trust"}>
+          {snapshot.monitor.sourceKind === "none"
+            ? `等待监控源 · ±${snapshot.errorFrames} 帧`
+            : `${statusLabel} · 可信度 ${snapshot.monitor.confidence}%`}
+        </span>
+      </div>
+
+      <div className="mode-summary">
+        {mode === "live" && (
+          <>
+            <span>下一操作</span>
+            <strong>
+              {next
+                ? `${KIND_LABELS[next.kind]} · ${next.label || next.id}`
+                : "暂无后续操作"}
+            </strong>
+            <small>
+              {snapshot.recording
+                ? "P 记录待分类操作；H 整理"
+                : "进入关卡后自动计时"}
+            </small>
+          </>
+        )}
+        {mode === "video" && (
+          <>
+            <span>录屏时钟轨迹</span>
+            <strong>
+              {snapshot.monitor.connectionState === "analyzing"
+                ? `正在分析 ${snapshot.monitor.recordingProgress ?? 0}%`
+                : snapshot.monitor.sourceKind === "recording"
+                  ? `${snapshot.monitor.recordingSegments.length || 1} 个关卡区段`
+                  : "尚未选择录屏"}
+            </strong>
+            <small>当前版本只生成时间映射；操作候选将在 v0.1.2 接入</small>
+          </>
+        )}
+        {mode === "proxy" && (
+          <>
+            <span>代理指挥</span>
+            <strong>暂停执行事务尚未接入</strong>
+            <small>完成键位确认、状态回执与接管续录后开放</small>
+          </>
+        )}
+      </div>
+
+      <div className="mode-actions">
+        {mode === "live" && (
+          <>
+            <button
+              className="button--primary"
+              onClick={onToggleRecording}
+              type="button"
+            >
+              {snapshot.recording ? "停止录轴" : "开始录轴"}
+            </button>
+            <button onClick={onEdit} type="button">
+              整理操作
+            </button>
+          </>
+        )}
+        {mode === "video" && (
+          <button
+            className="button--primary"
+            onClick={onChooseRecording}
+            type="button"
+          >
+            选择录屏
+          </button>
+        )}
+        {mode === "proxy" && (
+          <button disabled title="v0.1.1 接入暂停执行事务后开放" type="button">
+            代理执行尚不可用
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type SettingsPageProps = {
+  snapshot: RunnerSnapshot;
+  onBack: () => void;
+  onRun: (
+    operation: () => Promise<TypedResult<RunnerSnapshot>>,
+  ) => Promise<boolean>;
+  onScanWindows: () => void;
+  onSelectForeground: () => void;
+  onSelectStage: () => void;
+};
+
+function SettingsPage({
+  snapshot,
+  onBack,
+  onRun,
+  onScanWindows,
+  onSelectForeground,
+  onSelectStage,
+}: SettingsPageProps) {
+  const [tab, setTab] = useState<
+    "monitor" | "appearance" | "shortcuts" | "execution"
+  >("monitor");
+  const [framesPerCost, setFramesPerCost] = useState(
+    String(snapshot.settings.framesPerCost),
+  );
+  const [gameUiScale, setGameUiScale] = useState(
+    String(snapshot.settings.gameUiScale),
+  );
+
+  function updateSettings(input: Partial<AppSettings>) {
+    return onRun(() =>
+      commands.updateSettings({ ...snapshot.settings, ...input }),
+    );
+  }
+
+  return (
+    <section className="settings-page">
+      <div className="page-heading">
+        <div>
+          <strong>设置</strong>
+          <span>显示、监控与快捷键</span>
+        </div>
+        <button onClick={onBack} type="button">
+          ← 返回
+        </button>
+      </div>
+      <div className="settings-tabs" role="tablist">
+        {(
+          [
+            ["monitor", "监控"],
+            ["appearance", "外观"],
+            ["shortcuts", "快捷键"],
+            ["execution", "执行"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            aria-selected={tab === value}
+            key={value}
+            onClick={() => setTab(value)}
+            role="tab"
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="settings-content">
+        {tab === "monitor" && (
+          <>
+            <SettingRow
+              label="当前监控源"
+              note="进入关卡后自动计时，暂停与倍速跟随游戏"
+            >
+              <span>{snapshot.monitor.sourceName ?? "未选择"}</span>
+            </SettingRow>
+            <SettingRow label="游戏窗口">
+              <div className="inline-actions">
+                <button onClick={onScanWindows} type="button">
+                  扫描窗口
+                </button>
+                <button onClick={onSelectForeground} type="button">
+                  使用前台窗口
+                </button>
+                <button
+                  onClick={() => onRun(() => commands.stopMonitor())}
+                  type="button"
+                >
+                  停止监控
+                </button>
+              </div>
+            </SettingRow>
+            <SettingRow label="关卡确认">
+              <button onClick={onSelectStage} type="button">
+                手动选择关卡
+              </button>
+            </SettingRow>
+          </>
+        )}
+        {tab === "appearance" && (
+          <>
+            <SettingRow label="主题">
+              <select
+                onChange={(event) =>
+                  updateSettings({
+                    theme: event.target.value as AppSettings["theme"],
+                  })
+                }
+                value={snapshot.settings.theme}
+              >
+                <option value="dark">深色</option>
+                <option value="light">浅色</option>
+              </select>
+            </SettingRow>
+            <SettingRow label="窗口置顶">
+              <input
+                checked={snapshot.alwaysOnTop}
+                onChange={(event) =>
+                  onRun(() => commands.setAlwaysOnTop(event.target.checked))
+                }
+                type="checkbox"
+              />
+            </SettingRow>
+            <SettingRow label="费用帧分母" note="事件时间仍固定为 30 Hz">
+              <input
+                max="150"
+                min="15"
+                onBlur={() =>
+                  updateSettings({ framesPerCost: Number(framesPerCost) })
+                }
+                onChange={(event) => setFramesPerCost(event.target.value)}
+                type="number"
+                value={framesPerCost}
+              />
+            </SettingRow>
+            <SettingRow label="游戏 UI 比例">
+              <input
+                max="100"
+                min="0"
+                onBlur={() =>
+                  updateSettings({ gameUiScale: Number(gameUiScale) })
+                }
+                onChange={(event) => setGameUiScale(event.target.value)}
+                type="number"
+                value={gameUiScale}
+              />
+            </SettingRow>
+          </>
+        )}
+        {tab === "shortcuts" && (
+          <>
+            <SettingRow label="记录待分类操作" note="游戏窗口位于前台时">
+              <kbd>P</kbd>
+            </SettingRow>
+            <SettingRow label="整理操作" note="Console 位于前台时">
+              <kbd>H</kbd>
+            </SettingRow>
+            <SettingRow label="导出作战轴" note="Console 位于前台时">
+              <kbd>Ctrl S</kbd>
+            </SettingRow>
+          </>
+        )}
+        {tab === "execution" && (
+          <>
+            <SettingRow label="操作提醒">
+              <button
+                onClick={() => onRun(() => commands.setStrategy("notify"))}
+                type="button"
+              >
+                {snapshot.strategy === "notify" ? "已启用" : "启用"}
+              </button>
+            </SettingRow>
+            <SettingRow
+              label="代理执行"
+              note="等待暂停事务、键位确认与结果回执接入"
+            >
+              <button disabled type="button">
+                尚不可用
+              </button>
+            </SettingRow>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SettingRow({
+  label,
+  note,
+  children,
+}: {
+  label: string;
+  note?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="setting-row">
+      <span>
+        <strong>{label}</strong>
+        {note && <small>{note}</small>}
+      </span>
+      {children}
     </div>
   );
 }
 
-type MenuItemProps = {
-  checked?: boolean;
-  label: string;
-  onClick: () => void;
+type AxisEditorProps = {
+  snapshot: RunnerSnapshot;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onBack: () => void;
+  onRun: (
+    operation: () => Promise<TypedResult<RunnerSnapshot>>,
+  ) => Promise<boolean>;
+  onSearchStages: (query: string) => Promise<StageCatalogEntry[]>;
 };
 
-function MenuItem({ checked, label, onClick }: MenuItemProps) {
+function AxisEditor({
+  snapshot,
+  selectedId,
+  onSelect,
+  onBack,
+  onRun,
+  onSearchStages,
+}: AxisEditorProps) {
+  const selected =
+    snapshot.axis.events.find((event) => event.id === selectedId) ??
+    snapshot.axis.events[0] ??
+    null;
+  const [filter, setFilter] = useState<"all" | DraftKind>("all");
+  const [query, setQuery] = useState("");
+  const visible = snapshot.axis.events.filter(
+    (event) =>
+      (filter === "all" || event.kind === filter) &&
+      (!query ||
+        `${event.id} ${event.label ?? ""}`
+          .toLowerCase()
+          .includes(query.toLowerCase())),
+  );
+
   return (
-    <button className="menu-item" onClick={onClick} type="button">
-      <span>{checked ? "✓" : ""}</span>
-      {label}
-    </button>
+    <section className="editor-page">
+      <div className="page-heading">
+        <div>
+          <strong>整理作战轴</strong>
+          <span>
+            {snapshot.axis.events.length} 个操作 · 草稿仅保存在本次会话
+          </span>
+        </div>
+        <button onClick={onBack} type="button">
+          ← 返回
+        </button>
+      </div>
+      <AxisMetadata
+        snapshot={snapshot}
+        onRun={onRun}
+        onSearchStages={onSearchStages}
+      />
+      <div className="editor-toolbar">
+        <input
+          aria-label="搜索操作"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索名称或 ID"
+          value={query}
+        />
+        <select
+          aria-label="筛选操作类型"
+          onChange={(event) =>
+            setFilter(event.target.value as "all" | DraftKind)
+          }
+          value={filter}
+        >
+          <option value="all">全部类型</option>
+          {(["bookmark", "deploy", "skill", "retreat"] as DraftKind[]).map(
+            (kind) => (
+              <option key={kind} value={kind}>
+                {KIND_LABELS[kind]}
+              </option>
+            ),
+          )}
+        </select>
+        <button
+          onClick={() =>
+            onRun(() =>
+              commands.addEvent({ frame: snapshot.frame, kind: "bookmark" }),
+            )
+          }
+          type="button"
+        >
+          新增待分类操作
+        </button>
+      </div>
+      <div className="editor-layout">
+        <div className="editor-list" role="listbox">
+          {visible.map((event) => (
+            <button
+              aria-selected={event.id === selected?.id}
+              key={event.id}
+              onClick={() => onSelect(event.id)}
+              role="option"
+              type="button"
+            >
+              <span>{frameTime(event.frame)}</span>
+              <strong>{event.label || KIND_LABELS[event.kind]}</strong>
+              <em>{event.complete ? KIND_LABELS[event.kind] : "待补全"}</em>
+            </button>
+          ))}
+          {!visible.length && <p>没有匹配的操作。</p>}
+        </div>
+        {selected ? (
+          <EventForm
+            event={selected}
+            key={selected.id}
+            onDelete={() => onRun(() => commands.deleteEvent(selected.id))}
+            onSave={(input) => onRun(() => commands.updateEvent(input))}
+          />
+        ) : (
+          <div className="editor-empty">选择一个操作以编辑参数和备注。</div>
+        )}
+      </div>
+    </section>
   );
 }
 
-type EventEditorProps = {
+function AxisMetadata({
+  snapshot,
+  onRun,
+  onSearchStages,
+}: {
+  snapshot: RunnerSnapshot;
+  onRun: (
+    operation: () => Promise<TypedResult<RunnerSnapshot>>,
+  ) => Promise<boolean>;
+  onSearchStages: (query: string) => Promise<StageCatalogEntry[]>;
+}) {
+  const [title, setTitle] = useState(snapshot.axis.title);
+  const [stageId, setStageId] = useState(snapshot.axis.stageId ?? "");
+  const [stages, setStages] = useState<StageCatalogEntry[]>([]);
+  return (
+    <form
+      className="axis-metadata"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onRun(() =>
+          commands.setAxisMetadata({ title, stageId: stageId || null }),
+        );
+      }}
+    >
+      <label>
+        轴名称
+        <input
+          maxLength={128}
+          onChange={(event) => setTitle(event.target.value)}
+          required
+          value={title}
+        />
+      </label>
+      <label>
+        关卡
+        <input
+          onChange={(event) => setStageId(event.target.value)}
+          placeholder="关卡 ID"
+          value={stageId}
+        />
+      </label>
+      <button
+        onClick={async () => setStages(await onSearchStages(stageId))}
+        type="button"
+      >
+        查找关卡
+      </button>
+      {stages.length > 0 && (
+        <select
+          aria-label="关卡搜索结果"
+          onChange={(event) => setStageId(event.target.value)}
+          value={stages.some((stage) => stage.id === stageId) ? stageId : ""}
+        >
+          <option disabled value="">
+            选择关卡
+          </option>
+          {stages.map((stage) => (
+            <option key={stage.id} value={stage.id}>
+              {stage.code} · {stage.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <button type="submit">保存轴信息</button>
+    </form>
+  );
+}
+
+function EventForm({
+  event,
+  onSave,
+  onDelete,
+}: {
   event: DraftEvent;
   onSave: (input: UpdateEventInput) => void;
   onDelete: () => void;
-  onCancel: () => void;
-};
-
-function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
+}) {
   const [frame, setFrame] = useState(String(event.frame));
   const [kind, setKind] = useState<DraftKind>(event.kind);
   const [operator, setOperator] = useState(event.operator ?? "");
@@ -896,26 +1088,24 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
     event.direction ?? "right",
   );
   const [label, setLabel] = useState(event.label ?? "");
-
   return (
-    <div className="modal-backdrop">
-      <form
-        className="compact-dialog event-editor"
-        onSubmit={(submitEvent) => {
-          submitEvent.preventDefault();
-          onSave({
-            id: event.id,
-            frame: Math.max(0, Number.parseInt(frame, 10) || 0),
-            kind,
-            operator: kind === "deploy" ? operator || null : null,
-            tile:
-              kind === "bookmark" ? null : tile.trim().toUpperCase() || null,
-            direction: kind === "deploy" ? direction : null,
-            label: label || null,
-          });
-        }}
-      >
-        <h2>编辑操作点</h2>
+    <form
+      className="event-form"
+      onSubmit={(submitEvent) => {
+        submitEvent.preventDefault();
+        onSave({
+          id: event.id,
+          frame: Number(frame),
+          kind,
+          operator: kind === "deploy" ? operator || null : null,
+          tile: kind === "bookmark" ? null : tile.trim().toUpperCase() || null,
+          direction: kind === "deploy" ? direction : null,
+          label: label || null,
+        });
+      }}
+    >
+      <h2>操作参数</h2>
+      <div className="form-grid">
         <label>
           类型
           <select
@@ -936,6 +1126,7 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
           <input
             min="0"
             onChange={(event) => setFrame(event.target.value)}
+            required
             type="number"
             value={frame}
           />
@@ -946,6 +1137,7 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
             <input
               onChange={(event) => setOperator(event.target.value)}
               placeholder="char_002_amiya"
+              required
               value={operator}
             />
           </label>
@@ -958,6 +1150,7 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
               onChange={(event) => setTile(event.target.value.toUpperCase())}
               pattern="[A-I](?:[1-9]|[12][0-9]|3[0-6])"
               placeholder="C5"
+              required
               value={tile}
             />
           </label>
@@ -978,454 +1171,99 @@ function EventEditor({ event, onSave, onDelete, onCancel }: EventEditorProps) {
             </select>
           </label>
         )}
-        <label>
-          说明
-          <input
+        <label className="note-field">
+          备注（可选）
+          <textarea
             maxLength={120}
             onChange={(event) => setLabel(event.target.value)}
+            placeholder="补充说明，不影响执行"
             value={label}
           />
         </label>
-        <footer>
-          <button className="danger-button" onClick={onDelete} type="button">
-            删除
-          </button>
-          <span />
-          <button onClick={onCancel} type="button">
-            取消
-          </button>
-          <button className="button--primary" type="submit">
-            保存
-          </button>
-        </footer>
-      </form>
-    </div>
+      </div>
+      <footer>
+        <button className="danger-button" onClick={onDelete} type="button">
+          删除
+        </button>
+        <span />
+        <button className="button--primary" type="submit">
+          保存更改
+        </button>
+      </footer>
+    </form>
   );
 }
 
-type MetadataEditorProps = {
-  snapshot: RunnerSnapshot;
-  onSave: (title: string, stageId: string) => void;
-  onSearchStages: (query: string) => Promise<StageCatalogEntry[]>;
-  onCancel: () => void;
-};
-
-function MetadataEditor({
-  snapshot,
-  onSave,
-  onSearchStages,
-  onCancel,
-}: MetadataEditorProps) {
-  const [title, setTitle] = useState(snapshot.axis.title);
-  const [stageId, setStageId] = useState(snapshot.axis.stageId ?? "");
-  const [stageResults, setStageResults] = useState<StageCatalogEntry[]>([]);
+function Picker({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
   return (
     <div className="modal-backdrop">
-      <form
-        className="compact-dialog metadata-editor"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSave(title, stageId);
-        }}
-      >
-        <h2>轴属性</h2>
-        <label>
-          标题
-          <input
-            maxLength={128}
-            onChange={(event) => setTitle(event.target.value)}
-            value={title}
-          />
-        </label>
-        <label>
-          关卡
-          <span className="stage-search-row">
-            <input
-              onChange={(event) => setStageId(event.target.value)}
-              placeholder="代码、名称或 stageId"
-              value={stageId}
-            />
-            <button
-              onClick={async () =>
-                setStageResults(await onSearchStages(stageId))
-              }
-              type="button"
-            >
-              搜索
-            </button>
-          </span>
-        </label>
-        {stageResults.length > 0 && (
-          <select
-            aria-label="关卡搜索结果"
-            onChange={(event) => setStageId(event.target.value)}
-            size={Math.min(5, stageResults.length)}
-            value={
-              stageResults.some((stage) => stage.id === stageId) ? stageId : ""
-            }
-          >
-            <option disabled value="">
-              选择匹配关卡
-            </option>
-            {stageResults.map((stage) => (
-              <option key={stage.id} value={stage.id}>
-                {stage.code} · {stage.name} · {stage.id}
-              </option>
-            ))}
-          </select>
-        )}
-        <footer>
-          <span />
-          <button onClick={onCancel} type="button">
-            取消
+      <section className="compact-dialog">
+        <header>
+          <h2>{title}</h2>
+          <button aria-label="关闭" onClick={onClose} type="button">
+            ×
           </button>
-          <button className="button--primary" type="submit">
-            保存
-          </button>
-        </footer>
-      </form>
-    </div>
-  );
-}
-
-type SettingsEditorProps = {
-  settings: AppSettings;
-  onSave: (settings: AppSettings) => void;
-  onCancel: () => void;
-};
-
-function SettingsEditor({ settings, onSave, onCancel }: SettingsEditorProps) {
-  const [theme, setTheme] = useState(settings.theme);
-  const [framesPerCost, setFramesPerCost] = useState(
-    String(settings.framesPerCost),
-  );
-  const [gameUiScale, setGameUiScale] = useState(String(settings.gameUiScale));
-  return (
-    <div className="modal-backdrop">
-      <form
-        className="compact-dialog settings-editor"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSave({
-            version: settings.version,
-            theme,
-            framesPerCost: Number.parseInt(framesPerCost, 10),
-            gameUiScale: Number.parseInt(gameUiScale, 10),
-          });
-        }}
-      >
-        <h2>显示与监控设置</h2>
-        <label>
-          外观
-          <select
-            onChange={(event) => setTheme(event.target.value as AppTheme)}
-            value={theme}
-          >
-            <option value="dark">深色</option>
-            <option value="light">浅色</option>
-          </select>
-        </label>
-        <label>
-          费用帧分母
-          <input
-            list="frames-per-cost-presets"
-            max="150"
-            min="15"
-            onChange={(event) => setFramesPerCost(event.target.value)}
-            required
-            type="number"
-            value={framesPerCost}
-          />
-          <datalist id="frames-per-cost-presets">
-            {[30, 45, 60, 90].map((value) => (
-              <option key={value} value={value} />
-            ))}
-          </datalist>
-        </label>
-        <label>
-          游戏 UI 比例
-          <input
-            max="100"
-            min="0"
-            onChange={(event) => setGameUiScale(event.target.value)}
-            required
-            type="number"
-            value={gameUiScale}
-          />
-        </label>
-        <p className="form-note">
-          事件帧始终为 30 Hz；分母只用于费用周期与时间显示。
-        </p>
-        <footer>
-          <span />
-          <button onClick={onCancel} type="button">
-            取消
-          </button>
-          <button className="button--primary" type="submit">
-            保存
-          </button>
-        </footer>
-      </form>
-    </div>
-  );
-}
-
-type WindowPickerProps = {
-  candidates: GameWindowCandidate[];
-  onSelect: (id: string) => void;
-  onRefresh: () => void;
-  onCancel: () => void;
-};
-
-function WindowPicker({
-  candidates,
-  onSelect,
-  onRefresh,
-  onCancel,
-}: WindowPickerProps) {
-  return (
-    <div className="modal-backdrop">
-      <section className="compact-dialog window-picker">
-        <h2>选择明日方舟窗口</h2>
-        <div className="window-candidates">
-          {candidates.length === 0 ? (
-            <p>未发现可捕获的 Arknights.exe 窗口。</p>
-          ) : (
-            candidates.map((candidate) => (
-              <button
-                key={candidate.id}
-                onClick={() => onSelect(candidate.id)}
-                type="button"
-              >
-                <strong>{candidate.title || "明日方舟"}</strong>
-                <span>
-                  {candidate.processName} · {candidate.width}×{candidate.height}
-                </span>
-                {candidate.warning && <em>{candidate.warning}</em>}
-              </button>
-            ))
-          )}
-        </div>
-        <footer>
-          <button onClick={onRefresh} type="button">
-            重新扫描
-          </button>
-          <span />
-          <button onClick={onCancel} type="button">
-            取消
-          </button>
-        </footer>
+        </header>
+        {children}
       </section>
     </div>
   );
 }
-
-type StagePickerProps = {
-  candidates: StageCatalogEntry[];
-  searching: boolean;
-  onSelect: (id: string) => void;
-  onSearch: (query: string) => void;
-  onCancel: () => void;
-};
 
 function StagePicker({
   candidates,
   searching,
-  onSelect,
   onSearch,
-  onCancel,
-}: StagePickerProps) {
+  onSelect,
+  onClose,
+}: {
+  candidates: StageCatalogEntry[];
+  searching: boolean;
+  onSearch: (query: string) => void;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}) {
   const [query, setQuery] = useState("");
   return (
-    <div className="modal-backdrop">
-      <section className="compact-dialog stage-picker">
-        <h2>手动确认当前关卡</h2>
-        <form
-          className="stage-search-row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onSearch(query);
-          }}
-        >
-          <input
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="输入关卡代码、名称或 stageId"
-            value={query}
-          />
-          <button type="submit">{searching ? "搜索中…" : "搜索"}</button>
-        </form>
-        <div className="stage-candidates">
-          {candidates.length === 0 ? (
-            <p>没有匹配的关卡。</p>
-          ) : (
-            candidates.map((stage) => (
-              <button
-                key={stage.id}
-                onClick={() => onSelect(stage.id)}
-                type="button"
-              >
-                <strong>
-                  {stage.code || "无代码"} · {stage.name}
-                </strong>
-                <span>{stage.id}</span>
-              </button>
-            ))
-          )}
-        </div>
-        <footer>
-          <span />
-          <button onClick={onCancel} type="button">
-            取消
-          </button>
-        </footer>
-      </section>
-    </div>
-  );
-}
-
-type BookmarkEditorProps = {
-  events: DraftEvent[];
-  onEdit: (event: DraftEvent) => void;
-  onDelete: (id: string) => void;
-  onClear: () => void;
-  onShift: (ids: string[], delta: number) => void;
-  onReorder: (id: string, direction: number) => void;
-  onCancel: () => void;
-};
-
-function BookmarkEditor({
-  events,
-  onEdit,
-  onDelete,
-  onClear,
-  onShift,
-  onReorder,
-  onCancel,
-}: BookmarkEditorProps) {
-  const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<"all" | DraftKind>("all");
-  const [selectedId, setSelectedId] = useState(events[0]?.id ?? "");
-  const [delta, setDelta] = useState("0");
-  const visible = events.filter(
-    (event) =>
-      (kind === "all" || event.kind === kind) &&
-      (!query ||
-        event.id.toLowerCase().includes(query.toLowerCase()) ||
-        event.label?.toLowerCase().includes(query.toLowerCase())),
-  );
-  const selected = events.find((event) => event.id === selectedId) ?? null;
-  return (
-    <div className="modal-backdrop">
-      <section className="compact-dialog bookmark-editor">
-        <h2>书签与操作点</h2>
-        <div className="bookmark-filters">
-          <input
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索标题或 ID"
-            value={query}
-          />
-          <select
-            onChange={(event) =>
-              setKind(event.target.value as "all" | DraftKind)
-            }
-            value={kind}
-          >
-            <option value="all">全部</option>
-            {(["bookmark", "deploy", "skill", "retreat"] as DraftKind[]).map(
-              (value) => (
-                <option key={value} value={value}>
-                  {KIND_LABELS[value]}
-                </option>
-              ),
-            )}
-          </select>
-        </div>
-        <div className="bookmark-list">
-          {visible.map((event) => (
-            <button
-              className={event.id === selectedId ? "selected" : ""}
-              key={event.id}
-              onClick={() => setSelectedId(event.id)}
-              onDoubleClick={() => onEdit(event)}
-              type="button"
-            >
-              <span>{frameTime(event.frame, 30)}</span>
-              <strong>{event.label || KIND_LABELS[event.kind]}</strong>
-              <em>{KIND_LABELS[event.kind]}</em>
-            </button>
-          ))}
-        </div>
-        <div className="bookmark-actions">
+    <Picker title="手动确认当前关卡" onClose={onClose}>
+      <form
+        className="picker-search"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSearch(query);
+        }}
+      >
+        <input
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="关卡代码、名称或 ID"
+          value={query}
+        />
+        <button type="submit">{searching ? "搜索中…" : "搜索"}</button>
+      </form>
+      <div className="picker-list">
+        {candidates.map((stage) => (
           <button
-            disabled={!selected}
-            onClick={() => selected && onEdit(selected)}
+            className="picker-row"
+            key={stage.id}
+            onClick={() => onSelect(stage.id)}
             type="button"
           >
-            编辑
+            <strong>
+              {stage.code} · {stage.name}
+            </strong>
+            <span>{stage.id}</span>
           </button>
-          <button
-            disabled={!selected}
-            onClick={() => selected && onDelete(selected.id)}
-            type="button"
-          >
-            删除
-          </button>
-          <button
-            disabled={!selected}
-            onClick={() => selected && onReorder(selected.id, -1)}
-            type="button"
-          >
-            上移
-          </button>
-          <button
-            disabled={!selected}
-            onClick={() => selected && onReorder(selected.id, 1)}
-            type="button"
-          >
-            下移
-          </button>
-          <button onClick={onClear} type="button">
-            清空书签
-          </button>
-        </div>
-        <div className="bookmark-shift">
-          <label>
-            平移帧
-            <input
-              onChange={(event) => setDelta(event.target.value)}
-              type="number"
-              value={delta}
-            />
-          </label>
-          <button
-            disabled={!selected}
-            onClick={() =>
-              selected &&
-              onShift([selected.id], Number.parseInt(delta, 10) || 0)
-            }
-            type="button"
-          >
-            平移所选
-          </button>
-          <button
-            onClick={() =>
-              onShift(
-                visible.map((event) => event.id),
-                Number.parseInt(delta, 10) || 0,
-              )
-            }
-            type="button"
-          >
-            平移列表
-          </button>
-        </div>
-        <footer>
-          <span />
-          <button onClick={onCancel} type="button">
-            关闭
-          </button>
-        </footer>
-      </section>
-    </div>
+        ))}
+        {!candidates.length && <p>没有匹配的关卡。</p>}
+      </div>
+    </Picker>
   );
 }

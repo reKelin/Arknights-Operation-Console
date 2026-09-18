@@ -1,44 +1,85 @@
-export const TIMELINE_PADDING = 36;
-export const BASE_PIXELS_PER_FRAME = 0.32;
+export const TIMELINE_PADDING = 24;
+export const MIN_VIEW_FRAMES = 40;
+export const MAX_VIEW_FRAMES = 18_000;
 
-export function pixelsPerFrame(zoom: number): number {
-  return BASE_PIXELS_PER_FRAME * Math.min(32, Math.max(0.5, zoom));
+const MAJOR_STEPS = [
+  5, 10, 25, 50, 100, 150, 300, 600, 900, 1_500, 3_000, 6_000,
+];
+
+export function clampViewFrames(frames: number): number {
+  return Math.min(
+    MAX_VIEW_FRAMES,
+    Math.max(MIN_VIEW_FRAMES, Math.round(frames)),
+  );
+}
+
+export function majorTickFrames(viewFrames: number): number {
+  const minimumStep = clampViewFrames(viewFrames) / 8;
+  return MAJOR_STEPS.find((step) => step >= minimumStep) ?? 6_000;
+}
+
+export function pixelsPerFrame(
+  viewFrames: number,
+  viewportWidth: number,
+): number {
+  return (
+    Math.max(1, viewportWidth - TIMELINE_PADDING * 2) /
+    clampViewFrames(viewFrames)
+  );
 }
 
 export function timelineWidth(
   maxFrame: number,
-  zoom: number,
+  viewFrames: number,
   viewportWidth: number,
 ): number {
   return Math.max(
     viewportWidth,
-    Math.ceil(maxFrame * pixelsPerFrame(zoom) + TIMELINE_PADDING * 2),
+    Math.ceil(
+      Math.max(0, maxFrame) * pixelsPerFrame(viewFrames, viewportWidth) +
+        TIMELINE_PADDING * 2,
+    ),
   );
 }
 
-export function frameToX(frame: number, zoom: number): number {
-  return TIMELINE_PADDING + Math.max(0, frame) * pixelsPerFrame(zoom);
+export function frameToX(
+  frame: number,
+  viewFrames: number,
+  viewportWidth: number,
+): number {
+  return (
+    TIMELINE_PADDING +
+    Math.max(0, frame) * pixelsPerFrame(viewFrames, viewportWidth)
+  );
 }
 
 export function zoomedScrollLeft(
   anchorFrame: number,
   pointerOffset: number,
-  zoom: number,
+  viewFrames: number,
+  viewportWidth: number,
 ): number {
-  return Math.max(0, frameToX(anchorFrame, zoom) - pointerOffset);
+  return Math.max(
+    0,
+    frameToX(anchorFrame, viewFrames, viewportWidth) - pointerOffset,
+  );
 }
 
 export function pointerToFrame(
   clientX: number,
   viewportLeft: number,
   scrollLeft: number,
-  zoom: number,
+  viewFrames: number,
+  viewportWidth: number,
   maxFrame: number,
 ): number {
   const contentX = clientX - viewportLeft + scrollLeft - TIMELINE_PADDING;
   return Math.min(
     maxFrame,
-    Math.max(0, Math.round(contentX / pixelsPerFrame(zoom))),
+    Math.max(
+      0,
+      Math.round(contentX / pixelsPerFrame(viewFrames, viewportWidth)),
+    ),
   );
 }
 
