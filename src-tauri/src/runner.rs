@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::{
-    axis::{DraftAxis, DraftEvent, DraftKind, valid_tile_code},
+    axis::{DraftAxis, DraftEvent, DraftKind, EventFrameRange, TimeConfirmation, valid_tile_code},
     bindings::{
-        AxisMetadataInput, BattleStatus, CommandError, NoticeKind, RunNotice, RunStrategy,
+        AxisMetadataInput, BattleStatus, CommandError, ConfirmEventTimeInput, ConsoleMode,
+        NoticeKind, RecordingAttempt, RecordingAttemptStatus, RunNotice, RunStrategy,
         RunnerSnapshot, UpdateEventInput,
     },
     executor::{ProxyExecutionRecord, ProxySnapshot, ProxyStatus},
@@ -54,6 +55,10 @@ pub struct RunnerState {
     proxy: ProxySnapshot,
     proxy_confirm_deadline: Option<Instant>,
     pending_execution: Vec<DraftEvent>,
+    console_mode: ConsoleMode,
+    recording_attempts: Vec<RecordingAttempt>,
+    active_attempt_id: Option<String>,
+    next_attempt_sequence: u32,
 }
 
 impl RunnerState {
@@ -94,6 +99,10 @@ impl RunnerState {
             proxy: ProxySnapshot::default(),
             proxy_confirm_deadline: None,
             pending_execution: Vec::new(),
+            console_mode: ConsoleMode::ManualRecording,
+            recording_attempts: Vec::new(),
+            active_attempt_id: None,
+            next_attempt_sequence: 1,
         }
     }
 
@@ -145,6 +154,8 @@ impl RunnerState {
             .map(|event| event.frame.saturating_sub(self.frame) as i32);
         RunnerSnapshot {
             axis: self.axis.clone(),
+            console_mode: self.console_mode,
+            recording_attempts: self.recording_attempts.clone(),
             settings: self.settings.clone(),
             monitor: self.monitor.clone(),
             clock: self.clock_snapshot(),
@@ -201,24 +212,13 @@ impl RunnerState {
         });
     }
 
-    pub fn record_event(&mut self, kind: DraftKind) -> Result<(), CommandError> {
-        if !self.recording {
-            return Err(CommandError::new("recording_disabled", "实时录轴尚未开启"));
+    pub fn set_console_mode(&mut self, mode: ConsoleMode) {
+        if self.console_mode == mode {
+            return;
         }
-        if !matches!(self.status, BattleStatus::Running | BattleStatus::Paused) {
-            return Err(CommandError::new(
-                "battle_not_running",
-                "当前不在运行中的关卡内",
-            ));
-        }
-        if self.stage_safety().status != StageSafetyStatus::Matched {
-            return Err(CommandError::new(
-                "stage_unverified",
-                "当前关卡未确认或与轴不一致，不能录制操作点",
-            ));
-        }
-        self.insert_draft(self.frame, kind);
-        Ok(())
+        self.disable_proxy("工作模式已切换，代理执行已关闭");
+        self.console_mode = mode;
+        self.last_message = Some("工作模式已切换".to_string());
     }
 
     pub fn record_bookmark(&mut self) -> Result<(), CommandError> {
@@ -231,11 +231,41 @@ impl RunnerState {
                 "当前不在运行中的关卡内",
             ));
         }
+        let attempt_id = self.active_attempt_id.clone().ok_or_else(|| {
+            CommandError::new("recording_attempt_missing", "当前没有活动录制场次")
+        })?;
+        let clock = self.clock_snapshot();
+        let source_timestamp_ns = clock
+            .source_timestamp_ns
+            .filter(|timestamp| timestamp.is_finite())
+            .ok_or_else(|| {
+                CommandError::new("clock_timestamp_missing", "当前没有可追溯的观测来源时间")
+            })?;
         let id = self.insert_draft(self.frame, DraftKind::Bookmark);
         if let Some(event) = self.axis.events.iter_mut().find(|event| event.id == id) {
-            event.label = Some(format!("书签 {}", event.order + 1));
+            event.label = Some(format!("待分类 {}", event.order + 1));
+            event.attempt_id = Some(attempt_id.clone());
+            event.source_timestamp_ns = Some(source_timestamp_ns);
+            event.frame_range = EventFrameRange {
+                start: clock.frame.saturating_sub(clock.uncertainty_frames),
+                end: clock.frame.saturating_add(clock.uncertainty_frames),
+            };
+            event.clock_quality = clock.quality;
+            event.time_confirmation =
+                if clock.quality == ClockQuality::Trusted && clock.uncertainty_frames == 0 {
+                    TimeConfirmation::Observed
+                } else {
+                    TimeConfirmation::Unconfirmed
+                };
         }
-        self.last_message = Some(format!("已在 F{} 添加书签", self.frame));
+        if let Some(attempt) = self
+            .recording_attempts
+            .iter_mut()
+            .find(|attempt| attempt.id == attempt_id)
+        {
+            attempt.event_ids.push(id);
+        }
+        self.last_message = Some(format!("已在 F{} 记录待分类操作", self.frame));
         Ok(())
     }
 
@@ -287,6 +317,9 @@ impl RunnerState {
                 .iter_mut()
                 .find(|event| event.id == input.id)
                 .ok_or_else(|| CommandError::new("event_not_found", "未找到操作点"))?;
+            if event.frame != input.frame {
+                event.time_confirmation = TimeConfirmation::Unconfirmed;
+            }
             event.frame = input.frame;
             event.kind = input.kind;
             event.operator = if matches!(event.kind, DraftKind::Deploy) {
@@ -322,10 +355,42 @@ impl RunnerState {
             .iter_mut()
             .find(|event| event.id == id)
             .ok_or_else(|| CommandError::new("event_not_found", "未找到操作点"))?;
-        event.frame = frame;
+        if event.frame != frame {
+            event.frame = frame;
+            event.time_confirmation = TimeConfirmation::Unconfirmed;
+        }
         self.axis.sort_events();
         self.rebuild_triggered();
         self.last_message = Some(format!("已移动操作点 {id}"));
+        Ok(())
+    }
+
+    pub fn confirm_event_time(&mut self, input: ConfirmEventTimeInput) -> Result<(), CommandError> {
+        validate_frame(input.frame)?;
+        let event = self
+            .axis
+            .events
+            .iter_mut()
+            .find(|event| event.id == input.id)
+            .ok_or_else(|| CommandError::new("event_not_found", "未找到操作点"))?;
+        let inside_observed_range =
+            (event.frame_range.start..=event.frame_range.end).contains(&input.frame);
+        if !inside_observed_range && !input.manual_correction_confirmed {
+            return Err(CommandError::field(
+                "manual_time_confirmation_required",
+                "目标帧超出观测范围，必须明确确认人工校正",
+                "manualCorrectionConfirmed",
+            ));
+        }
+        event.frame = input.frame;
+        event.time_confirmation = if inside_observed_range {
+            TimeConfirmation::Observed
+        } else {
+            TimeConfirmation::ManuallyCorrected
+        };
+        self.axis.sort_events();
+        self.rebuild_triggered();
+        self.last_message = Some(format!("已确认操作点 {} 的时间", input.id));
         Ok(())
     }
 
@@ -335,6 +400,9 @@ impl RunnerState {
         self.axis.events.retain(|event| event.id != id);
         if self.axis.events.len() == previous_len {
             return Err(CommandError::new("event_not_found", "未找到操作点"));
+        }
+        for attempt in &mut self.recording_attempts {
+            attempt.event_ids.retain(|event_id| event_id != id);
         }
         self.rebuild_triggered();
         self.last_message = Some(format!("已删除操作点 {id}"));
@@ -359,6 +427,7 @@ impl RunnerState {
                     .saturating_add(delta as u32)
                     .min(i32::MAX as u32)
             };
+            event.time_confirmation = TimeConfirmation::Unconfirmed;
         }
         self.axis.sort_events();
         self.rebuild_triggered();
@@ -391,6 +460,17 @@ impl RunnerState {
         self.axis
             .events
             .retain(|event| event.kind != DraftKind::Bookmark);
+        let remaining: HashSet<&str> = self
+            .axis
+            .events
+            .iter()
+            .map(|event| event.id.as_str())
+            .collect();
+        for attempt in &mut self.recording_attempts {
+            attempt
+                .event_ids
+                .retain(|event_id| remaining.contains(event_id.as_str()));
+        }
         self.rebuild_triggered();
         self.last_message = Some("未分类书签已清空".to_string());
     }
@@ -434,6 +514,16 @@ impl RunnerState {
         &self.axis
     }
 
+    pub fn axis_json_for_export(&self) -> Result<serde_json::Value, CommandError> {
+        if self.stage_safety().status == StageSafetyStatus::Mismatched {
+            return Err(CommandError::new(
+                "stage_mismatched",
+                "当前观测关卡与轴关卡不匹配，不能导出",
+            ));
+        }
+        self.axis.to_axis_json()
+    }
+
     pub fn set_strategy(&mut self, strategy: RunStrategy) {
         self.strategy = strategy;
         self.rebuild_triggered();
@@ -461,12 +551,12 @@ impl RunnerState {
                     "代理执行要求前台可信游戏窗口、运行中关卡和匹配的轴关卡",
                 ));
             }
-            if self.axis.events.iter().any(|event| !event.complete) {
-                return Err(CommandError::new(
-                    "proxy_axis_incomplete",
-                    "代理执行前必须补全全部操作点",
-                ));
-            }
+            self.axis.to_axis_json().map_err(|error| {
+                CommandError::new(
+                    "proxy_axis_not_ready",
+                    format!("当前作战轴不能用于代理：{}", error.message),
+                )
+            })?;
             self.proxy.status = ProxyStatus::Confirming;
             self.proxy.message = Some("正在准备代理执行资源".to_string());
             self.proxy_confirm_deadline = None;
@@ -505,12 +595,12 @@ impl RunnerState {
             ));
         }
         self.proxy.status = ProxyStatus::Ready;
-        self.proxy.message = Some("代理执行已启用；F12 可随时急停".to_string());
+        self.proxy.message = Some("代理执行已启用；可使用界面停止入口中止".to_string());
         Ok(())
     }
 
     pub fn emergency_stop(&mut self) {
-        self.disable_proxy("F12 急停：代理执行已关闭");
+        self.disable_proxy("界面停止：代理执行已关闭");
     }
 
     pub fn take_pending_execution(&mut self) -> Vec<DraftEvent> {
@@ -610,6 +700,11 @@ impl RunnerState {
     }
 
     pub fn reset_monitor_clock(&mut self, message: &str) {
+        let source_timestamp_ns = self
+            .clock_snapshot()
+            .source_timestamp_ns
+            .filter(|timestamp| timestamp.is_finite());
+        self.end_recording_attempt(source_timestamp_ns);
         self.human_clock = HumanClock::default();
         self.proxy_clock = ProxyClock::default();
         self.clock_mode = ClockMode::Human;
@@ -660,6 +755,7 @@ impl RunnerState {
                         .and_then(|recognition| recognition.stage.as_ref())
                         .map(|stage| stage.id.clone());
                 }
+                self.update_active_attempt_stage(&observation);
                 let previous_frame = self.frame;
                 let update = self.observe_clock(&observation);
                 self.frame = update.frame;
@@ -681,6 +777,7 @@ impl RunnerState {
                 };
                 match update.transition {
                     ClockTransition::Started => {
+                        self.start_recording_attempt(&observation);
                         self.triggered.clear();
                         self.notices.clear();
                         self.last_message = Some("已识别到关卡运行，计时开始".to_string());
@@ -693,6 +790,7 @@ impl RunnerState {
                         self.dispatch_events(self.frame);
                     }
                     ClockTransition::Exited => {
+                        self.end_recording_attempt(Some(observation.capture_timestamp_ns as f64));
                         self.triggered.clear();
                         self.notices.clear();
                         self.manual_stage = None;
@@ -733,6 +831,65 @@ impl RunnerState {
         }
     }
 
+    fn start_recording_attempt(&mut self, observation: &VisualObservation) {
+        self.end_recording_attempt(Some(observation.capture_timestamp_ns as f64));
+        let sequence = self.next_attempt_sequence;
+        self.next_attempt_sequence = self.next_attempt_sequence.saturating_add(1);
+        let id = format!("attempt-{sequence:06}");
+        let stage_id = observation
+            .stage_recognition
+            .as_ref()
+            .filter(|recognition| recognition.status == StageMatchStatus::Matched)
+            .and_then(|recognition| recognition.stage.as_ref())
+            .map(|stage| stage.id.clone());
+        self.recording_attempts.push(RecordingAttempt {
+            id: id.clone(),
+            sequence,
+            status: RecordingAttemptStatus::Active,
+            stage_id,
+            started_source_timestamp_ns: observation.capture_timestamp_ns as f64,
+            ended_source_timestamp_ns: None,
+            event_ids: Vec::new(),
+        });
+        self.active_attempt_id = Some(id);
+    }
+
+    fn update_active_attempt_stage(&mut self, observation: &VisualObservation) {
+        let Some(id) = self.active_attempt_id.as_deref() else {
+            return;
+        };
+        let Some(stage_id) = observation
+            .stage_recognition
+            .as_ref()
+            .filter(|recognition| recognition.status == StageMatchStatus::Matched)
+            .and_then(|recognition| recognition.stage.as_ref())
+            .map(|stage| stage.id.clone())
+        else {
+            return;
+        };
+        if let Some(attempt) = self
+            .recording_attempts
+            .iter_mut()
+            .find(|attempt| attempt.id == id && attempt.stage_id.is_none())
+        {
+            attempt.stage_id = Some(stage_id);
+        }
+    }
+
+    fn end_recording_attempt(&mut self, source_timestamp_ns: Option<f64>) {
+        let Some(id) = self.active_attempt_id.take() else {
+            return;
+        };
+        if let Some(attempt) = self
+            .recording_attempts
+            .iter_mut()
+            .find(|attempt| attempt.id == id)
+        {
+            attempt.status = RecordingAttemptStatus::Ended;
+            attempt.ended_source_timestamp_ns = source_timestamp_ns;
+        }
+    }
+
     pub fn update_settings(&mut self, settings: AppSettings) -> Result<(), CommandError> {
         settings
             .validate()
@@ -753,6 +910,9 @@ impl RunnerState {
             .is_some_and(|deadline| now <= deadline)
         {
             self.axis.events.clear();
+            for attempt in &mut self.recording_attempts {
+                attempt.event_ids.clear();
+            }
             self.triggered.clear();
             self.next_id = 1;
             self.next_order = 0;
@@ -760,7 +920,7 @@ impl RunnerState {
             self.last_message = Some("当前轴已清空".to_string());
         } else {
             self.clear_pending_deadline = Some(now + CLEAR_CONFIRM_DURATION);
-            self.last_message = Some("再次按 F4 或点击清空以确认".to_string());
+            self.last_message = Some("请再次点击清空以确认".to_string());
         }
     }
 
@@ -1194,6 +1354,7 @@ mod tests {
                 direction: None,
                 label: None,
                 complete: true,
+                ..DraftEvent::new("unused".to_string(), 30, 2, DraftKind::Skill)
             },
             DraftEvent {
                 id: "first".to_string(),
@@ -1205,6 +1366,7 @@ mod tests {
                 direction: None,
                 label: None,
                 complete: true,
+                ..DraftEvent::new("unused".to_string(), 30, 1, DraftKind::Retreat)
             },
         ];
         runner.axis.sort_events();
@@ -1232,5 +1394,68 @@ mod tests {
 
         assert!(!runner.proxy.enabled);
         assert!(runner.pending_execution.is_empty());
+    }
+
+    #[test]
+    fn p_recording_keeps_attempt_and_clock_evidence() {
+        let start = Instant::now();
+        let mut runner = RunnerState::new(start);
+        runner.apply_monitor_event(
+            observation(1_000_000_000, ObservedBattleState::OneXRunning),
+            start,
+        );
+
+        runner.record_bookmark().unwrap();
+
+        let event = runner.axis.events.last().unwrap();
+        assert_eq!(event.attempt_id.as_deref(), Some("attempt-000001"));
+        assert_eq!(event.source_timestamp_ns, Some(1_000_000_000.0));
+        assert_eq!(event.frame_range.start, 0);
+        assert_eq!(
+            runner.recording_attempts[0].event_ids,
+            std::slice::from_ref(&event.id)
+        );
+    }
+
+    #[test]
+    fn time_outside_observed_range_requires_explicit_confirmation() {
+        let start = Instant::now();
+        let mut runner = RunnerState::new(start);
+        runner.add_event(30, DraftKind::Skill).unwrap();
+        let id = runner.axis.events[0].id.clone();
+        runner.move_event(&id, 45).unwrap();
+
+        let error = runner
+            .confirm_event_time(ConfirmEventTimeInput {
+                id: id.clone(),
+                frame: 45,
+                manual_correction_confirmed: false,
+            })
+            .unwrap_err();
+        assert_eq!(error.code, "manual_time_confirmation_required");
+
+        runner
+            .confirm_event_time(ConfirmEventTimeInput {
+                id,
+                frame: 45,
+                manual_correction_confirmed: true,
+            })
+            .unwrap();
+        assert_eq!(
+            runner.axis.events[0].time_confirmation,
+            TimeConfirmation::ManuallyCorrected
+        );
+    }
+
+    #[test]
+    fn changing_console_mode_never_arms_proxy() {
+        let start = Instant::now();
+        let mut runner = RunnerState::new(start);
+        runner.proxy.enabled = true;
+
+        runner.set_console_mode(ConsoleMode::RecordingAnalysis);
+
+        assert_eq!(runner.console_mode, ConsoleMode::RecordingAnalysis);
+        assert!(!runner.proxy.enabled);
     }
 }

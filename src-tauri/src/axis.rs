@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use specta::Type;
 
-use crate::bindings::CommandError;
+use crate::{bindings::CommandError, monitor::ClockQuality};
 
 typify::import_types!("../protocol/axislink.schema.json");
 
@@ -50,6 +50,21 @@ impl DraftDirection {
 
 pub type DraftTile = String;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EventFrameRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum TimeConfirmation {
+    Unconfirmed,
+    Observed,
+    ManuallyCorrected,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftEvent {
@@ -62,6 +77,11 @@ pub struct DraftEvent {
     pub direction: Option<DraftDirection>,
     pub label: Option<String>,
     pub complete: bool,
+    pub attempt_id: Option<String>,
+    pub source_timestamp_ns: Option<f64>,
+    pub frame_range: EventFrameRange,
+    pub clock_quality: ClockQuality,
+    pub time_confirmation: TimeConfirmation,
 }
 
 impl DraftEvent {
@@ -76,6 +96,14 @@ impl DraftEvent {
             direction: None,
             label: None,
             complete: false,
+            attempt_id: None,
+            source_timestamp_ns: None,
+            frame_range: EventFrameRange {
+                start: frame,
+                end: frame,
+            },
+            clock_quality: ClockQuality::Waiting,
+            time_confirmation: TimeConfirmation::ManuallyCorrected,
         };
         event.refresh_complete();
         event
@@ -176,6 +204,13 @@ impl DraftAxis {
                     format!("events.{}", event.id),
                 ));
             }
+            if event.time_confirmation == TimeConfirmation::Unconfirmed {
+                return Err(CommandError::field(
+                    "event_time_unconfirmed",
+                    format!("操作点 {} 的时间尚未确认", event.id),
+                    format!("events.{}.frame", event.id),
+                ));
+            }
             events.push(event_to_value(event)?);
         }
 
@@ -243,6 +278,14 @@ fn complete_event(id: &str, frame: u32, order: u32, kind: DraftKind, label: &str
         direction: deploy.then_some(DraftDirection::Left),
         label: Some(label.to_string()),
         complete: true,
+        attempt_id: None,
+        source_timestamp_ns: None,
+        frame_range: EventFrameRange {
+            start: frame,
+            end: frame,
+        },
+        clock_quality: ClockQuality::Waiting,
+        time_confirmation: TimeConfirmation::ManuallyCorrected,
     }
 }
 
@@ -343,6 +386,14 @@ fn event_from_value(value: &Value, order: u32) -> Result<DraftEvent, CommandErro
             .and_then(Value::as_str)
             .map(ToString::to_string),
         complete: false,
+        attempt_id: None,
+        source_timestamp_ns: None,
+        frame_range: EventFrameRange {
+            start: object["frame"].as_u64().expect("validated frame") as u32,
+            end: object["frame"].as_u64().expect("validated frame") as u32,
+        },
+        clock_quality: ClockQuality::Waiting,
+        time_confirmation: TimeConfirmation::Observed,
     };
     event.refresh_complete();
     Ok(event)
@@ -612,6 +663,16 @@ mod tests {
         let error = axis.to_axis_json().unwrap_err();
 
         assert_eq!(error.code, "event_incomplete");
+    }
+
+    #[test]
+    fn unconfirmed_event_time_cannot_be_exported() {
+        let mut axis = DraftAxis::demo();
+        axis.events[0].time_confirmation = TimeConfirmation::Unconfirmed;
+
+        let error = axis.to_axis_json().unwrap_err();
+
+        assert_eq!(error.code, "event_time_unconfirmed");
     }
 
     #[test]

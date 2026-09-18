@@ -12,10 +12,10 @@ use std::{
     time::Instant,
 };
 
-use axis::{DraftAxis, DraftKind};
+use axis::DraftAxis;
 use bindings::{
-    AddEventInput, AxisMetadataInput, CommandError, OpenBookmarkListEvent, RunStrategy,
-    RunnerSnapshot, RunnerSnapshotEvent, UpdateEventInput,
+    AddEventInput, AxisMetadataInput, CommandError, ConfirmEventTimeInput, ConsoleMode,
+    RunStrategy, RunnerSnapshot, RunnerSnapshotEvent, UpdateEventInput,
 };
 use executor::SharedExecutor;
 use monitor::{GameWindowCandidate, MonitorManager, VisionConfig};
@@ -79,12 +79,12 @@ fn set_recording(
 
 #[tauri::command]
 #[specta::specta]
-fn record_event(
-    kind: DraftKind,
+fn set_console_mode(
+    mode: ConsoleMode,
     state: tauri::State<'_, SharedRunner>,
 ) -> Result<RunnerSnapshot, CommandError> {
     let mut runner = locked(&state)?;
-    runner.record_event(kind)?;
+    runner.set_console_mode(mode);
     Ok(runner.snapshot())
 }
 
@@ -164,6 +164,17 @@ fn move_event(
 
 #[tauri::command]
 #[specta::specta]
+fn confirm_event_time(
+    input: ConfirmEventTimeInput,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.confirm_event_time(input)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
 fn delete_event(
     id: String,
     state: tauri::State<'_, SharedRunner>,
@@ -237,7 +248,7 @@ fn export_axis(
     state: tauri::State<'_, SharedRunner>,
 ) -> Result<RunnerSnapshot, CommandError> {
     let runner = locked(&state)?;
-    let value = runner.axis().to_axis_json()?;
+    let value = runner.axis_json_for_export()?;
     let text = serde_json::to_string_pretty(&value)?;
     std::fs::write(PathBuf::from(path), format!("{text}\n"))?;
     Ok(runner.snapshot())
@@ -476,7 +487,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             get_snapshot,
             set_recording,
-            record_event,
+            set_console_mode,
             record_bookmark,
             shift_events,
             reorder_event,
@@ -484,6 +495,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             add_event,
             update_event,
             move_event,
+            confirm_event_time,
             delete_event,
             set_axis_metadata,
             import_axis,
@@ -504,10 +516,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             hide_to_tray,
             close_app,
         ])
-        .events(tauri_specta::collect_events![
-            RunnerSnapshotEvent,
-            OpenBookmarkListEvent
-        ])
+        .events(tauri_specta::collect_events![RunnerSnapshotEvent])
 }
 
 pub fn export_bindings(path: PathBuf) -> Result<(), String> {
@@ -524,7 +533,7 @@ fn emit_snapshot(app: &AppHandle, snapshot: RunnerSnapshot) {
 #[cfg(feature = "desktop-app")]
 fn start_runtime(app: AppHandle) {
     thread::spawn(move || {
-        let mut bookmark_shortcuts_registered = false;
+        let mut record_shortcut_registered = false;
         let mut shortcut_check = Instant::now() - Duration::from_secs(1);
         loop {
             thread::sleep(Duration::from_millis(16));
@@ -583,13 +592,13 @@ fn start_runtime(app: AppHandle) {
                     .window_id
                     .as_deref()
                     .is_some_and(MonitorManager::is_game_foreground);
-                if should_register != bookmark_shortcuts_registered {
+                if should_register != record_shortcut_registered {
                     let result = if should_register {
-                        app.global_shortcut().register_multiple(["P", "H"])
+                        app.global_shortcut().register("P")
                     } else {
-                        app.global_shortcut().unregister_multiple(["P", "H"])
+                        app.global_shortcut().unregister("P")
                     };
-                    bookmark_shortcuts_registered = should_register && result.is_ok();
+                    record_shortcut_registered = should_register && result.is_ok();
                 }
             }
             if RunnerSnapshotEvent(snapshot).emit(&app).is_err() {
@@ -633,46 +642,16 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.handle().plugin(
         tauri_plugin_global_shortcut::Builder::new()
-            .with_shortcuts(["F1", "F2", "F3", "F4", "F12"])?
             .with_handler(|app, shortcut, event| {
                 if event.state != ShortcutState::Pressed {
                     return;
                 }
-                let emergency = shortcut.matches(Modifiers::empty(), Code::F12);
-                let clear = shortcut.matches(Modifiers::empty(), Code::F4);
-                let bookmark = shortcut.matches(Modifiers::empty(), Code::KeyP);
-                let open_bookmarks = shortcut.matches(Modifiers::empty(), Code::KeyH);
-                let kind = if shortcut.matches(Modifiers::empty(), Code::F1) {
-                    Some(DraftKind::Deploy)
-                } else if shortcut.matches(Modifiers::empty(), Code::F2) {
-                    Some(DraftKind::Skill)
-                } else if shortcut.matches(Modifiers::empty(), Code::F3) {
-                    Some(DraftKind::Retreat)
-                } else {
-                    None
-                };
-                if !emergency && !clear && !bookmark && !open_bookmarks && kind.is_none() {
+                if !shortcut.matches(Modifiers::empty(), Code::KeyP) {
                     return;
-                }
-                if open_bookmarks {
-                    show_main_window(app);
-                    let _ = OpenBookmarkListEvent(()).emit(app);
-                    return;
-                }
-                if emergency {
-                    app.state::<SharedExecutor>().emergency_stop();
                 }
                 let state = app.state::<SharedRunner>();
                 if let Ok(mut runner) = state.0.lock() {
-                    if emergency {
-                        runner.emergency_stop();
-                    } else if clear {
-                        runner.request_clear_axis(Instant::now());
-                    } else if bookmark {
-                        let _ = runner.record_bookmark();
-                    } else if let Some(kind) = kind {
-                        let _ = runner.record_event(kind);
-                    }
+                    let _ = runner.record_bookmark();
                     emit_snapshot(app, runner.snapshot());
                 }
             })
@@ -718,7 +697,7 @@ pub fn run() {
                 let state = app.state::<SharedRunner>();
                 if let Ok(mut runner) = state.0.lock() {
                     runner.set_runtime_warning(format!(
-                        "全局 F1–F4/F12 注册失败，应用仍可使用：{error}"
+                        "全局 P 记录快捷键初始化失败，应用仍可使用：{error}"
                     ));
                 }
             }
