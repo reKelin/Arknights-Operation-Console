@@ -3,6 +3,7 @@ mod bindings;
 mod executor;
 mod monitor;
 mod runner;
+mod session;
 mod settings;
 mod stage;
 
@@ -18,7 +19,7 @@ use bindings::{
     ResolveExecutionReceiptInput, RunStrategy, RunnerSnapshot, RunnerSnapshotEvent,
     UpdateEventInput,
 };
-use executor::{ExecutionBindings, ProxyBatchKind, SharedExecutor};
+use executor::{CancelDrain, ExecutionBindings, ProxyBatchKind, ProxyBatchResult, SharedExecutor};
 use monitor::{GameWindowCandidate, MonitorManager, VisionConfig};
 use runner::RunnerState;
 use settings::AppSettings;
@@ -125,7 +126,7 @@ fn reorder_event(
 #[specta::specta]
 fn clear_bookmarks(state: tauri::State<'_, SharedRunner>) -> Result<RunnerSnapshot, CommandError> {
     let mut runner = locked(&state)?;
-    runner.clear_bookmarks();
+    runner.clear_bookmarks()?;
     Ok(runner.snapshot())
 }
 
@@ -225,7 +226,7 @@ fn import_axis(
     let stage_id = axis.stage_id.clone();
     {
         let mut runner = locked(&runner_state)?;
-        runner.replace_axis(axis);
+        runner.replace_axis(axis)?;
     }
     if let Some(stage_id) = stage_id.filter(|id| stages.0.catalog().find(id).is_some()) {
         let map = stages.0.load_map(&stage_id);
@@ -252,6 +253,31 @@ fn export_axis(
     let value = runner.axis_json_for_export()?;
     let text = serde_json::to_string_pretty(&value)?;
     std::fs::write(PathBuf::from(path), format!("{text}\n"))?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn export_axis_revision(
+    path: String,
+    revision_id: String,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let runner = locked(&state)?;
+    let value = runner.axis_revision_json_for_export(&revision_id)?;
+    let text = serde_json::to_string_pretty(&value)?;
+    std::fs::write(PathBuf::from(path), format!("{text}\n"))?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn select_axis_revision(
+    revision_id: String,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.select_axis_revision(&revision_id)?;
     Ok(runner.snapshot())
 }
 
@@ -304,6 +330,69 @@ fn emergency_stop(
     executor.emergency_stop();
     let mut runner = locked(&runner_state)?;
     runner.emergency_stop();
+    Ok(runner.snapshot())
+}
+
+fn apply_executor_result(runner: &mut RunnerState, result: ProxyBatchResult) {
+    match result.kind {
+        ProxyBatchKind::Action => {
+            runner.finish_proxy_execution(result.receipts, result.error);
+        }
+        ProxyBatchKind::PauseToggle => runner.finish_pause_toggle(result.error),
+        ProxyBatchKind::TakeoverPause => {
+            if let Some(message) = result.error {
+                runner.fail_pending_takeover(format!("接管暂停无法确认：{message}"));
+            } else if let Err(error) = runner.finalize_takeover_revision() {
+                runner.fail_pending_takeover(format!("接管版本创建失败：{}", error.message));
+            }
+        }
+    }
+}
+
+fn submit_takeover_pause(
+    runner: &mut RunnerState,
+    executor: &SharedExecutor,
+    monitor: &monitor::MonitorSnapshot,
+) {
+    runner.mark_takeover_awaiting_pause();
+    if let Err(message) =
+        executor.submit_takeover_pause(monitor.window_id.as_deref().unwrap_or_default(), monitor)
+    {
+        runner.fail_pending_takeover(format!("接管暂停无法确认：{message}"));
+    }
+}
+
+fn begin_takeover(runner: &mut RunnerState, executor: &SharedExecutor) -> Result<(), CommandError> {
+    runner.request_takeover_revision()?;
+    match executor.cancel_and_drain() {
+        CancelDrain::Pending => {}
+        CancelDrain::Complete(result) => {
+            if let Some(result) = result {
+                apply_executor_result(runner, result);
+            }
+            if runner.takeover_is_cancelling() {
+                let monitor = runner.snapshot().monitor;
+                submit_takeover_pause(runner, executor, &monitor);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn takeover_now(
+    runner_state: tauri::State<'_, SharedRunner>,
+    executor: tauri::State<'_, SharedExecutor>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&runner_state)?;
+    if !runner.takeover_available() {
+        return Err(CommandError::new(
+            "takeover_not_available",
+            "只有正在执行的本局代理可以接管",
+        ));
+    }
+    begin_takeover(&mut runner, &executor)?;
     Ok(runner.snapshot())
 }
 
@@ -374,7 +463,7 @@ fn request_clear_axis(
     state: tauri::State<'_, SharedRunner>,
 ) -> Result<RunnerSnapshot, CommandError> {
     let mut runner = locked(&state)?;
-    runner.request_clear_axis(Instant::now());
+    runner.request_clear_axis(Instant::now())?;
     Ok(runner.snapshot())
 }
 
@@ -417,7 +506,7 @@ fn set_manual_stage(
     })?;
     {
         let mut runner = locked(&runner_state)?;
-        runner.set_manual_stage(stage);
+        runner.set_manual_stage(stage)?;
     }
     let map = stages.0.load_map(&stage_id);
     let mut runner = locked(&runner_state)?;
@@ -522,9 +611,12 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             set_axis_metadata,
             import_axis,
             export_axis,
+            export_axis_revision,
+            select_axis_revision,
             set_strategy,
             request_proxy_execution,
             emergency_stop,
+            takeover_now,
             resolve_execution_receipt,
             set_always_on_top,
             update_settings,
@@ -557,6 +649,7 @@ fn emit_snapshot(app: &AppHandle, snapshot: RunnerSnapshot) {
 fn start_runtime(app: AppHandle) {
     thread::spawn(move || {
         let mut record_shortcut_registered = false;
+        let mut takeover_shortcut_registered = false;
         let mut executor_active = false;
         let mut shortcut_check = Instant::now() - Duration::from_secs(1);
         loop {
@@ -569,25 +662,27 @@ fn start_runtime(app: AppHandle) {
                 let event = monitor.poll();
                 (event, monitor.snapshot())
             };
-            let completed = app.state::<SharedExecutor>().take_result();
             let (mut snapshot, pause_toggle, execution) = {
                 let state = app.state::<SharedRunner>();
                 let Ok(mut runner) = state.0.lock() else {
                     break;
                 };
                 runner.set_monitor_snapshot(monitor_snapshot.clone());
-                if let Some(result) = completed {
-                    if result.kind == ProxyBatchKind::PauseToggle {
-                        runner.finish_pause_toggle(result.error);
-                    } else {
-                        runner.finish_proxy_execution(result.receipts, result.error);
-                    }
-                }
                 let now = Instant::now();
                 if let Some(event) = monitor_event {
                     runner.apply_monitor_event(event, now);
                 }
                 runner.refresh(now);
+                if let Some(result) = app.state::<SharedExecutor>().take_result() {
+                    apply_executor_result(&mut runner, result);
+                    if runner.takeover_is_cancelling() {
+                        submit_takeover_pause(
+                            &mut runner,
+                            &app.state::<SharedExecutor>(),
+                            &monitor_snapshot,
+                        );
+                    }
+                }
                 let pause_toggle = runner.take_pending_pause_toggle();
                 let requests = runner.take_pending_execution();
                 let execution = (!requests.is_empty()).then(|| {
@@ -637,30 +732,55 @@ fn start_runtime(app: AppHandle) {
                     snapshot = runner.snapshot();
                 }
             }
-            if !snapshot.proxy.enabled {
+            let takeover_settling = matches!(
+                snapshot.session.takeover.status,
+                session::TakeoverStatus::Cancelling | session::TakeoverStatus::AwaitingPauseProof
+            );
+            if !snapshot.proxy.enabled && !takeover_settling {
                 if executor_active {
                     app.state::<SharedExecutor>().emergency_stop();
                     executor_active = false;
                 }
-            } else {
+            } else if snapshot.proxy.enabled {
                 executor_active = true;
                 // 捕获由代理生命周期控制，并为下一次事务持续保留新鲜画面。
                 app.state::<SharedExecutor>().set_capture_enabled(true);
+            } else {
+                executor_active = true;
             }
             if shortcut_check.elapsed() >= Duration::from_millis(250) {
                 shortcut_check = Instant::now();
-                let should_register = snapshot
+                let game_is_foreground = snapshot
                     .monitor
                     .window_id
                     .as_deref()
                     .is_some_and(MonitorManager::is_game_foreground);
-                if should_register != record_shortcut_registered {
-                    let result = if should_register {
-                        app.global_shortcut().register_multiple(["P", "K"])
+                let should_record = game_is_foreground
+                    && snapshot.console_mode == ConsoleMode::ManualRecording
+                    && !matches!(
+                        snapshot.session.takeover.status,
+                        session::TakeoverStatus::Cancelling
+                            | session::TakeoverStatus::AwaitingPauseProof
+                    );
+                if should_record != record_shortcut_registered {
+                    let result = if should_record {
+                        app.global_shortcut().register("P")
                     } else {
-                        app.global_shortcut().unregister_multiple(["P", "K"])
+                        app.global_shortcut().unregister("P")
                     };
-                    record_shortcut_registered = should_register && result.is_ok();
+                    record_shortcut_registered = should_record && result.is_ok();
+                }
+                let should_takeover = game_is_foreground
+                    && snapshot.console_mode == ConsoleMode::Proxy
+                    && snapshot.proxy.enabled
+                    && snapshot.proxy.run_id.is_some();
+                if should_takeover != takeover_shortcut_registered {
+                    let result = if should_takeover {
+                        app.global_shortcut().register("K")
+                    } else {
+                        app.global_shortcut().unregister("K")
+                    };
+                    takeover_shortcut_registered = should_takeover && result.is_ok();
                 }
             }
             if RunnerSnapshotEvent(snapshot).emit(&app).is_err() {
@@ -715,10 +835,12 @@ fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                         emit_snapshot(app, runner.snapshot());
                     }
                 } else if shortcut.matches(Modifiers::empty(), Code::KeyK) {
-                    app.state::<SharedExecutor>().emergency_stop();
                     let state = app.state::<SharedRunner>();
                     if let Ok(mut runner) = state.0.lock() {
-                        runner.takeover("K 接管：代理执行已中断，游戏保持暂停");
+                        if !runner.takeover_available() {
+                            return;
+                        }
+                        let _ = begin_takeover(&mut runner, &app.state::<SharedExecutor>());
                         emit_snapshot(app, runner.snapshot());
                     }
                 }

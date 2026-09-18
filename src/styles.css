@@ -299,6 +299,40 @@ kbd {
   border: 0;
   background: transparent;
 }
+.axis-title-group {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.axis-title-group select {
+  width: 170px;
+  min-height: 26px;
+  padding: 2px 24px 2px 8px;
+  font-size: 11px;
+}
+.axis-title-group em {
+  color: var(--accent);
+  font-size: 11px;
+  font-style: normal;
+}
+.receipt-confirmation {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 4px 24px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent), transparent 90%);
+}
+.receipt-confirmation span {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .axis-title strong {
   max-width: 360px;
   overflow: hidden;
@@ -577,6 +611,9 @@ kbd {
 .setting-row select {
   width: 150px;
 }
+.setting-row input:not([type="checkbox"]) {
+  width: 150px;
+}
 .setting-row input[type="checkbox"] {
   width: 18px;
   height: 18px;
@@ -587,6 +624,14 @@ kbd {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+}
+.readonly-notice {
+  padding: 8px 24px;
+  color: var(--accent);
+  border-bottom: 1px solid var(--line);
+}
+.editor-fieldset {
+  display: contents;
 }
 
 .axis-metadata {

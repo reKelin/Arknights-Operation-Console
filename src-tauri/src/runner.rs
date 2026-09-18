@@ -18,6 +18,7 @@ use crate::{
         MonitorEventEnvelope, MonitorSnapshot, MonitorSourceKind, ObservedBattleState, ProxyClock,
         VisualObservation,
     },
+    session::{AxisRevisionSource, OperationSession, TakeoverStatus},
     settings::AppSettings,
     stage::{
         StageCatalogEntry, StageIdentitySource, StageMapBounds, StageMatchStatus,
@@ -38,8 +39,17 @@ struct PausedTransactionProof {
     cost_total: u16,
 }
 
+#[derive(Clone)]
+struct PendingTakeover {
+    run_id: String,
+    parent_revision_id: String,
+    attempt_id: Option<String>,
+    created_frame: u32,
+}
+
 pub struct RunnerState {
     axis: DraftAxis,
+    session: OperationSession,
     settings: AppSettings,
     monitor: MonitorSnapshot,
     human_clock: HumanClock,
@@ -74,6 +84,7 @@ pub struct RunnerState {
     active_attempt_id: Option<String>,
     next_attempt_sequence: u32,
     next_proxy_run_sequence: u32,
+    pending_takeover: Option<PendingTakeover>,
 }
 
 impl RunnerState {
@@ -87,8 +98,14 @@ impl RunnerState {
         settings: AppSettings,
         settings_warning: Option<String>,
     ) -> Self {
+        let axis = DraftAxis::empty();
         Self {
-            axis: DraftAxis::empty(),
+            session: OperationSession::new(
+                "session-000001".to_string(),
+                axis.clone(),
+                AxisRevisionSource::Manual,
+            ),
+            axis,
             settings,
             monitor: MonitorSnapshot::default(),
             human_clock: HumanClock::default(),
@@ -123,6 +140,7 @@ impl RunnerState {
             active_attempt_id: None,
             next_attempt_sequence: 1,
             next_proxy_run_sequence: 1,
+            pending_takeover: None,
         }
     }
 
@@ -174,6 +192,7 @@ impl RunnerState {
             .map(|event| event.frame.saturating_sub(self.frame) as i32);
         RunnerSnapshot {
             axis: self.axis.clone(),
+            session: self.session.clone(),
             console_mode: self.console_mode,
             recording_attempts: self.recording_attempts.clone(),
             settings: self.settings.clone(),
@@ -198,6 +217,10 @@ impl RunnerState {
     }
 
     fn stage_safety(&self) -> StageSafetySnapshot {
+        self.stage_safety_for_axis(&self.axis)
+    }
+
+    fn stage_safety_for_axis(&self, axis: &DraftAxis) -> StageSafetySnapshot {
         let ocr_stage = (self.monitor.stage_recognition.status == StageMatchStatus::Matched)
             .then(|| self.monitor.stage_recognition.stage.clone())
             .flatten();
@@ -208,7 +231,7 @@ impl RunnerState {
         } else {
             (None, StageIdentitySource::None)
         };
-        let status = match (self.axis.stage_id.as_deref(), observed_stage.as_ref()) {
+        let status = match (axis.stage_id.as_deref(), observed_stage.as_ref()) {
             (Some(expected), Some(observed)) if expected == observed.id => {
                 StageSafetyStatus::Matched
             }
@@ -217,7 +240,7 @@ impl RunnerState {
         };
         StageSafetySnapshot {
             status,
-            expected_stage_id: self.axis.stage_id.clone(),
+            expected_stage_id: axis.stage_id.clone(),
             observed_stage,
             source,
         }
@@ -242,6 +265,13 @@ impl RunnerState {
     }
 
     pub fn record_bookmark(&mut self) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
+        if self.session.takeover.status == TakeoverStatus::Unknown {
+            return Err(CommandError::new(
+                "takeover_time_unknown",
+                "接管时间锚点尚未确认，不能继续录轴",
+            ));
+        }
         if !self.recording {
             return Err(CommandError::new("recording_disabled", "实时录轴尚未开启"));
         }
@@ -286,16 +316,20 @@ impl RunnerState {
             attempt.event_ids.push(id);
         }
         self.last_message = Some(format!("已在 F{} 记录待分类操作", self.frame));
+        self.sync_active_revision()?;
         Ok(())
     }
 
     pub fn add_event(&mut self, frame: u32, kind: DraftKind) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         validate_frame(frame)?;
         self.insert_draft(frame, kind);
+        self.sync_active_revision()?;
         Ok(())
     }
 
     pub fn update_event(&mut self, input: UpdateEventInput) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         validate_frame(input.frame)?;
         self.clear_pending_deadline = None;
         if input
@@ -363,10 +397,12 @@ impl RunnerState {
         self.axis.sort_events();
         self.rebuild_triggered();
         self.last_message = Some(format!("已更新操作点 {event_id}"));
+        self.sync_active_revision()?;
         Ok(())
     }
 
     pub fn move_event(&mut self, id: &str, frame: u32) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         validate_frame(frame)?;
         self.clear_pending_deadline = None;
         let event = self
@@ -382,10 +418,12 @@ impl RunnerState {
         self.axis.sort_events();
         self.rebuild_triggered();
         self.last_message = Some(format!("已移动操作点 {id}"));
+        self.sync_active_revision()?;
         Ok(())
     }
 
     pub fn confirm_event_time(&mut self, input: ConfirmEventTimeInput) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         validate_frame(input.frame)?;
         let event = self
             .axis
@@ -411,10 +449,12 @@ impl RunnerState {
         self.axis.sort_events();
         self.rebuild_triggered();
         self.last_message = Some(format!("已确认操作点 {} 的时间", input.id));
+        self.sync_active_revision()?;
         Ok(())
     }
 
     pub fn delete_event(&mut self, id: &str) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         self.clear_pending_deadline = None;
         let previous_len = self.axis.events.len();
         self.axis.events.retain(|event| event.id != id);
@@ -426,10 +466,12 @@ impl RunnerState {
         }
         self.rebuild_triggered();
         self.last_message = Some(format!("已删除操作点 {id}"));
+        self.sync_active_revision()?;
         Ok(())
     }
 
     pub fn shift_events(&mut self, ids: &[String], delta: i32) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         if ids.is_empty() {
             return Err(CommandError::new("no_events", "没有选择要平移的标记"));
         }
@@ -452,10 +494,12 @@ impl RunnerState {
         self.axis.sort_events();
         self.rebuild_triggered();
         self.last_message = Some(format!("已平移 {} 个标记", ids.len()));
+        self.sync_active_revision()?;
         Ok(())
     }
 
     pub fn reorder_event(&mut self, id: &str, direction: i8) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         let index = self
             .axis
             .events
@@ -473,10 +517,12 @@ impl RunnerState {
         self.axis.events[target].order = order;
         self.axis.sort_events();
         self.last_message = Some("标记顺序已更新".to_string());
+        self.sync_active_revision()?;
         Ok(())
     }
 
-    pub fn clear_bookmarks(&mut self) {
+    pub fn clear_bookmarks(&mut self) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         self.axis
             .events
             .retain(|event| event.kind != DraftKind::Bookmark);
@@ -493,9 +539,11 @@ impl RunnerState {
         }
         self.rebuild_triggered();
         self.last_message = Some("未分类书签已清空".to_string());
+        self.sync_active_revision()
     }
 
     pub fn set_axis_metadata(&mut self, input: AxisMetadataInput) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         let title = input.title.trim();
         if title.is_empty() || title.chars().count() > 128 {
             return Err(CommandError::field(
@@ -511,10 +559,18 @@ impl RunnerState {
         }
         self.axis.stage_id = stage_id;
         self.last_message = Some("轴属性已更新".to_string());
+        self.sync_active_revision()?;
         Ok(())
     }
 
-    pub fn replace_axis(&mut self, axis: DraftAxis) {
+    pub fn replace_axis(&mut self, axis: DraftAxis) -> Result<(), CommandError> {
+        if self.pending_takeover.is_some() {
+            return Err(CommandError::new(
+                "takeover_cancelling",
+                "接管仍在归并最终执行回执，不能导入新轴",
+            ));
+        }
+        let parent_revision_id = self.session.current_revision_id.clone();
         self.clear_pending_deadline = None;
         self.next_order = axis
             .events
@@ -525,9 +581,12 @@ impl RunnerState {
             .saturating_add(1);
         self.next_id = 1;
         self.stage_bounds = None;
-        self.axis = axis;
+        self.axis = axis.clone();
+        self.session
+            .create_imported_revision(&parent_revision_id, self.frame, axis)?;
         self.rebuild_triggered();
         self.last_message = Some("AxisLink 已导入".to_string());
+        Ok(())
     }
 
     pub fn axis(&self) -> &DraftAxis {
@@ -541,7 +600,45 @@ impl RunnerState {
                 "当前观测关卡与轴关卡不匹配，不能导出",
             ));
         }
-        self.axis.to_axis_json()
+        self.session.current_revision().axis_json_for_use()
+    }
+
+    pub fn axis_revision_json_for_export(
+        &self,
+        revision_id: &str,
+    ) -> Result<serde_json::Value, CommandError> {
+        let revision = self
+            .session
+            .revision(revision_id)
+            .ok_or_else(|| CommandError::new("revision_not_found", "未找到轴版本"))?;
+        if self.stage_safety_for_axis(&revision.axis).status == StageSafetyStatus::Mismatched {
+            return Err(CommandError::new(
+                "stage_mismatched",
+                "当前观测关卡与轴关卡不匹配，不能导出",
+            ));
+        }
+        revision.axis_json_for_use()
+    }
+
+    pub fn select_axis_revision(&mut self, revision_id: &str) -> Result<(), CommandError> {
+        if self.pending_takeover.is_some() {
+            return Err(CommandError::new(
+                "takeover_cancelling",
+                "接管仍在归并最终执行回执，不能切换轴版本",
+            ));
+        }
+        if self.proxy.enabled {
+            return Err(CommandError::new(
+                "proxy_active",
+                "代理已武装，停止代理后才能切换轴版本",
+            ));
+        }
+        self.session.select_revision(revision_id)?;
+        self.axis = self.session.current_axis().clone();
+        self.stage_bounds = None;
+        self.rebuild_triggered();
+        self.last_message = Some(format!("已切换到轴版本 {revision_id}"));
+        Ok(())
     }
 
     pub fn set_strategy(&mut self, strategy: RunStrategy) {
@@ -551,6 +648,18 @@ impl RunnerState {
     }
 
     pub fn request_proxy_execution(&mut self, now: Instant) -> Result<bool, CommandError> {
+        if self.pending_takeover.is_some() {
+            return Err(CommandError::new(
+                "takeover_cancelling",
+                "接管仍在归并最终执行回执，请稍候",
+            ));
+        }
+        if self.console_mode != ConsoleMode::Proxy {
+            return Err(CommandError::new(
+                "proxy_mode_required",
+                "请先切换到代理指挥模式",
+            ));
+        }
         if self.proxy.enabled {
             self.disable_proxy("代理执行已关闭");
             return Ok(false);
@@ -567,12 +676,15 @@ impl RunnerState {
                     "武装代理需要已选择的前台游戏窗口",
                 ));
             }
-            self.axis.to_axis_json().map_err(|error| {
-                CommandError::new(
-                    "proxy_axis_not_ready",
-                    format!("当前作战轴不能用于代理：{}", error.message),
-                )
-            })?;
+            self.session
+                .current_revision()
+                .axis_json_for_use()
+                .map_err(|error| {
+                    CommandError::new(
+                        "proxy_axis_not_ready",
+                        format!("当前作战轴不能用于代理：{}", error.message),
+                    )
+                })?;
             self.proxy.status = ProxyStatus::Confirming;
             self.proxy.message = Some("正在准备代理执行资源".to_string());
             self.proxy_confirm_deadline = None;
@@ -588,6 +700,8 @@ impl RunnerState {
     }
 
     pub fn complete_proxy_enable(&mut self) -> Result<(), CommandError> {
+        let revision_id = self.session.current_revision_id.clone();
+        self.session.arm_revision(&revision_id)?;
         self.proxy.enabled = true;
         self.proxy.status = ProxyStatus::Armed;
         self.proxy.message = Some("代理已武装，将在下一局可信 F0 接管".to_string());
@@ -598,7 +712,148 @@ impl RunnerState {
     }
 
     pub fn emergency_stop(&mut self) {
-        self.takeover("K 接管或界面停止：代理执行已关闭");
+        self.disable_proxy("界面停止：代理执行已关闭");
+    }
+
+    pub fn takeover_available(&self) -> bool {
+        self.console_mode == ConsoleMode::Proxy
+            && self.proxy.enabled
+            && self.proxy.run_id.is_some()
+            && self.session.armed_revision_id.is_some()
+    }
+
+    pub fn request_takeover_revision(&mut self) -> Result<(), CommandError> {
+        if !self.takeover_available() {
+            return Err(CommandError::new(
+                "takeover_not_available",
+                "只有正在执行的本局代理可以接管",
+            ));
+        }
+        let run_id = self.proxy.run_id.clone().expect("checked above");
+        let parent_revision_id = self
+            .session
+            .armed_revision_id
+            .clone()
+            .expect("checked above");
+        let requested_source_timestamp_ns = self
+            .clock_snapshot()
+            .source_timestamp_ns
+            .filter(|timestamp| timestamp.is_finite());
+        self.session.takeover.status = TakeoverStatus::Cancelling;
+        self.session.takeover.base_revision_id = Some(parent_revision_id.clone());
+        self.session.takeover.new_revision_id = None;
+        self.session.takeover.requested_source_timestamp_ns = requested_source_timestamp_ns;
+        self.session.takeover.inherited_anchor = None;
+        self.session.takeover.uncertain_receipt_sequences.clear();
+        self.session.takeover.message = Some("接管中：正在取消在途输入并归并最终回执".to_string());
+        self.pending_takeover = Some(PendingTakeover {
+            run_id,
+            parent_revision_id,
+            attempt_id: self.active_attempt_id.clone(),
+            created_frame: self.frame,
+        });
+        self.takeover("K 接管：代理执行已中断，等待人工续录");
+        self.console_mode = ConsoleMode::ManualRecording;
+        self.last_message = self.session.takeover.message.clone();
+        Ok(())
+    }
+
+    pub fn mark_takeover_awaiting_pause(&mut self) {
+        if self.pending_takeover.is_some() {
+            self.session.takeover.status = TakeoverStatus::AwaitingPauseProof;
+            self.session.takeover.message =
+                Some("旧代理事务已收尾，正在确认游戏保持暂停".to_string());
+            self.last_message = self.session.takeover.message.clone();
+        }
+    }
+
+    pub fn finalize_takeover_revision(&mut self) -> Result<(), CommandError> {
+        let pending = self
+            .pending_takeover
+            .clone()
+            .ok_or_else(|| CommandError::new("takeover_not_pending", "当前没有等待收尾的接管"))?;
+        let mut receipts: Vec<_> = self
+            .proxy
+            .receipts
+            .iter()
+            .filter(|receipt| receipt.run_id == pending.run_id)
+            .cloned()
+            .collect();
+        receipts.sort_by_key(|receipt| receipt.receipt_sequence);
+        let new_revision_id = self.session.create_takeover_revision(
+            &pending.parent_revision_id,
+            &pending.run_id,
+            pending.attempt_id,
+            pending.created_frame,
+            &receipts,
+        )?;
+        self.axis = self.session.current_axis().clone();
+        self.rebuild_triggered();
+
+        let clock = self.clock_snapshot();
+        let mut trusted_handoff = clock.quality == ClockQuality::Trusted
+            && self.monitor.battle_state == ObservedBattleState::Paused;
+        if trusted_handoff
+            && self
+                .session
+                .confirm_takeover_time(&new_revision_id)
+                .is_err()
+        {
+            trusted_handoff = false;
+        }
+        let uncertain_receipt_sequences = self
+            .session
+            .current_revision()
+            .takeover
+            .as_ref()
+            .and_then(|provenance| provenance.uncertain_receipt_sequence)
+            .into_iter()
+            .collect();
+        self.session.takeover.generation = self.session.takeover.generation.saturating_add(1);
+        self.session.takeover.new_revision_id = Some(new_revision_id);
+        self.session.takeover.inherited_anchor = clock.anchor;
+        self.session.takeover.uncertain_receipt_sequences = uncertain_receipt_sequences;
+        self.session.takeover.status = if trusted_handoff {
+            TakeoverStatus::Recording
+        } else {
+            TakeoverStatus::Unknown
+        };
+        self.session.takeover.message = Some(if trusted_handoff {
+            "接管完成；新轴继承本局可信时间，可继续按 P 录制".to_string()
+        } else {
+            "接管已停止输入，但无法证明暂停或时间锚点；请先确认状态".to_string()
+        });
+        self.pending_takeover = None;
+        self.last_message = self.session.takeover.message.clone();
+        Ok(())
+    }
+
+    pub fn takeover_is_cancelling(&self) -> bool {
+        self.pending_takeover.is_some()
+            && self.session.takeover.status == TakeoverStatus::Cancelling
+    }
+
+    pub fn fail_pending_takeover(&mut self, message: String) {
+        let Some(pending) = self.pending_takeover.take() else {
+            return;
+        };
+        if let Ok(new_revision_id) = self.session.create_takeover_revision(
+            &pending.parent_revision_id,
+            &pending.run_id,
+            pending.attempt_id,
+            pending.created_frame,
+            &[],
+        ) {
+            self.axis = self.session.current_axis().clone();
+            self.session.takeover.new_revision_id = Some(new_revision_id);
+        }
+        self.session.takeover.generation = self.session.takeover.generation.saturating_add(1);
+        self.session.takeover.status = TakeoverStatus::Unknown;
+        self.session.takeover.inherited_anchor = self.clock_snapshot().anchor;
+        self.session.takeover.message = Some(message.clone());
+        self.console_mode = ConsoleMode::ManualRecording;
+        self.last_message = Some(message);
+        self.rebuild_triggered();
     }
 
     pub fn takeover(&mut self, message: &str) {
@@ -732,7 +987,21 @@ impl RunnerState {
         } else {
             "用户确认游戏操作未完成".to_string()
         };
-        if confirmed && self.proxy.pause_proof == PauseProofStatus::Trusted {
+        if self
+            .session
+            .takeover
+            .uncertain_receipt_sequences
+            .contains(&receipt_sequence)
+        {
+            self.session
+                .resolve_uncertain_receipt(receipt_sequence, confirmed)?;
+            self.axis = self.session.active_axis().clone();
+            self.session
+                .takeover
+                .uncertain_receipt_sequences
+                .retain(|sequence| *sequence != receipt_sequence);
+        }
+        if confirmed && self.proxy.enabled && self.proxy.pause_proof == PauseProofStatus::Trusted {
             self.proxy.status = ProxyStatus::Ready;
             self.proxy.message = Some("人工确认完成；可继续代理".to_string());
             self.schedule_proxy(self.frame);
@@ -790,6 +1059,7 @@ impl RunnerState {
         self.pause_toggle_inflight = false;
         self.pause_toggle_expect_paused = None;
         self.paused_transaction = None;
+        self.session.disarm();
         self.try_return_to_human_clock();
     }
 
@@ -922,16 +1192,39 @@ impl RunnerState {
         self.last_message = Some(message);
     }
 
+    fn ensure_revision_editable(&self) -> Result<(), CommandError> {
+        if self.pending_takeover.is_some() {
+            return Err(CommandError::new(
+                "takeover_cancelling",
+                "接管仍在归并最终执行回执，请稍候",
+            ));
+        }
+        if self.session.active_revision_is_selected() {
+            Ok(())
+        } else {
+            Err(CommandError::new(
+                "revision_read_only",
+                "旧轴版本为只读；请切回当前续录版本",
+            ))
+        }
+    }
+
+    fn sync_active_revision(&mut self) -> Result<(), CommandError> {
+        self.session.sync_active_axis(&self.axis)
+    }
+
     pub fn set_monitor_snapshot(&mut self, monitor: MonitorSnapshot) {
         self.monitor = monitor;
     }
 
-    pub fn set_manual_stage(&mut self, stage: StageCatalogEntry) {
+    pub fn set_manual_stage(&mut self, stage: StageCatalogEntry) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         if self.axis.stage_id.is_none() {
             self.axis.stage_id = Some(stage.id.clone());
         }
         self.manual_stage = Some(stage);
         self.last_message = Some("已手动确认当前关卡".to_string());
+        self.sync_active_revision()
     }
 
     pub fn set_stage_map_bounds(&mut self, stage_id: String, bounds: StageMapBounds) {
@@ -981,7 +1274,8 @@ impl RunnerState {
         match envelope.event {
             MonitorEvent::Observation(observation) => {
                 self.last_observation_at = Some(received_at);
-                if self.axis.stage_id.is_none()
+                if self.session.active_revision_is_selected()
+                    && self.axis.stage_id.is_none()
                     && observation
                         .stage_recognition
                         .as_ref()
@@ -995,6 +1289,7 @@ impl RunnerState {
                         .as_ref()
                         .and_then(|recognition| recognition.stage.as_ref())
                         .map(|stage| stage.id.clone());
+                    let _ = self.sync_active_revision();
                 }
                 self.update_active_attempt_stage(&observation);
                 let previous_frame = self.frame;
@@ -1196,11 +1491,12 @@ impl RunnerState {
         Ok(())
     }
 
-    pub fn request_clear_axis(&mut self, now: Instant) {
+    pub fn request_clear_axis(&mut self, now: Instant) -> Result<(), CommandError> {
+        self.ensure_revision_editable()?;
         if self.axis.events.is_empty() {
             self.clear_pending_deadline = None;
             self.last_message = Some("当前轴已经为空".to_string());
-            return;
+            return Ok(());
         }
         if self
             .clear_pending_deadline
@@ -1215,10 +1511,12 @@ impl RunnerState {
             self.next_order = 0;
             self.clear_pending_deadline = None;
             self.last_message = Some("当前轴已清空".to_string());
+            self.sync_active_revision()?;
         } else {
             self.clear_pending_deadline = Some(now + CLEAR_CONFIRM_DURATION);
             self.last_message = Some("请再次点击清空以确认".to_string());
         }
+        Ok(())
     }
 
     fn dispatch_events(&mut self, current_frame: u32) {
@@ -1458,10 +1756,12 @@ mod tests {
         let mut runner = RunnerState::new(start);
         runner.add_event(30, DraftKind::Skill).unwrap();
 
-        runner.request_clear_axis(start);
+        runner.request_clear_axis(start).unwrap();
         assert_eq!(runner.axis.events.len(), 1);
 
-        runner.request_clear_axis(start + Duration::from_secs(1));
+        runner
+            .request_clear_axis(start + Duration::from_secs(1))
+            .unwrap();
         assert!(runner.axis.events.is_empty());
     }
 
@@ -1585,7 +1885,7 @@ mod tests {
         let mut runner = RunnerState::new(start);
         let mut axis = DraftAxis::demo();
         axis.events[0].id = "draft-000001".to_string();
-        runner.replace_axis(axis);
+        runner.replace_axis(axis).unwrap();
 
         runner.add_event(10, DraftKind::Skill).unwrap();
 

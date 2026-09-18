@@ -7,6 +7,7 @@ use crate::{
     axis::{DraftAxis, DraftDirection, DraftEvent, DraftKind, DraftTile},
     executor::ProxySnapshot,
     monitor::{ClockSnapshot, MonitorSnapshot},
+    session::OperationSession,
     settings::AppSettings,
     stage::StageSafetySnapshot,
 };
@@ -162,6 +163,7 @@ pub struct ResolveExecutionReceiptInput {
 #[serde(rename_all = "camelCase")]
 pub struct RunnerSnapshot {
     pub axis: DraftAxis,
+    pub session: OperationSession,
     pub console_mode: ConsoleMode,
     pub recording_attempts: Vec<RecordingAttempt>,
     pub settings: AppSettings,
