@@ -6,11 +6,11 @@ mod vision;
 
 use std::{
     sync::{
-        Arc, Mutex, RwLock,
-        atomic::{AtomicU64, Ordering},
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde::{Deserialize, Serialize};
@@ -141,11 +141,12 @@ pub struct ProxySnapshot {
 }
 
 pub struct SharedExecutor {
+    accepting: AtomicBool,
     abort_generation: Arc<AtomicU64>,
     inner: Arc<Mutex<ProxyExecutor>>,
     vision: Arc<ExecutionVision>,
     worker: Arc<Mutex<WorkerState>>,
-    safety: Arc<RwLock<ExecutionSafetyState>>,
+    safety: Arc<SharedSafetyState>,
 }
 
 pub struct ProxyBatchResult {
@@ -158,6 +159,12 @@ pub struct ProxyBatchResult {
 pub enum ProxyBatchKind {
     Action,
     PauseToggle,
+    TakeoverPause,
+}
+
+pub enum CancelDrain {
+    Pending,
+    Complete(Option<ProxyBatchResult>),
 }
 
 #[derive(Default)]
@@ -175,12 +182,19 @@ struct ExecutionSafetyState {
     proxy_enabled: bool,
 }
 
+#[derive(Default)]
+struct SharedSafetyState {
+    inner: Mutex<ExecutionSafetyState>,
+    changed: Condvar,
+}
+
 impl SharedExecutor {
     pub fn new(cache_root: std::path::PathBuf, catalog: Arc<StageCatalog>) -> Result<Self, String> {
         let abort_generation = Arc::new(AtomicU64::new(0));
         let vision = Arc::new(ExecutionVision::new());
-        let safety = Arc::new(RwLock::new(ExecutionSafetyState::default()));
+        let safety = Arc::new(SharedSafetyState::default());
         Ok(Self {
+            accepting: AtomicBool::new(false),
             inner: Arc::new(Mutex::new(ProxyExecutor::new(
                 cache_root,
                 catalog,
@@ -196,8 +210,22 @@ impl SharedExecutor {
     }
 
     pub fn emergency_stop(&self) {
+        self.accepting.store(false, Ordering::Release);
         self.abort_generation.fetch_add(1, Ordering::AcqRel);
         self.vision.set_enabled(false);
+    }
+
+    pub fn cancel_and_drain(&self) -> CancelDrain {
+        self.emergency_stop();
+        let mut worker = match self.worker.lock() {
+            Ok(worker) => worker,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if worker.busy {
+            CancelDrain::Pending
+        } else {
+            CancelDrain::Complete(worker.result.take())
+        }
     }
 
     pub fn set_capture_enabled(&self, enabled: bool) {
@@ -209,6 +237,7 @@ impl SharedExecutor {
     }
 
     pub fn prepare(&self, axis: &DraftAxis) -> Result<(), String> {
+        let generation = self.abort_generation.load(Ordering::Acquire);
         let stage_id = axis
             .stage_id
             .as_deref()
@@ -231,6 +260,11 @@ impl SharedExecutor {
                 executor.resources.load_avatars(operator)?;
             }
         }
+        self.accepting.store(true, Ordering::Release);
+        if self.abort_generation.load(Ordering::Acquire) != generation {
+            self.accepting.store(false, Ordering::Release);
+            return Err("代理准备已取消".to_string());
+        }
         Ok(())
     }
 
@@ -247,6 +281,10 @@ impl SharedExecutor {
             .worker
             .lock()
             .map_err(|_| "代理执行任务状态不可用".to_string())?;
+        let generation = self.abort_generation.load(Ordering::Acquire);
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err("代理执行已取消，拒绝启动新的事务".to_string());
+        }
         if worker.busy {
             return Err("已有代理执行事务正在运行".to_string());
         }
@@ -265,9 +303,9 @@ impl SharedExecutor {
             .name("paused-execution".to_string())
             .spawn(move || {
                 let result = match inner.lock() {
-                    Ok(mut executor) => {
-                        executor.execute(&events, &run_id, frame, &stage_id, &window_id, &monitor)
-                    }
+                    Ok(mut executor) => executor.execute(
+                        &events, &run_id, frame, &stage_id, &window_id, &monitor, generation,
+                    ),
                     Err(_) => ProxyBatchResult {
                         kind: ProxyBatchKind::Action,
                         receipts: Vec::new(),
@@ -297,6 +335,10 @@ impl SharedExecutor {
             .worker
             .lock()
             .map_err(|_| "代理执行任务状态不可用".to_string())?;
+        let generation = self.abort_generation.load(Ordering::Acquire);
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err("代理执行已取消，拒绝启动新的暂停事务".to_string());
+        }
         if worker.busy {
             return Err("已有代理执行事务正在运行".to_string());
         }
@@ -312,7 +354,7 @@ impl SharedExecutor {
             .name("pause-toggle".to_string())
             .spawn(move || {
                 let result = match inner.lock() {
-                    Ok(mut executor) => executor.pause_toggle(&window_id, &monitor),
+                    Ok(mut executor) => executor.pause_toggle(&window_id, &monitor, generation),
                     Err(_) => ProxyBatchResult {
                         kind: ProxyBatchKind::PauseToggle,
                         receipts: Vec::new(),
@@ -329,6 +371,54 @@ impl SharedExecutor {
                     worker.busy = false;
                 }
                 format!("启动暂停事务线程失败：{error}")
+            })?;
+        Ok(())
+    }
+
+    pub fn submit_takeover_pause(
+        &self,
+        window_id: &str,
+        monitor: &MonitorSnapshot,
+    ) -> Result<(), String> {
+        let mut worker = self
+            .worker
+            .lock()
+            .map_err(|_| "代理执行任务状态不可用".to_string())?;
+        if worker.busy || worker.result.is_some() {
+            return Err("旧代理事务尚未完成，不能确认接管暂停".to_string());
+        }
+        let generation = self.abort_generation.load(Ordering::Acquire);
+        worker.busy = true;
+        drop(worker);
+
+        self.vision.set_enabled(true);
+        let inner = Arc::clone(&self.inner);
+        let worker = Arc::clone(&self.worker);
+        let window_id = window_id.to_string();
+        let monitor = monitor.clone();
+        thread::Builder::new()
+            .name("takeover-pause".to_string())
+            .spawn(move || {
+                let result = match inner.lock() {
+                    Ok(mut executor) => {
+                        executor.ensure_takeover_paused(&window_id, &monitor, generation)
+                    }
+                    Err(_) => ProxyBatchResult {
+                        kind: ProxyBatchKind::TakeoverPause,
+                        receipts: Vec::new(),
+                        error: Some("代理执行器状态不可用".to_string()),
+                    },
+                };
+                if let Ok(mut state) = worker.lock() {
+                    state.busy = false;
+                    state.result = Some(result);
+                }
+            })
+            .map_err(|error| {
+                if let Ok(mut worker) = self.worker.lock() {
+                    worker.busy = false;
+                }
+                format!("启动接管暂停确认线程失败：{error}")
             })?;
         Ok(())
     }
@@ -355,7 +445,7 @@ impl SharedExecutor {
         stage_matched: bool,
         proxy_enabled: bool,
     ) {
-        if let Ok(mut safety) = self.safety.write() {
+        if let Ok(mut safety) = self.safety.inner.lock() {
             *safety = ExecutionSafetyState {
                 monitor: monitor.clone(),
                 clock_quality,
@@ -363,6 +453,7 @@ impl SharedExecutor {
                 stage_matched,
                 proxy_enabled,
             };
+            self.safety.changed.notify_all();
         }
     }
 }
@@ -376,7 +467,7 @@ struct ProxyExecutor {
     keyboard: KeyboardInjector,
     bindings: ExecutionBindings,
     next_record: u32,
-    safety: Arc<RwLock<ExecutionSafetyState>>,
+    safety: Arc<SharedSafetyState>,
 }
 
 impl ProxyExecutor {
@@ -385,7 +476,7 @@ impl ProxyExecutor {
         catalog: Arc<StageCatalog>,
         abort_generation: Arc<AtomicU64>,
         vision: Arc<ExecutionVision>,
-        safety: Arc<RwLock<ExecutionSafetyState>>,
+        safety: Arc<SharedSafetyState>,
     ) -> Result<Self, String> {
         Ok(Self {
             resources: ExecutionResources::new(cache_root)?,
@@ -408,6 +499,7 @@ impl ProxyExecutor {
         stage_id: &str,
         window_id: &str,
         monitor: &MonitorSnapshot,
+        generation: u64,
     ) -> ProxyBatchResult {
         if events.iter().any(|event| event.frame != frame) {
             let mut receipts = Vec::with_capacity(events.len());
@@ -474,7 +566,6 @@ impl ProxyExecutor {
                 };
             }
         };
-        let generation = self.abort_generation.load(Ordering::Acquire);
         let abort_generation = Arc::clone(&self.abort_generation);
         let allowed = move || abort_generation.load(Ordering::Acquire) == generation;
         let mut receipts = Vec::new();
@@ -558,7 +649,12 @@ impl ProxyExecutor {
         }
     }
 
-    fn pause_toggle(&mut self, window_id: &str, monitor: &MonitorSnapshot) -> ProxyBatchResult {
+    fn pause_toggle(
+        &mut self,
+        window_id: &str,
+        monitor: &MonitorSnapshot,
+        generation: u64,
+    ) -> ProxyBatchResult {
         let result = (|| {
             self.validate_dynamic_safety(window_id, false)?;
             if !monitor.trusted {
@@ -580,7 +676,6 @@ impl ProxyExecutor {
             {
                 return Err("游戏窗口尺寸已变化".to_string());
             }
-            let generation = self.abort_generation.load(Ordering::Acquire);
             let abort_generation = Arc::clone(&self.abort_generation);
             let key = parse_virtual_key(&self.bindings.pause_key)?;
             self.keyboard.press(key, || {
@@ -589,6 +684,126 @@ impl ProxyExecutor {
         })();
         ProxyBatchResult {
             kind: ProxyBatchKind::PauseToggle,
+            receipts: Vec::new(),
+            error: result.err(),
+        }
+    }
+
+    fn ensure_takeover_paused(
+        &mut self,
+        window_id: &str,
+        monitor: &MonitorSnapshot,
+        generation: u64,
+    ) -> ProxyBatchResult {
+        let result = (|| {
+            if !self.bindings.bindings_confirmed {
+                return Err("接管暂停前必须确认游戏键位".to_string());
+            }
+            if monitor.source_kind != MonitorSourceKind::Window
+                || monitor.window_id.as_deref() != Some(window_id)
+                || !monitor.trusted
+            {
+                return Err("接管时窗口或监控状态不可信，未发送暂停键".to_string());
+            }
+            {
+                let safety = self
+                    .safety
+                    .inner
+                    .lock()
+                    .map_err(|_| "执行安全状态不可用".to_string())?;
+                if !safety.stage_matched || !safety.clock_active {
+                    return Err("接管时关卡或时钟状态不可信，未发送暂停键".to_string());
+                }
+            }
+            let (_, client) = TouchInjector::validate_window(window_id)?;
+            let frame = self
+                .vision
+                .latest()
+                .or_else(|| self.vision.wait_after(0, NEXT_FRAME_TIMEOUT))
+                .ok_or_else(|| "接管时没有新鲜游戏画面，未发送暂停键".to_string())?;
+            validate_frame_size(&frame, client)?;
+
+            if monitor.battle_state == ObservedBattleState::Paused {
+                return Ok(());
+            }
+            if !matches!(
+                monitor.battle_state,
+                ObservedBattleState::OneXRunning
+                    | ObservedBattleState::TwoXRunning
+                    | ObservedBattleState::PointTwoXRunning
+            ) {
+                return Err("接管时无法确认游戏正在推进，未发送暂停键".to_string());
+            }
+
+            let abort_generation = Arc::clone(&self.abort_generation);
+            let allowed = || abort_generation.load(Ordering::Acquire) == generation;
+            let key = parse_virtual_key(&self.bindings.pause_key)?;
+            self.keyboard.press(key, &allowed)?;
+
+            let deadline = Instant::now() + NEXT_FRAME_TIMEOUT;
+            let mut seen_sequence = monitor.last_event_sequence.unwrap_or(0.0);
+            let mut safety = self
+                .safety
+                .inner
+                .lock()
+                .map_err(|_| "执行安全状态不可用".to_string())?;
+            loop {
+                if !allowed() {
+                    return Err("接管暂停已取消（输入结果未知）".to_string());
+                }
+                if safety
+                    .monitor
+                    .last_event_sequence
+                    .is_some_and(|sequence| sequence > seen_sequence)
+                {
+                    let sequence = safety.monitor.last_event_sequence.unwrap_or(seen_sequence);
+                    seen_sequence = sequence;
+                    if !safety.stage_matched
+                        || !safety.clock_active
+                        || safety.monitor.source_kind != MonitorSourceKind::Window
+                        || safety.monitor.window_id.as_deref() != Some(window_id)
+                        || !safety.monitor.trusted
+                    {
+                        return Err("接管暂停后的窗口、关卡或监控状态不可信".to_string());
+                    }
+                    match safety.monitor.battle_state {
+                        ObservedBattleState::Paused => {
+                            drop(safety);
+                            let (_, current) = TouchInjector::validate_window(window_id)?;
+                            if current != client {
+                                return Err("接管暂停时游戏窗口尺寸已变化".to_string());
+                            }
+                            let confirmed = self
+                                .vision
+                                .latest()
+                                .ok_or_else(|| "接管暂停确认缺少对应的新鲜画面".to_string())?;
+                            validate_frame_size(&confirmed, client)?;
+                            return Ok(());
+                        }
+                        ObservedBattleState::OneXRunning
+                        | ObservedBattleState::TwoXRunning
+                        | ObservedBattleState::PointTwoXRunning => {}
+                        _ => return Err("暂停键发送后未能确认游戏已暂停".to_string()),
+                    }
+                }
+
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err("等待接管暂停确认超时".to_string());
+                }
+                let (next, wait) = self
+                    .safety
+                    .changed
+                    .wait_timeout(safety, remaining)
+                    .map_err(|_| "执行安全状态不可用".to_string())?;
+                safety = next;
+                if wait.timed_out() {
+                    return Err("等待接管暂停确认超时".to_string());
+                }
+            }
+        })();
+        ProxyBatchResult {
+            kind: ProxyBatchKind::TakeoverPause,
             receipts: Vec::new(),
             error: result.err(),
         }
@@ -700,10 +915,13 @@ impl ProxyExecutor {
         if current != client {
             return Err("游戏窗口尺寸已变化".to_string());
         }
-        let frame = self
-            .vision
-            .wait_after(sequence, NEXT_FRAME_TIMEOUT)
-            .ok_or_else(|| "等待新鲜代理执行画面超时".to_string())?;
+        let frame = match self.vision.wait_after(sequence, NEXT_FRAME_TIMEOUT) {
+            Some(frame) => frame,
+            None if !allowed() => {
+                return Err("代理执行已取消（输入结果未知）".to_string());
+            }
+            None => return Err("等待新鲜代理执行画面超时".to_string()),
+        };
         if !frame.is_fresh(FRESH_FRAME_MAX_AGE) {
             return Err("代理执行视觉帧已过期".to_string());
         }
@@ -726,7 +944,8 @@ impl ProxyExecutor {
     ) -> Result<(), String> {
         let safety = self
             .safety
-            .read()
+            .inner
+            .lock()
             .map_err(|_| "执行安全状态不可用".to_string())?;
         if !safety.proxy_enabled
             || !safety.stage_matched
@@ -786,6 +1005,18 @@ impl ActionResult {
             reason: reason.into(),
         }
     }
+}
+
+fn validate_frame_size(frame: &vision::CapturedFrame, client: ClientSize) -> Result<(), String> {
+    if !frame.is_fresh(FRESH_FRAME_MAX_AGE) {
+        return Err("代理执行视觉帧已过期".to_string());
+    }
+    if frame.width.abs_diff(client.width as u32) > 2
+        || frame.height.abs_diff(client.height as u32) > 2
+    {
+        return Err("游戏窗口尺寸已变化".to_string());
+    }
+    Ok(())
 }
 
 fn result_radius(client: ClientSize) -> u32 {
