@@ -206,7 +206,7 @@ mod tests {
 
         assert!(accumulator.push("OPERATION").stage.is_none());
         assert!(accumulator.push("SR-EX-4").stage.is_none());
-        let result = accumulator.push("反乌托邦");
+        let result = accumulator.push("反刍之堂");
 
         assert_eq!(
             result.stage.as_ref().map(|stage| stage.code.as_str()),
