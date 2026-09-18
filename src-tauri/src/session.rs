@@ -184,7 +184,6 @@ impl OperationSession {
         Ok(id)
     }
 
-    #[expect(dead_code, reason = "PR G consumes the recording merge boundary")]
     pub fn create_recording_merge_revision(
         &mut self,
         parent_revision_id: &str,

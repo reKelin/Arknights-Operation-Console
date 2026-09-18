@@ -15,11 +15,14 @@ import {
   type GameWindowCandidate,
   type ObservedBattleState,
   type RecordingAttempt,
+  type RecordingMergeInput,
+  type RecordingMergePreview,
   type RunnerSnapshot,
   type StageCatalogEntry,
   type UpdateEventInput,
 } from "./generated/bindings";
 import RecordingCandidates from "./RecordingCandidates";
+import RecordingContinuation from "./RecordingContinuation";
 import Timeline from "./Timeline";
 import { clampViewFrames } from "./timelineMath";
 
@@ -208,6 +211,19 @@ export default function App() {
     }
   }
 
+  async function previewRecordingMerge(
+    input: RecordingMergeInput,
+  ): Promise<RecordingMergePreview | null> {
+    try {
+      const preview = unwrap(await commands.previewRecordingMerge(input));
+      setError(null);
+      return preview;
+    } catch (reason) {
+      setError(messageOf(reason));
+      return null;
+    }
+  }
+
   async function importAxis() {
     const path = await open({
       multiple: false,
@@ -327,6 +343,33 @@ export default function App() {
     mode === "video" && tracePreviewFrame !== null
       ? frameTime(displayedFrame)
       : snapshot.time;
+  const continuationRevisions = snapshot.session.revisions
+    .map((revision) => ({
+      id: revision.id,
+      label: `v${revision.sequence} · ${REVISION_SOURCE_LABELS[revision.source]}`,
+      attemptId: revision.attemptId,
+      createdFrame: revision.createdFrame,
+      eligible:
+        revision.attemptId !== null &&
+        (revision.source === "takeover" ||
+          revision.source === "recordingMerge"),
+    }))
+    .sort((left, right) => {
+      if (left.id === snapshot.session.currentRevisionId) return -1;
+      if (right.id === snapshot.session.currentRevisionId) return 1;
+      return 0;
+    });
+  const continuationSegments = snapshot.monitor.recordingSegments.map(
+    (segment) => ({
+      index: segment.index,
+      label: `区段 ${segment.index + 1} · F0–F${segment.gameDurationFrames}`,
+      candidateCount: snapshot.stagedRecordingEvents.filter(
+        (event) =>
+          event.sourceRecordingId === snapshot.monitor.recordingAnalysisId &&
+          event.sourceSegmentIndex === segment.index,
+      ).length,
+    }),
+  );
 
   return (
     <main className={`app-shell page--${page}`}>
@@ -485,15 +528,32 @@ export default function App() {
           {mode === "video" &&
             snapshot.monitor.sourceKind === "recording" &&
             snapshot.monitor.connectionState === "ready" && (
-              <RecordingCandidates
-                candidates={snapshot.monitor.recordingCandidates}
-                events={snapshot.axis.events}
-                onConfirm={(input) =>
-                  run(() => commands.confirmRecordingCandidate(input))
-                }
-                onPreview={setTracePreviewFrame}
-                segmentIndex={recordingSegmentIndex}
-              />
+              <>
+                <RecordingCandidates
+                  candidates={snapshot.monitor.recordingCandidates}
+                  events={[
+                    ...snapshot.axis.events,
+                    ...snapshot.stagedRecordingEvents,
+                  ]}
+                  onConfirm={(input) =>
+                    run(() => commands.confirmRecordingCandidate(input))
+                  }
+                  onPreview={setTracePreviewFrame}
+                  recordingAnalysisId={snapshot.monitor.recordingAnalysisId}
+                  segmentIndex={recordingSegmentIndex}
+                />
+                {snapshot.monitor.recordingAnalysisId && (
+                  <RecordingContinuation
+                    onCreate={(input) =>
+                      run(() => commands.createRecordingMergeRevision(input))
+                    }
+                    onPreview={previewRecordingMerge}
+                    recordingAnalysisId={snapshot.monitor.recordingAnalysisId}
+                    revisions={continuationRevisions}
+                    segments={continuationSegments}
+                  />
+                )}
+              </>
             )}
 
           <div className="axis-heading">

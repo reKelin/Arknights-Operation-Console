@@ -2,6 +2,7 @@ mod axis;
 mod bindings;
 mod executor;
 mod monitor;
+mod recording_continuation;
 mod runner;
 mod session;
 mod settings;
@@ -24,6 +25,7 @@ use monitor::{
     CandidateConfirmation, GameWindowCandidate, MonitorConnectionState, MonitorManager,
     MonitorSourceKind, VisionConfig,
 };
+use recording_continuation::{RecordingMergeInput, RecordingMergePreview};
 use runner::RunnerState;
 use settings::AppSettings;
 use specta_typescript::Typescript;
@@ -185,7 +187,7 @@ fn confirm_recording_candidate(
     runner_state: tauri::State<'_, SharedRunner>,
     monitor_state: tauri::State<'_, SharedMonitor>,
 ) -> Result<RunnerSnapshot, CommandError> {
-    let candidate = {
+    let (candidate, recording_analysis_id) = {
         let monitor = locked_monitor(&monitor_state)?;
         let snapshot = monitor.snapshot();
         if snapshot.source_kind != MonitorSourceKind::Recording
@@ -196,14 +198,41 @@ fn confirm_recording_candidate(
                 "录屏分析尚未完成，不能确认操作候选",
             ));
         }
-        snapshot
+        let recording_analysis_id = snapshot.recording_analysis_id.ok_or_else(|| {
+            CommandError::new(
+                "recording_analysis_identity_missing",
+                "录屏分析缺少会话来源标识",
+            )
+        })?;
+        let candidate = snapshot
             .recording_candidates
             .into_iter()
             .find(|candidate| candidate.id == input.candidate_id)
-            .ok_or_else(|| CommandError::new("candidate_not_found", "未找到录屏操作候选"))?
+            .ok_or_else(|| CommandError::new("candidate_not_found", "未找到录屏操作候选"))?;
+        (candidate, recording_analysis_id)
     };
     let mut runner = locked(&runner_state)?;
-    runner.confirm_recording_candidate(&candidate, input)?;
+    runner.confirm_recording_candidate(&candidate, &recording_analysis_id, input)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn preview_recording_merge(
+    input: RecordingMergeInput,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RecordingMergePreview, CommandError> {
+    locked(&state)?.preview_recording_merge(&input)
+}
+
+#[tauri::command]
+#[specta::specta]
+fn create_recording_merge_revision(
+    input: RecordingMergeInput,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.create_recording_merge_revision(input)?;
     Ok(runner.snapshot())
 }
 
@@ -640,6 +669,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             move_event,
             confirm_event_time,
             confirm_recording_candidate,
+            preview_recording_merge,
+            create_recording_merge_revision,
             delete_event,
             set_axis_metadata,
             import_axis,

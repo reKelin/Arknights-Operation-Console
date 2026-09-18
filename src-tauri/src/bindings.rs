@@ -166,6 +166,7 @@ pub struct RunnerSnapshot {
     pub session: OperationSession,
     pub console_mode: ConsoleMode,
     pub recording_attempts: Vec<RecordingAttempt>,
+    pub staged_recording_events: Vec<DraftEvent>,
     pub settings: AppSettings,
     pub monitor: MonitorSnapshot,
     pub clock: ClockSnapshot,
