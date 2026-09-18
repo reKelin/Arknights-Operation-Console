@@ -487,7 +487,10 @@ export default function App() {
             snapshot.monitor.connectionState === "ready" && (
               <RecordingCandidates
                 candidates={snapshot.monitor.recordingCandidates}
-                events={snapshot.axis.events}
+                events={[
+                  ...snapshot.axis.events,
+                  ...snapshot.stagedRecordingEvents,
+                ]}
                 onConfirm={(input) =>
                   run(() => commands.confirmRecordingCandidate(input))
                 }

@@ -85,6 +85,7 @@ pub struct RunnerState {
     paused_transaction: Option<PausedTransactionProof>,
     console_mode: ConsoleMode,
     recording_attempts: Vec<RecordingAttempt>,
+    staged_recording_events: Vec<DraftEvent>,
     active_attempt_id: Option<String>,
     next_attempt_sequence: u32,
     next_proxy_run_sequence: u32,
@@ -141,6 +142,7 @@ impl RunnerState {
             paused_transaction: None,
             console_mode: ConsoleMode::ManualRecording,
             recording_attempts: Vec::new(),
+            staged_recording_events: Vec::new(),
             active_attempt_id: None,
             next_attempt_sequence: 1,
             next_proxy_run_sequence: 1,
@@ -199,6 +201,7 @@ impl RunnerState {
             session: self.session.clone(),
             console_mode: self.console_mode,
             recording_attempts: self.recording_attempts.clone(),
+            staged_recording_events: self.staged_recording_events.clone(),
             settings: self.settings.clone(),
             monitor: self.monitor.clone(),
             clock: self.clock_snapshot(),
@@ -344,11 +347,17 @@ impl RunnerState {
                 "请先切换到录屏分析模式",
             ));
         }
-        if self.axis.events.iter().any(|event| {
-            event.source_recording_id.as_deref() == Some(recording_analysis_id)
-                && event.source_segment_index == Some(candidate.segment_index)
-                && event.source_candidate_id.as_deref() == Some(candidate.id.as_str())
-        }) {
+        if self
+            .axis
+            .events
+            .iter()
+            .chain(self.staged_recording_events.iter())
+            .any(|event| {
+                event.source_recording_id.as_deref() == Some(recording_analysis_id)
+                    && event.source_segment_index == Some(candidate.segment_index)
+                    && event.source_candidate_id.as_deref() == Some(candidate.id.as_str())
+            })
+        {
             return Err(CommandError::new(
                 "candidate_already_confirmed",
                 "该录屏候选已加入当前轴",
@@ -391,13 +400,8 @@ impl RunnerState {
             CandidateActionKind::Skill => DraftKind::Skill,
             CandidateActionKind::Retreat => DraftKind::Retreat,
         };
-        let id = self.insert_draft(operation.game_frame, kind);
-        let event = self
-            .axis
-            .events
-            .iter_mut()
-            .find(|event| event.id == id)
-            .expect("newly inserted draft exists");
+        let mut event = self.allocate_draft(operation.game_frame, kind);
+        let id = event.id.clone();
         event.operator = operation.operator;
         event.tile = Some(operation.tile);
         event.direction = operation.direction.map(|direction| match direction {
@@ -422,7 +426,8 @@ impl RunnerState {
             TimeConfirmation::ManuallyCorrected
         };
         event.refresh_complete();
-        self.last_message = Some(format!("已将录屏候选加入轴：{id}"));
+        self.staged_recording_events.push(event);
+        self.last_message = Some(format!("已校对录屏候选，等待创建接续版本：{id}"));
         Ok(())
     }
 
@@ -1312,6 +1317,9 @@ impl RunnerState {
     }
 
     pub fn set_monitor_snapshot(&mut self, monitor: MonitorSnapshot) {
+        if monitor.recording_analysis_id != self.monitor.recording_analysis_id {
+            self.staged_recording_events.clear();
+        }
         self.monitor = monitor;
     }
 
@@ -1700,22 +1708,31 @@ impl RunnerState {
 
     fn insert_draft(&mut self, frame: u32, kind: DraftKind) -> String {
         self.clear_pending_deadline = None;
+        let event = self.allocate_draft(frame, kind);
+        let id = event.id.clone();
+        self.axis.events.push(event);
+        self.axis.sort_events();
+        self.rebuild_triggered();
+        self.last_message = Some(format!("已记录操作点 {id}"));
+        id
+    }
+
+    fn allocate_draft(&mut self, frame: u32, kind: DraftKind) -> DraftEvent {
         let id = loop {
             let candidate = format!("draft-{:06}", self.next_id);
             self.next_id += 1;
-            if !self.axis.events.iter().any(|event| event.id == candidate) {
+            if !self.axis.events.iter().any(|event| event.id == candidate)
+                && !self
+                    .staged_recording_events
+                    .iter()
+                    .any(|event| event.id == candidate)
+            {
                 break candidate;
             }
         };
         let order = self.next_order;
         self.next_order = self.next_order.saturating_add(1);
-        self.axis
-            .events
-            .push(DraftEvent::new(id.clone(), frame, order, kind));
-        self.axis.sort_events();
-        self.rebuild_triggered();
-        self.last_message = Some(format!("已记录操作点 {id}"));
-        id
+        DraftEvent::new(id, frame, order, kind)
     }
 
     fn rebuild_triggered(&mut self) {

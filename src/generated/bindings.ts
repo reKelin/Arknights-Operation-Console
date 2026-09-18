@@ -328,6 +328,7 @@ export type RunnerSnapshot = {
 	session: OperationSession,
 	consoleMode: ConsoleMode,
 	recordingAttempts: RecordingAttempt[],
+	stagedRecordingEvents: DraftEvent[],
 	settings: AppSettings,
 	monitor: MonitorSnapshot,
 	clock: ClockSnapshot,

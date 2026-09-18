@@ -111,7 +111,7 @@ export default function RecordingCandidates({
               </span>
               <small>
                 {converted
-                  ? "已加入轴"
+                  ? "已校对，待接续"
                   : `源 PTS ${candidate.sourceStart.rawPts} · 参数待校对`}
               </small>
             </button>
@@ -212,7 +212,7 @@ export default function RecordingCandidates({
             </label>
           )}
           <button className="button--primary" disabled={!kind} type="submit">
-            确认并加入轴
+            确认候选
           </button>
         </form>
       ) : (
