@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fmt;
 
-use super::super::ObservedBattleState;
+use super::super::{ClockQuality, ObservedBattleState};
 
 const MIN_STABLE_OBSERVATIONS: usize = 2;
 const MIN_OBSERVATION_CONFIDENCE: u8 = 70;
@@ -297,6 +297,7 @@ pub struct AnalysisCandidate {
     pub source_start: SourceTimestamp,
     pub source_end: SourceTimestamp,
     pub game_frame_range: GameFrameRange,
+    pub clock_quality: ClockQuality,
     pub kind: Option<CandidateActionKind>,
     pub operator: Option<String>,
     pub tile: Option<String>,
@@ -315,18 +316,18 @@ pub enum FacingDirection {
     Left,
 }
 
-#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CandidateConfirmation {
+    pub candidate_id: String,
     pub kind: CandidateActionKind,
     pub game_frame: u32,
     pub operator: Option<String>,
     pub tile: Option<String>,
     pub direction: Option<FacingDirection>,
+    pub manual_time_confirmation: bool,
 }
 
-#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmedOperation {
@@ -338,18 +339,22 @@ pub struct ConfirmedOperation {
     pub direction: Option<FacingDirection>,
 }
 
-#[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmationError {
     pub field: &'static str,
     pub message: &'static str,
 }
 
-#[cfg(test)]
 pub fn confirm_candidate(
     candidate: &AnalysisCandidate,
     confirmation: CandidateConfirmation,
 ) -> Result<ConfirmedOperation, ConfirmationError> {
+    if confirmation.candidate_id != candidate.id {
+        return Err(ConfirmationError {
+            field: "candidateId",
+            message: "候选标识与当前录屏分析结果不一致",
+        });
+    }
     if confirmation.game_frame > i32::MAX as u32 {
         return Err(ConfirmationError {
             field: "gameFrame",
@@ -631,6 +636,11 @@ fn candidate_from_runs(
             start: first.game_frame_range.start,
             end: last.game_frame_range.end,
         },
+        clock_quality: if evidence == CandidateEvidence::InterruptedInteraction {
+            ClockQuality::Uncertain
+        } else {
+            ClockQuality::Trusted
+        },
         kind,
         operator: None,
         tile: None,
@@ -652,17 +662,6 @@ fn is_running_state(state: ObservedBattleState) -> bool {
     )
 }
 
-#[cfg(test)]
-fn valid_tile_code(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    (2..=3).contains(&bytes.len())
-        && (b'A'..=b'I').contains(&bytes[0])
-        && value[1..]
-            .parse::<u8>()
-            .is_ok_and(|column| (1..=36).contains(&column))
-}
-
-#[cfg(test)]
 fn valid_operator_id(value: &str) -> bool {
     value.len() <= 128
         && value.strip_prefix("char_").is_some_and(|rest| {
@@ -671,6 +670,15 @@ fn valid_operator_id(value: &str) -> bool {
                     .chars()
                     .all(|character| character.is_ascii_alphanumeric() || character == '_')
         })
+}
+
+fn valid_tile_code(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (2..=3).contains(&bytes.len())
+        && (b'A'..=b'I').contains(&bytes[0])
+        && value[1..]
+            .parse::<u8>()
+            .is_ok_and(|column| (1..=36).contains(&column))
 }
 
 #[cfg(test)]
@@ -809,11 +817,13 @@ mod tests {
         let deploy = confirm_candidate(
             &candidate,
             CandidateConfirmation {
+                candidate_id: candidate.id.clone(),
                 kind: CandidateActionKind::Deploy,
                 game_frame: 123,
                 operator: Some("char_002_amiya".to_string()),
                 tile: Some("C5".to_string()),
                 direction: Some(FacingDirection::Left),
+                manual_time_confirmation: true,
             },
         )
         .unwrap();
@@ -823,11 +833,13 @@ mod tests {
             let operation = confirm_candidate(
                 &candidate,
                 CandidateConfirmation {
+                    candidate_id: candidate.id.clone(),
                     kind,
                     game_frame: 124,
                     operator: None,
                     tile: Some("I36".to_string()),
                     direction: None,
+                    manual_time_confirmation: true,
                 },
             )
             .unwrap();
@@ -840,11 +852,13 @@ mod tests {
         let error = confirm_candidate(
             &sample_candidate(),
             CandidateConfirmation {
+                candidate_id: "recording-0-0".to_string(),
                 kind: CandidateActionKind::Deploy,
                 game_frame: 123,
                 operator: None,
                 tile: Some("C5".to_string()),
                 direction: None,
+                manual_time_confirmation: true,
             },
         )
         .unwrap_err();
@@ -859,6 +873,7 @@ mod tests {
             source_start: SourceTimestamp::from_raw_pts(100, time_base),
             source_end: SourceTimestamp::from_raw_pts(200, time_base),
             game_frame_range: GameFrameRange { start: 30, end: 34 },
+            clock_quality: ClockQuality::Trusted,
             kind: None,
             operator: None,
             tile: None,

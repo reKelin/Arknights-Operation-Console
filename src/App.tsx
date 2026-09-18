@@ -19,6 +19,7 @@ import {
   type StageCatalogEntry,
   type UpdateEventInput,
 } from "./generated/bindings";
+import RecordingCandidates from "./RecordingCandidates";
 import Timeline from "./Timeline";
 import { clampViewFrames } from "./timelineMath";
 
@@ -481,6 +482,20 @@ export default function App() {
             </div>
           ))}
 
+          {mode === "video" &&
+            snapshot.monitor.sourceKind === "recording" &&
+            snapshot.monitor.connectionState === "ready" && (
+              <RecordingCandidates
+                candidates={snapshot.monitor.recordingCandidates}
+                events={snapshot.axis.events}
+                onConfirm={(input) =>
+                  run(() => commands.confirmRecordingCandidate(input))
+                }
+                onPreview={setTracePreviewFrame}
+                segmentIndex={recordingSegmentIndex}
+              />
+            )}
+
           <div className="axis-heading">
             <div className="axis-title-group">
               <button
@@ -743,7 +758,11 @@ function ModeHero({
                   ? `${snapshot.monitor.recordingSegments.length || 1} 个关卡区段`
                   : "尚未选择录屏"}
             </strong>
-            <small>当前版本只生成时间映射；操作候选将在 v0.1.2 接入</small>
+            <small>
+              {snapshot.monitor.recordingCandidates.length
+                ? `${snapshot.monitor.recordingCandidates.length} 个操作区间待人工校对`
+                : "等待可辨认的操作状态变化；未知参数不会自动推断"}
+            </small>
           </>
         )}
         {mode === "proxy" && (

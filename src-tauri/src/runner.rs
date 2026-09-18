@@ -4,7 +4,10 @@ use std::{
 };
 
 use crate::{
-    axis::{DraftAxis, DraftEvent, DraftKind, EventFrameRange, TimeConfirmation, valid_tile_code},
+    axis::{
+        DraftAxis, DraftDirection, DraftEvent, DraftKind, EventFrameRange, TimeConfirmation,
+        valid_tile_code,
+    },
     bindings::{
         AxisMetadataInput, BattleStatus, CommandError, ConfirmEventTimeInput, ConsoleMode,
         NoticeKind, RecordingAttempt, RecordingAttemptStatus, RunNotice, RunStrategy,
@@ -14,9 +17,10 @@ use crate::{
         ExecutionReceipt, ExecutionReceiptStatus, PauseProofStatus, ProxySnapshot, ProxyStatus,
     },
     monitor::{
-        ClockMode, ClockQuality, ClockSnapshot, ClockTransition, HumanClock, MonitorEvent,
+        AnalysisCandidate, CandidateActionKind, CandidateConfirmation, ClockMode, ClockQuality,
+        ClockSnapshot, ClockTransition, FacingDirection, HumanClock, MonitorEvent,
         MonitorEventEnvelope, MonitorSnapshot, MonitorSourceKind, ObservedBattleState, ProxyClock,
-        VisualObservation,
+        VisualObservation, confirm_candidate,
     },
     session::{AxisRevisionSource, OperationSession, TakeoverStatus},
     settings::AppSettings,
@@ -325,6 +329,99 @@ impl RunnerState {
         validate_frame(frame)?;
         self.insert_draft(frame, kind);
         self.sync_active_revision()?;
+        Ok(())
+    }
+
+    pub fn confirm_recording_candidate(
+        &mut self,
+        candidate: &AnalysisCandidate,
+        confirmation: CandidateConfirmation,
+    ) -> Result<(), CommandError> {
+        if self.console_mode != ConsoleMode::RecordingAnalysis {
+            return Err(CommandError::new(
+                "recording_mode_required",
+                "请先切换到录屏分析模式",
+            ));
+        }
+        if self
+            .axis
+            .events
+            .iter()
+            .any(|event| event.source_candidate_id.as_deref() == Some(candidate.id.as_str()))
+        {
+            return Err(CommandError::new(
+                "candidate_already_confirmed",
+                "该录屏候选已加入当前轴",
+            ));
+        }
+        let manually_confirmed = confirmation.manual_time_confirmation;
+        let operation = confirm_candidate(candidate, confirmation).map_err(|error| {
+            CommandError::field("invalid_candidate_confirmation", error.message, error.field)
+        })?;
+        validate_frame(operation.game_frame)?;
+        if let (Some(stage_id), Some((bounds_stage, bounds))) =
+            (self.axis.stage_id.as_deref(), self.stage_bounds.as_ref())
+            && stage_id == bounds_stage
+        {
+            validate_tile_in_map(&operation.tile, *bounds)
+                .map_err(|message| CommandError::field("invalid_tile", message, "tile"))?;
+        }
+        let exact_trusted_time = candidate.clock_quality == ClockQuality::Trusted
+            && candidate.game_frame_range.start == candidate.game_frame_range.end
+            && operation.game_frame == candidate.game_frame_range.start;
+        if !exact_trusted_time && !manually_confirmed {
+            return Err(CommandError::field(
+                "manual_time_confirmation_required",
+                "该候选的操作时间仍不确定，请确认校正后的帧",
+                "gameFrame",
+            ));
+        }
+        let source_timestamp_ns =
+            candidate.source_start.nanoseconds().map_err(|_| {
+                CommandError::new("invalid_source_timestamp", "候选来源时间无法换算")
+            })? as f64;
+        if !source_timestamp_ns.is_finite() {
+            return Err(CommandError::new(
+                "invalid_source_timestamp",
+                "候选来源时间超出可序列化范围",
+            ));
+        }
+        let kind = match operation.kind {
+            CandidateActionKind::Deploy => DraftKind::Deploy,
+            CandidateActionKind::Skill => DraftKind::Skill,
+            CandidateActionKind::Retreat => DraftKind::Retreat,
+        };
+        let id = self.insert_draft(operation.game_frame, kind);
+        let event = self
+            .axis
+            .events
+            .iter_mut()
+            .find(|event| event.id == id)
+            .expect("newly inserted draft exists");
+        event.operator = operation.operator;
+        event.tile = Some(operation.tile);
+        event.direction = operation.direction.map(|direction| match direction {
+            FacingDirection::Up => DraftDirection::Up,
+            FacingDirection::Right => DraftDirection::Right,
+            FacingDirection::Down => DraftDirection::Down,
+            FacingDirection::Left => DraftDirection::Left,
+        });
+        event.label = Some("录屏校对操作".to_string());
+        event.source_candidate_id = Some(operation.candidate_id);
+        event.source_segment_index = Some(candidate.segment_index);
+        event.source_timestamp_ns = Some(source_timestamp_ns);
+        event.frame_range = EventFrameRange {
+            start: candidate.game_frame_range.start,
+            end: candidate.game_frame_range.end,
+        };
+        event.clock_quality = candidate.clock_quality;
+        event.time_confirmation = if exact_trusted_time {
+            TimeConfirmation::Observed
+        } else {
+            TimeConfirmation::ManuallyCorrected
+        };
+        event.refresh_complete();
+        self.last_message = Some(format!("已将录屏候选加入轴：{id}"));
         Ok(())
     }
 

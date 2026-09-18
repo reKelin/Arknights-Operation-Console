@@ -20,7 +20,10 @@ use bindings::{
     UpdateEventInput,
 };
 use executor::{CancelDrain, ExecutionBindings, ProxyBatchKind, ProxyBatchResult, SharedExecutor};
-use monitor::{GameWindowCandidate, MonitorManager, VisionConfig};
+use monitor::{
+    CandidateConfirmation, GameWindowCandidate, MonitorConnectionState, MonitorManager,
+    MonitorSourceKind, VisionConfig,
+};
 use runner::RunnerState;
 use settings::AppSettings;
 use specta_typescript::Typescript;
@@ -172,6 +175,35 @@ fn confirm_event_time(
 ) -> Result<RunnerSnapshot, CommandError> {
     let mut runner = locked(&state)?;
     runner.confirm_event_time(input)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn confirm_recording_candidate(
+    input: CandidateConfirmation,
+    runner_state: tauri::State<'_, SharedRunner>,
+    monitor_state: tauri::State<'_, SharedMonitor>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let candidate = {
+        let monitor = locked_monitor(&monitor_state)?;
+        let snapshot = monitor.snapshot();
+        if snapshot.source_kind != MonitorSourceKind::Recording
+            || snapshot.connection_state != MonitorConnectionState::Ready
+        {
+            return Err(CommandError::new(
+                "recording_analysis_not_ready",
+                "录屏分析尚未完成，不能确认操作候选",
+            ));
+        }
+        snapshot
+            .recording_candidates
+            .into_iter()
+            .find(|candidate| candidate.id == input.candidate_id)
+            .ok_or_else(|| CommandError::new("candidate_not_found", "未找到录屏操作候选"))?
+    };
+    let mut runner = locked(&runner_state)?;
+    runner.confirm_recording_candidate(&candidate, input)?;
     Ok(runner.snapshot())
 }
 
@@ -607,6 +639,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             update_event,
             move_event,
             confirm_event_time,
+            confirm_recording_candidate,
             delete_event,
             set_axis_metadata,
             import_axis,

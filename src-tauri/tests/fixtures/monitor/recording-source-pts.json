@@ -1,7 +1,5 @@
 {
-  "streams": [
-    { "time_base": "1/90000" }
-  ],
+  "streams": [{ "time_base": "1/90000" }],
   "frames": [
     { "best_effort_timestamp": "0" },
     { "best_effort_timestamp": "3003" },

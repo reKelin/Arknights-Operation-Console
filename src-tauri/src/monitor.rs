@@ -21,7 +21,10 @@ pub use clock::{
     ClockAnchor, ClockMode, ClockQuality, ClockSnapshot, ClockTransition, ClockUpdate, HumanClock,
     ObservationClock, ProxyClock,
 };
-pub use recording::analysis::AnalysisCandidate;
+pub use recording::analysis::{
+    AnalysisCandidate, CandidateActionKind, CandidateConfirmation, FacingDirection,
+    confirm_candidate,
+};
 pub use vision::{VisionConfig, VisualObservation, analyze_bgra};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, Type)]
