@@ -59,6 +59,9 @@ jobs:
       - name: Check TypeScript
         run: npx tsc -b
 
+      - name: Test timeline logic
+        run: npm test
+
       - name: Check Rust
         working-directory: src-tauri
         run: |
