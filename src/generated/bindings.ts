@@ -17,6 +17,8 @@ export const commands = {
 	moveEvent: (id: string, frame: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("move_event", { id, frame })),
 	confirmEventTime: (input: ConfirmEventTimeInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_event_time", { input })),
 	confirmRecordingCandidate: (input: CandidateConfirmation) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_recording_candidate", { input })),
+	previewRecordingMerge: (input: RecordingMergeInput) => typedError<RecordingMergePreview, CommandError>(__TAURI_INVOKE("preview_recording_merge", { input })),
+	createRecordingMergeRevision: (input: RecordingMergeInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("create_recording_merge_revision", { input })),
 	deleteEvent: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("delete_event", { id })),
 	setAxisMetadata: (input: AxisMetadataInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_axis_metadata", { input })),
 	importAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("import_axis", { path })),
@@ -171,6 +173,7 @@ export type DraftEvent = {
 	label: string | null,
 	complete: boolean,
 	attemptId: string | null,
+	sourceRecordingId: string | null,
 	sourceCandidateId: string | null,
 	sourceSegmentIndex: number | null,
 	sourceTimestampNs: number | null,
@@ -234,6 +237,7 @@ export type MonitorSnapshot = {
 	lastSourceTimestampNs: number | null,
 	droppedObservations: number,
 	recordingProgress: number | null,
+	recordingAnalysisId: string | null,
 	traceDurationFrames: number | null,
 	tracePoints: RecordingTracePoint[],
 	recordingSegments: RecordingSegment[],
@@ -282,6 +286,41 @@ export type RecordingAttempt = {
 };
 
 export type RecordingAttemptStatus = "active" | "ended";
+
+export type RecordingConflictDecision = {
+	candidateId: string,
+	decision: RecordingConflictDecisionKind,
+};
+
+export type RecordingConflictDecisionKind = "keepCandidate" | "excludeCandidate";
+
+export type RecordingMergeConflict = {
+	candidateId: string,
+	existingEventId: string,
+	alignedFrame: number,
+	tile: string,
+	kind: DraftKind,
+};
+
+export type RecordingMergeInput = {
+	mode: RecordingMergeMode,
+	parentRevisionId: string,
+	recordingAnalysisId: string,
+	segmentIndex: number,
+	sourceAnchorFrame: number,
+	targetAnchorFrame: number,
+	offsetFrames: number,
+	manualAlignmentConfirmed: boolean,
+	conflictDecisions: RecordingConflictDecision[],
+};
+
+export type RecordingMergeMode = "newAxis" | "continuation";
+
+export type RecordingMergePreview = {
+	conflicts: RecordingMergeConflict[],
+	skippedBeforeAnchor: number,
+	candidateCount: number,
+};
 
 export type RecordingMergeProvenance = {
 	recordingAnalysisId: string,
