@@ -2,6 +2,7 @@ mod axis;
 mod bindings;
 mod executor;
 mod monitor;
+mod recording_continuation;
 mod runner;
 mod session;
 mod settings;
