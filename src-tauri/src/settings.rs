@@ -141,4 +141,25 @@ mod tests {
 
         assert!(settings.validate().is_err());
     }
+
+    #[test]
+    fn settings_from_v0_0_7_keep_preferences_and_disable_input() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{
+                "version": 1,
+                "theme": "light",
+                "framesPerCost": 45,
+                "gameUiScale": 85
+            }"#,
+        )
+        .expect("v0.0.7 settings should remain readable");
+
+        assert_eq!(settings.theme, AppTheme::Light);
+        assert_eq!(settings.frames_per_cost, 45);
+        assert_eq!(settings.game_ui_scale, 85);
+        assert_eq!(settings.pause_key, "Escape");
+        assert_eq!(settings.skill_key, "D");
+        assert_eq!(settings.retreat_key, "A");
+        assert!(!settings.bindings_confirmed);
+    }
 }
