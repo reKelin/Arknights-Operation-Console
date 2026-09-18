@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: paused-execution
 depends_on:
   - specs/paused-execution/design.md
@@ -14,4 +14,3 @@ depends_on:
 5. 实现稳定回执和待人工确认入口。（REQ-PEX-007、REQ-PEX-008）
 6. 在 Console 模式与可信时钟接口稳定后接入提前暂停、F0 武装、目标帧调度、K 接管和生成绑定。（REQ-PEX-005、REQ-PEX-006、REQ-PEX-009、REQ-PEX-010）
 7. 为 Windows CI 留下取消收尾、过期画面、跨帧、同帧顺序和不确定结果的最小回归检查。（REQ-PEX-004、REQ-PEX-006、REQ-PEX-007、REQ-PEX-009）
-

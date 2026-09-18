@@ -23,6 +23,7 @@ export const commands = {
 	setStrategy: (strategy: RunStrategy) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_strategy", { strategy })),
 	requestProxyExecution: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_proxy_execution")),
 	emergencyStop: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("emergency_stop")),
+	resolveExecutionReceipt: (input: ResolveExecutionReceiptInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("resolve_execution_receipt", { input })),
 	setAlwaysOnTop: (enabled: boolean) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_always_on_top", { enabled })),
 	updateSettings: (input: AppSettings) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_settings", { input })),
 	requestClearAxis: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_clear_axis")),
@@ -53,6 +54,10 @@ export type AppSettings = {
 	theme: AppTheme,
 	framesPerCost: number,
 	gameUiScale: number,
+	pauseKey?: string,
+	skillKey?: string,
+	retreatKey?: string,
+	bindingsConfirmed?: boolean,
 };
 
 export type AppTheme = "dark" | "light";
@@ -131,6 +136,19 @@ export type EventFrameRange = {
 	end: number,
 };
 
+export type ExecutionReceipt = {
+	runId: string,
+	eventId: string,
+	receiptSequence: number,
+	plannedFrame: number,
+	observedFrame: number | null,
+	sourceTimestampNs: number | null,
+	status: ExecutionReceiptStatus,
+	reason: string,
+};
+
+export type ExecutionReceiptStatus = "confirmed" | "uncertain" | "failed" | "cancelled";
+
 export type GameWindowCandidate = {
 	id: string,
 	title: string,
@@ -151,6 +169,7 @@ export type MonitorSnapshot = {
 	confidence: number,
 	costPhase: number | null,
 	costTotal: number,
+	costFull: boolean,
 	trusted: boolean,
 	error: string | null,
 	captureWarning: string | null,
@@ -170,23 +189,20 @@ export type NoticeKind = "info" | "notify" | "dryRun" | "paused";
 
 export type ObservedBattleState = "unknown" | "notInBattle" | "battleBegin" | "oneXRunning" | "twoXRunning" | "pointTwoXRunning" | "paused" | "deployingOperator" | "adjustingOperatorFacing";
 
-export type ProxyExecutionRecord = {
-	sequence: number,
-	frame: number,
-	eventId: string,
-	kind: DraftKind,
-	success: boolean,
-	message: string,
-};
+export type PauseProofStatus = "none" | "trusted" | "uncertain";
 
 export type ProxySnapshot = {
 	enabled: boolean,
 	status: ProxyStatus,
 	message: string | null,
-	records: ProxyExecutionRecord[],
+	receipts: ExecutionReceipt[],
+	stopReason: string | null,
+	pauseProof: PauseProofStatus,
+	pauseProofMessage: string | null,
+	runId: string | null,
 };
 
-export type ProxyStatus = "disabled" | "confirming" | "ready" | "executing" | "error";
+export type ProxyStatus = "disabled" | "confirming" | "armed" | "ready" | "pausing" | "executing" | "waitingConfirmation" | "error";
 
 export type RecordingAttempt = {
 	id: string,
@@ -217,6 +233,11 @@ export type RecordingTracePoint = {
 	clockQuality: ClockQuality,
 	battleState: ObservedBattleState,
 	costPhase: number | null,
+};
+
+export type ResolveExecutionReceiptInput = {
+	receiptSequence: number,
+	confirmed: boolean,
 };
 
 export type RunNotice = {

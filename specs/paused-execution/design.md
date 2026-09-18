@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: paused-execution
 depends_on:
   - specs/paused-execution/requirements.md
@@ -35,7 +35,7 @@ UI 必须在事务开始前说明能力边界：满费或选中界面遮挡费�
 
 ## 回执
 
-`ExecutionReceipt` 包含 `event_id`、`receipt_sequence`、`planned_frame`、`observed_frame`、`source_timestamp_ns`、`status` 和 `reason`。序号由执行器单调分配。状态含义如下：
+每次下一局可信 F0 接管时分配 session 内单调的 `run_id`。`ExecutionReceipt` 包含 `run_id`、`event_id`、`receipt_sequence`、`planned_frame`、`observed_frame`、`source_timestamp_ns`、`status` 和 `reason`。序号由执行器单调分配；接管续录只允许消费与当前 `ProxySnapshot.run_id` 相同的回执。状态含义如下：
 
 - `confirmed`：游戏结果已有视觉证据或用户明确确认；
 - `uncertain`：输入已经可能生效，但证据不足；

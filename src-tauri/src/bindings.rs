@@ -151,6 +151,13 @@ pub struct ConfirmEventTimeInput {
     pub manual_correction_confirmed: bool,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveExecutionReceiptInput {
+    pub receipt_sequence: u32,
+    pub confirmed: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunnerSnapshot {

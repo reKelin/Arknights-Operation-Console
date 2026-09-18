@@ -76,6 +76,8 @@ pub struct ClockHandoff {
     last_cost_phase: Option<u16>,
     cost_cycles: u32,
     cost_origin: Option<u32>,
+    quality: ClockQuality,
+    uncertainty_frames: u32,
 }
 
 #[derive(Default)]
@@ -136,6 +138,28 @@ macro_rules! impl_clock {
 
 impl_clock!(HumanClock, ClockMode::Human);
 impl_clock!(ProxyClock, ClockMode::Proxy);
+
+impl ProxyClock {
+    pub fn takeover_handoff(&mut self, source_timestamp_ns: u64) -> Option<ClockHandoff> {
+        takeover_handoff(&mut self.0, source_timestamp_ns)
+    }
+
+    pub fn begin_paused_transaction(&mut self) -> ClockUpdate {
+        freeze(&mut self.0, ClockMode::Proxy)
+    }
+
+    pub fn confirm_paused_transaction(&mut self, source_timestamp_ns: u64) -> ClockSnapshot {
+        self.0.last_timestamp_ns = Some(source_timestamp_ns);
+        self.0.speed_fifths = 0;
+        self.0.quality = ClockQuality::Trusted;
+        self.0.uncertainty_frames = 0;
+        self.0.anchor = Some(ClockAnchor {
+            frame: self.0.frame,
+            source_timestamp_ns: source_timestamp_ns as f64,
+        });
+        snapshot(&self.0, ClockMode::Proxy)
+    }
+}
 
 fn observe(
     state: &mut ClockState,
@@ -363,6 +387,30 @@ fn trusted_handoff(state: &mut ClockState) -> Option<ClockHandoff> {
         last_cost_phase: state.last_cost_phase,
         cost_cycles: state.cost_cycles,
         cost_origin: state.cost_origin,
+        quality: ClockQuality::Trusted,
+        uncertainty_frames: 0,
+    })
+}
+
+fn takeover_handoff(state: &mut ClockState, source_timestamp_ns: u64) -> Option<ClockHandoff> {
+    if !state.active || !state.receiving_observations {
+        return None;
+    }
+    let quality = state.quality;
+    state.receiving_observations = false;
+    state.last_timestamp_ns = None;
+    Some(ClockHandoff {
+        frame: state.frame,
+        remainder: state.remainder,
+        source_timestamp_ns,
+        speed_fifths: 0,
+        last_cost_phase: state.last_cost_phase,
+        cost_cycles: state.cost_cycles,
+        cost_origin: state.cost_origin,
+        quality,
+        uncertainty_frames: state
+            .uncertainty_frames
+            .max((quality != ClockQuality::Trusted) as u32),
     })
 }
 
@@ -376,9 +424,10 @@ fn accept_handoff(state: &mut ClockState, mode: ClockMode, handoff: ClockHandoff
         last_cost_phase: handoff.last_cost_phase,
         cost_cycles: handoff.cost_cycles,
         cost_origin: handoff.cost_origin,
-        quality: ClockQuality::Trusted,
+        quality: handoff.quality,
+        uncertainty_frames: handoff.uncertainty_frames,
         speed_fifths: handoff.speed_fifths,
-        anchor: Some(ClockAnchor {
+        anchor: (handoff.quality == ClockQuality::Trusted).then_some(ClockAnchor {
             frame: handoff.frame,
             source_timestamp_ns: handoff.source_timestamp_ns as f64,
         }),

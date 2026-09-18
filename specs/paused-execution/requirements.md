@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: paused-execution
 depends_on:
   - specs/trusted-clock-observation/requirements.md
@@ -23,7 +23,7 @@ depends_on:
 - REQ-PEX-007：输入 API 返回成功不得等同于游戏操作成功。
   - AC-PEX-007：只有新鲜后置画面满足该动作的视觉结果条件时生成 `confirmed`；输入已发但证据不足时生成 `uncertain` 并保持暂停，等待用户确认或接管；输入未发或明确失败分别生成 `failed` 或 `cancelled`。
 - REQ-PEX-008：执行回执必须足以支持 K 接管后的前缀保留。
-  - AC-PEX-008：每条回执包含稳定 `eventId`、严格递增 `receiptSequence`、`plannedFrame`、可空 `observedFrame`、可空源时间戳、状态和原因；同帧完成顺序只能按回执序号判断。
+  - AC-PEX-008：每条回执包含本次代理局 `runId`、稳定 `eventId`、严格递增 `receiptSequence`、`plannedFrame`、可空 `observedFrame`、可空源时间戳、状态和原因；同帧完成顺序只能按回执序号判断，接管不得消费其他 `runId` 的旧回执。
 - REQ-PEX-009：K 接管必须能中断任意执行阶段并完成输入收尾。
   - AC-PEX-009：中断立即阻止后续步骤，释放活动键和触点；已经发送但未取得结果证据的动作记为 `uncertain`，尚未发送的动作记为 `cancelled`，并与停止原因分别保留。
 - REQ-PEX-010：代理必须从下一局 F0 武装，最后一项结束后保持暂停。

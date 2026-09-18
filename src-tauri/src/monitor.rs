@@ -105,6 +105,7 @@ pub struct MonitorSnapshot {
     pub confidence: u8,
     pub cost_phase: Option<u16>,
     pub cost_total: u16,
+    pub cost_full: bool,
     pub trusted: bool,
     pub error: Option<String>,
     pub capture_warning: Option<String>,
@@ -301,6 +302,7 @@ impl MonitorManager {
                 self.snapshot.confidence = observation.confidence;
                 self.snapshot.cost_phase = observation.cost_phase;
                 self.snapshot.cost_total = observation.cost_total;
+                self.snapshot.cost_full = observation.cost_full;
                 self.snapshot.trusted =
                     envelope.dropped_before == 0 && observation.confidence >= 70;
                 if envelope.dropped_before == 0 {
@@ -321,6 +323,7 @@ impl MonitorManager {
                 self.snapshot.confidence = observation.confidence;
                 self.snapshot.cost_phase = observation.cost_phase;
                 self.snapshot.cost_total = observation.cost_total;
+                self.snapshot.cost_full = observation.cost_full;
                 self.snapshot.trusted = observation.confidence >= 70;
                 if let Some(recognition) = observation.stage_recognition {
                     self.snapshot.stage_recognition = recognition;
