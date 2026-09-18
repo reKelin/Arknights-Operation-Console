@@ -322,7 +322,7 @@ fn is_semantic_conflict(existing: &DraftEvent, candidate: &DraftEvent) -> bool {
         && existing.kind == candidate.kind
         && existing.tile.is_some()
         && existing.tile == candidate.tile
-        && existing.source_candidate_id != candidate.source_candidate_id
+        && candidate_source(existing) != candidate_source(candidate)
 }
 
 fn candidate_source(event: &DraftEvent) -> Option<(String, u32, String)> {
