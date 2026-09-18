@@ -20,7 +20,7 @@ use windows::{
     core::Result as WindowsResult,
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ClientSize {
     pub width: i32,
     pub height: i32,
@@ -73,7 +73,7 @@ impl TouchInjector {
         allowed: impl Fn() -> bool,
     ) -> Result<(), String> {
         if !allowed() {
-            return Err("代理执行已急停".to_string());
+            return Err("代理执行已取消（尚未发送输入）".to_string());
         }
         let screen = client_to_screen(hwnd, client)?;
         self.inject(
@@ -84,7 +84,7 @@ impl TouchInjector {
         thread::sleep(Duration::from_millis(16));
         if !allowed() {
             self.cancel();
-            return Err("代理执行已急停".to_string());
+            return Err("代理执行已取消（输入结果未知）".to_string());
         }
         self.inject(
             screen,
@@ -103,7 +103,7 @@ impl TouchInjector {
         allowed: impl Fn() -> bool,
     ) -> Result<(), String> {
         if !allowed() {
-            return Err("代理执行已急停".to_string());
+            return Err("代理执行已取消（尚未发送输入）".to_string());
         }
         let from = client_to_screen(hwnd, from)?;
         let to = client_to_screen(hwnd, to)?;
@@ -116,7 +116,7 @@ impl TouchInjector {
             thread::sleep(Duration::from_millis(16));
             if !allowed() {
                 self.cancel();
-                return Err("代理执行已急停".to_string());
+                return Err("代理执行已取消（输入结果未知）".to_string());
             }
             let point = POINT {
                 x: from.x + (to.x - from.x) * step / 5,

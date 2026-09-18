@@ -146,12 +146,17 @@ impl GraphicsCaptureApiHandler for LiveFrameHandler {
         let height = buffer.height();
         let row_pitch = buffer.row_pitch();
         let config = self.config.read().map(|config| *config).unwrap_or_default();
+        let timestamp = self.started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         if self.last_execution_capture.elapsed() >= Duration::from_millis(100) {
-            self.execution_vision
-                .publish(buffer.as_raw_buffer(), width, height, row_pitch);
+            self.execution_vision.publish(
+                buffer.as_raw_buffer(),
+                width,
+                height,
+                row_pitch,
+                timestamp,
+            );
             self.last_execution_capture = Instant::now();
         }
-        let timestamp = self.started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         let event = match analyze_bgra(
             buffer.as_raw_buffer(),
             width,

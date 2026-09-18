@@ -1,6 +1,9 @@
-use std::sync::{
-    Mutex,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use image::{GrayImage, ImageBuffer, Luma};
@@ -12,29 +15,50 @@ pub struct CapturedFrame {
     pub pixels: Vec<u8>,
     pub width: u32,
     pub height: u32,
+    pub sequence: u64,
+    pub source_timestamp_ns: u64,
+    captured_at: Instant,
 }
 
 pub struct ExecutionVision {
     enabled: AtomicBool,
-    latest: Mutex<Option<CapturedFrame>>,
+    state: Mutex<VisionState>,
+    ready: Condvar,
+}
+
+struct VisionState {
+    next_sequence: u64,
+    latest: Option<CapturedFrame>,
 }
 
 impl ExecutionVision {
     pub fn new() -> Self {
         Self {
             enabled: AtomicBool::new(false),
-            latest: Mutex::new(None),
+            state: Mutex::new(VisionState {
+                next_sequence: 1,
+                latest: None,
+            }),
+            ready: Condvar::new(),
         }
     }
 
     pub fn set_enabled(&self, enabled: bool) {
         self.enabled.store(enabled, Ordering::Release);
-        if !enabled && let Ok(mut latest) = self.latest.lock() {
-            *latest = None;
+        if !enabled && let Ok(mut state) = self.state.lock() {
+            state.latest = None;
+            self.ready.notify_all();
         }
     }
 
-    pub fn publish(&self, data: &[u8], width: u32, height: u32, row_pitch: u32) {
+    pub fn publish(
+        &self,
+        data: &[u8],
+        width: u32,
+        height: u32,
+        row_pitch: u32,
+        source_timestamp_ns: u64,
+    ) {
         if !self.enabled.load(Ordering::Acquire) {
             return;
         }
@@ -47,17 +71,59 @@ impl ExecutionVision {
             };
             pixels.extend_from_slice(row);
         }
-        if let Ok(mut latest) = self.latest.lock() {
-            *latest = Some(CapturedFrame {
+        if let Ok(mut state) = self.state.lock() {
+            let sequence = state.next_sequence;
+            state.next_sequence = state.next_sequence.saturating_add(1);
+            state.latest = Some(CapturedFrame {
                 pixels,
                 width,
                 height,
+                sequence,
+                source_timestamp_ns,
+                captured_at: Instant::now(),
             });
+            self.ready.notify_all();
         }
     }
 
     pub fn latest(&self) -> Option<CapturedFrame> {
-        self.latest.lock().ok()?.clone()
+        self.state.lock().ok()?.latest.clone()
+    }
+
+    pub fn wait_after(&self, sequence: u64, timeout: Duration) -> Option<CapturedFrame> {
+        let deadline = Instant::now() + timeout;
+        let mut state = self.state.lock().ok()?;
+        loop {
+            if !self.enabled.load(Ordering::Acquire) {
+                return None;
+            }
+            if let Some(frame) = state
+                .latest
+                .as_ref()
+                .filter(|frame| frame.sequence > sequence)
+            {
+                return Some(frame.clone());
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+            let (next, wait) = self.ready.wait_timeout(state, remaining).ok()?;
+            state = next;
+            if wait.timed_out() {
+                return state
+                    .latest
+                    .as_ref()
+                    .filter(|frame| frame.sequence > sequence)
+                    .cloned();
+            }
+        }
+    }
+}
+
+impl CapturedFrame {
+    pub fn is_fresh(&self, maximum_age: Duration) -> bool {
+        self.captured_at.elapsed() <= maximum_age
     }
 }
 
@@ -73,6 +139,26 @@ pub fn locate_operator(
     frame: &CapturedFrame,
     templates: &[GrayImage],
 ) -> Result<(i32, i32), String> {
+    match match_operator(frame, templates)? {
+        OperatorMatch::Unique(point) => Ok(point),
+        OperatorMatch::Absent => Err("部署栏没有目标干员".to_string()),
+        OperatorMatch::Ambiguous { best, second } => Err(format!(
+            "部署栏头像匹配不唯一（最高 {best:.2}，次高 {second:.2}）"
+        )),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OperatorMatch {
+    Unique((i32, i32)),
+    Absent,
+    Ambiguous { best: f64, second: f64 },
+}
+
+pub fn match_operator(
+    frame: &CapturedFrame,
+    templates: &[GrayImage],
+) -> Result<OperatorMatch, String> {
     let slots = detect_slots(frame);
     if slots.is_empty() {
         return Err("未识别到部署栏卡位".to_string());
@@ -93,16 +179,63 @@ pub fn locate_operator(
         return Err("部署栏头像匹配失败".to_string());
     };
     let second = scores.get(1).map(|value| value.0).unwrap_or(-1.0);
-    if best < 0.72 || best - second < 0.06 {
-        return Err(format!(
-            "部署栏头像匹配不唯一（最高 {:.2}，次高 {:.2}）",
-            best, second
-        ));
+    if best < 0.60 {
+        return Ok(OperatorMatch::Absent);
     }
-    Ok((
+    if best < 0.72 || best - second < 0.06 {
+        return Ok(OperatorMatch::Ambiguous { best, second });
+    }
+    Ok(OperatorMatch::Unique((
         (slot.left + slot.width / 2) as i32,
         (slot.top + slot.height / 2) as i32,
-    ))
+    )))
+}
+
+pub fn changed_ratio(
+    before: &CapturedFrame,
+    after: &CapturedFrame,
+    center: (i32, i32),
+    radius: u32,
+) -> Result<f64, String> {
+    if before.width != after.width || before.height != after.height {
+        return Err("结果画面尺寸已变化".to_string());
+    }
+    let left = center.0.max(0) as u32;
+    let top = center.1.max(0) as u32;
+    let left = left.saturating_sub(radius);
+    let top = top.saturating_sub(radius);
+    let right = (center.0.max(0) as u32)
+        .saturating_add(radius)
+        .min(before.width);
+    let bottom = (center.1.max(0) as u32)
+        .saturating_add(radius)
+        .min(before.height);
+    if left >= right || top >= bottom {
+        return Err("结果确认区域超出画面".to_string());
+    }
+    let mut changed = 0_u64;
+    let mut total = 0_u64;
+    for y in top..bottom {
+        for x in left..right {
+            let offset = ((y * before.width + x) * 4) as usize;
+            let Some(a) = before.pixels.get(offset..offset + 3) else {
+                continue;
+            };
+            let Some(b) = after.pixels.get(offset..offset + 3) else {
+                continue;
+            };
+            let distance = a
+                .iter()
+                .zip(b)
+                .map(|(left, right)| u16::from(left.abs_diff(*right)))
+                .sum::<u16>();
+            changed += u64::from(distance >= 54);
+            total += 1;
+        }
+    }
+    (total > 0)
+        .then_some(changed as f64 / total as f64)
+        .ok_or_else(|| "结果确认区域没有有效像素".to_string())
 }
 
 fn detect_slots(frame: &CapturedFrame) -> Vec<Rect> {

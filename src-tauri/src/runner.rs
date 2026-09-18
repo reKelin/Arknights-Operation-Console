@@ -10,7 +10,9 @@ use crate::{
         NoticeKind, RecordingAttempt, RecordingAttemptStatus, RunNotice, RunStrategy,
         RunnerSnapshot, UpdateEventInput,
     },
-    executor::{ProxyExecutionRecord, ProxySnapshot, ProxyStatus},
+    executor::{
+        ExecutionReceipt, ExecutionReceiptStatus, PauseProofStatus, ProxySnapshot, ProxyStatus,
+    },
     monitor::{
         ClockMode, ClockQuality, ClockSnapshot, ClockTransition, HumanClock, MonitorEvent,
         MonitorEventEnvelope, MonitorSnapshot, MonitorSourceKind, ObservedBattleState, ProxyClock,
@@ -27,6 +29,14 @@ const NOTIFY_LEAD_FRAMES: u32 = 90;
 const CLEAR_CONFIRM_DURATION: Duration = Duration::from_secs(3);
 const PROXY_CONFIRM_DURATION: Duration = Duration::from_secs(5);
 const OBSERVATION_TIMEOUT: Duration = Duration::from_millis(250);
+const PROXY_PAUSE_LEAD_FRAMES: u32 = 3;
+
+#[derive(Clone, Copy)]
+struct PausedTransactionProof {
+    frame: u32,
+    cost_phase: u16,
+    cost_total: u16,
+}
 
 pub struct RunnerState {
     axis: DraftAxis,
@@ -55,10 +65,15 @@ pub struct RunnerState {
     proxy: ProxySnapshot,
     proxy_confirm_deadline: Option<Instant>,
     pending_execution: Vec<DraftEvent>,
+    pending_pause_toggle: bool,
+    pause_toggle_inflight: bool,
+    pause_toggle_expect_paused: Option<bool>,
+    paused_transaction: Option<PausedTransactionProof>,
     console_mode: ConsoleMode,
     recording_attempts: Vec<RecordingAttempt>,
     active_attempt_id: Option<String>,
     next_attempt_sequence: u32,
+    next_proxy_run_sequence: u32,
 }
 
 impl RunnerState {
@@ -99,10 +114,15 @@ impl RunnerState {
             proxy: ProxySnapshot::default(),
             proxy_confirm_deadline: None,
             pending_execution: Vec::new(),
+            pending_pause_toggle: false,
+            pause_toggle_inflight: false,
+            pause_toggle_expect_paused: None,
+            paused_transaction: None,
             console_mode: ConsoleMode::ManualRecording,
             recording_attempts: Vec::new(),
             active_attempt_id: None,
             next_attempt_sequence: 1,
+            next_proxy_run_sequence: 1,
         }
     }
 
@@ -541,14 +561,10 @@ impl RunnerState {
         {
             if self.monitor.source_kind != MonitorSourceKind::Window
                 || self.monitor.window_id.is_none()
-                || !self.monitor.trusted
-                || self.clock_snapshot().quality != ClockQuality::Trusted
-                || self.stage_safety().status != StageSafetyStatus::Matched
-                || !matches!(self.status, BattleStatus::Running | BattleStatus::Paused)
             {
                 return Err(CommandError::new(
                     "proxy_not_ready",
-                    "代理执行要求前台可信游戏窗口、运行中关卡和匹配的轴关卡",
+                    "武装代理需要已选择的前台游戏窗口",
                 ));
             }
             self.axis.to_axis_json().map_err(|error| {
@@ -564,67 +580,166 @@ impl RunnerState {
             return Ok(true);
         }
         self.proxy.status = ProxyStatus::Confirming;
-        self.proxy.message =
-            Some("再次确认将发送 Windows 合成触摸；自动化可能存在账号或反作弊风险".to_string());
+        self.proxy.message = Some(
+            "再次确认将发送 Windows 合成触摸与键盘输入；自动化可能存在账号或反作弊风险".to_string(),
+        );
         self.proxy_confirm_deadline = Some(now + PROXY_CONFIRM_DURATION);
         Ok(false)
     }
 
     pub fn complete_proxy_enable(&mut self) -> Result<(), CommandError> {
-        if self.monitor.source_kind != MonitorSourceKind::Window
-            || !self.monitor.trusted
-            || self.clock_snapshot().quality != ClockQuality::Trusted
-            || self.stage_safety().status != StageSafetyStatus::Matched
-            || !matches!(self.status, BattleStatus::Running | BattleStatus::Paused)
-        {
-            self.disable_proxy("准备期间游戏状态已变化，代理执行未启用");
-            return Err(CommandError::new(
-                "proxy_not_ready",
-                "准备期间游戏状态已变化，代理执行未启用",
-            ));
-        }
         self.proxy.enabled = true;
-        if let Some(handoff) = self.human_clock.trusted_handoff() {
-            self.proxy_clock.accept_handoff(handoff);
-            self.clock_mode = ClockMode::Proxy;
-        } else {
-            self.disable_proxy("可信时钟交接失败，代理执行未启用");
-            return Err(CommandError::new(
-                "clock_handoff_failed",
-                "可信时钟交接失败，代理执行未启用",
-            ));
-        }
-        self.proxy.status = ProxyStatus::Ready;
-        self.proxy.message = Some("代理执行已启用；可使用界面停止入口中止".to_string());
+        self.proxy.status = ProxyStatus::Armed;
+        self.proxy.message = Some("代理已武装，将在下一局可信 F0 接管".to_string());
+        self.proxy.stop_reason = None;
+        self.proxy.pause_proof = PauseProofStatus::None;
+        self.proxy.pause_proof_message = None;
         Ok(())
     }
 
     pub fn emergency_stop(&mut self) {
-        self.disable_proxy("界面停止：代理执行已关闭");
+        self.takeover("K 接管或界面停止：代理执行已关闭");
+    }
+
+    pub fn takeover(&mut self, message: &str) {
+        if self.clock_mode == ClockMode::Proxy {
+            let source_timestamp_ns = self
+                .monitor
+                .last_source_timestamp_ns
+                .filter(|value| value.is_finite() && *value >= 0.0)
+                .map(|value| value as u64);
+            if let Some(timestamp) = source_timestamp_ns
+                && let Some(handoff) = self.proxy_clock.takeover_handoff(timestamp)
+            {
+                self.human_clock.accept_handoff(handoff);
+                self.clock_mode = ClockMode::Human;
+            } else {
+                self.proxy.pause_proof = PauseProofStatus::Uncertain;
+                self.proxy.pause_proof_message = Some("接管时无法建立可信时间锚点".to_string());
+            }
+        }
+        self.disable_proxy(message);
     }
 
     pub fn take_pending_execution(&mut self) -> Vec<DraftEvent> {
         std::mem::take(&mut self.pending_execution)
     }
 
+    pub fn take_pending_pause_toggle(&mut self) -> bool {
+        if !self.pending_pause_toggle {
+            return false;
+        }
+        self.pending_pause_toggle = false;
+        self.pause_toggle_inflight = true;
+        true
+    }
+
+    pub fn begin_proxy_execution(&mut self) {
+        if self.status != BattleStatus::Paused || self.monitor.cost_full {
+            return;
+        }
+        let Some(cost_phase) = self.monitor.cost_phase else {
+            return;
+        };
+        self.paused_transaction = Some(PausedTransactionProof {
+            frame: self.frame,
+            cost_phase,
+            cost_total: self.monitor.cost_total,
+        });
+        self.proxy_clock.begin_paused_transaction();
+        self.proxy.pause_proof = PauseProofStatus::Uncertain;
+        self.proxy.pause_proof_message = Some("暂停事务进行中，时间暂未确认".to_string());
+    }
+
     pub fn finish_proxy_execution(
         &mut self,
-        records: Vec<ProxyExecutionRecord>,
+        receipts: Vec<ExecutionReceipt>,
         error: Option<String>,
     ) {
-        self.proxy.records.extend(records);
-        if self.proxy.records.len() > 50 {
-            self.proxy.records.drain(..self.proxy.records.len() - 50);
+        let proxy_was_enabled = self.proxy.enabled;
+        self.proxy.receipts.extend(receipts.clone());
+        if self.proxy.receipts.len() > 50 {
+            self.proxy.receipts.drain(..self.proxy.receipts.len() - 50);
         }
-        if let Some(message) = error {
+        for receipt in &receipts {
+            if receipt.status == ExecutionReceiptStatus::Confirmed {
+                self.triggered.insert(receipt.event_id.clone());
+            }
+        }
+        if !proxy_was_enabled {
+            self.proxy.status = ProxyStatus::Disabled;
+            return;
+        }
+        let time_confirmed = self.confirm_paused_transaction();
+        if receipts
+            .iter()
+            .any(|receipt| receipt.status == ExecutionReceiptStatus::Uncertain)
+        {
+            self.proxy.status = ProxyStatus::WaitingConfirmation;
+            self.proxy.message = Some("操作结果待人工确认；游戏保持暂停".to_string());
+            self.proxy.stop_reason = error;
+        } else if let Some(message) = error {
             self.disable_proxy(&message);
             self.proxy.status = ProxyStatus::Error;
             self.proxy.message = Some(message.clone());
+            self.proxy.stop_reason = Some(message.clone());
             self.last_message = Some(message);
+        } else if !time_confirmed {
+            self.proxy.status = ProxyStatus::WaitingConfirmation;
+            self.proxy.message = Some("动作已完成，但无法证明事务内时间未推进".to_string());
         } else {
             self.proxy.status = ProxyStatus::Ready;
             self.proxy.message = Some("代理执行批次完成".to_string());
+            self.schedule_proxy(self.frame);
         }
+    }
+
+    pub fn finish_pause_toggle(&mut self, error: Option<String>) {
+        self.pause_toggle_inflight = false;
+        if let Some(message) = error {
+            self.disable_proxy(&message);
+            self.proxy.status = ProxyStatus::Error;
+            self.proxy.stop_reason = Some(message.clone());
+            self.last_message = Some(message);
+        }
+    }
+
+    pub fn resolve_execution_receipt(
+        &mut self,
+        receipt_sequence: u32,
+        confirmed: bool,
+    ) -> Result<(), CommandError> {
+        let receipt = self
+            .proxy
+            .receipts
+            .iter_mut()
+            .find(|receipt| receipt.receipt_sequence == receipt_sequence)
+            .ok_or_else(|| CommandError::new("receipt_not_found", "未找到执行回执"))?;
+        if receipt.status != ExecutionReceiptStatus::Uncertain {
+            return Err(CommandError::new(
+                "receipt_not_uncertain",
+                "只有待确认回执可以人工处理",
+            ));
+        }
+        receipt.status = if confirmed {
+            self.triggered.insert(receipt.event_id.clone());
+            ExecutionReceiptStatus::Confirmed
+        } else {
+            ExecutionReceiptStatus::Failed
+        };
+        receipt.reason = if confirmed {
+            "用户已确认游戏操作完成".to_string()
+        } else {
+            "用户确认游戏操作未完成".to_string()
+        };
+        if confirmed && self.proxy.pause_proof == PauseProofStatus::Trusted {
+            self.proxy.status = ProxyStatus::Ready;
+            self.proxy.message = Some("人工确认完成；可继续代理".to_string());
+            self.schedule_proxy(self.frame);
+        } else if !confirmed {
+            self.disable_proxy("用户确认操作失败，代理已停止");
+        }
+        Ok(())
     }
 
     fn clock_snapshot(&self) -> ClockSnapshot {
@@ -668,9 +783,135 @@ impl RunnerState {
         self.proxy.enabled = false;
         self.proxy.status = ProxyStatus::Disabled;
         self.proxy.message = Some(message.to_string());
+        self.proxy.stop_reason = Some(message.to_string());
         self.proxy_confirm_deadline = None;
         self.pending_execution.clear();
+        self.pending_pause_toggle = false;
+        self.pause_toggle_inflight = false;
+        self.pause_toggle_expect_paused = None;
+        self.paused_transaction = None;
         self.try_return_to_human_clock();
+    }
+
+    fn activate_proxy_at_f0(&mut self) -> Result<(), &'static str> {
+        if self.frame != 0
+            || self.clock_snapshot().quality != ClockQuality::Trusted
+            || self.stage_safety().status != StageSafetyStatus::Matched
+        {
+            return Err("下一局 F0 的时钟或关卡未通过可信检查");
+        }
+        let Some(handoff) = self.human_clock.trusted_handoff() else {
+            return Err("F0 时钟交接失败");
+        };
+        self.proxy_clock.accept_handoff(handoff);
+        self.clock_mode = ClockMode::Proxy;
+        let run_sequence = self.next_proxy_run_sequence;
+        self.next_proxy_run_sequence = self.next_proxy_run_sequence.saturating_add(1);
+        self.proxy.run_id = Some(format!("proxy-run-{run_sequence:06}"));
+        self.proxy.status = ProxyStatus::Ready;
+        self.proxy.message = Some("已在可信 F0 接管，等待下一操作".to_string());
+        self.schedule_proxy(0);
+        Ok(())
+    }
+
+    fn confirm_paused_transaction(&mut self) -> bool {
+        let Some(proof) = self.paused_transaction.take() else {
+            return true;
+        };
+        let same_phase = self.monitor.cost_phase.is_some_and(|phase| {
+            phase == proof.cost_phase && self.monitor.cost_total == proof.cost_total
+        });
+        let paused = self.monitor.battle_state == ObservedBattleState::Paused;
+        let source_timestamp_ns = self
+            .monitor
+            .last_source_timestamp_ns
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| value as u64);
+        if paused
+            && !self.monitor.cost_full
+            && same_phase
+            && self.frame == proof.frame
+            && let Some(timestamp) = source_timestamp_ns
+        {
+            self.proxy_clock.confirm_paused_transaction(timestamp);
+            self.proxy.pause_proof = PauseProofStatus::Trusted;
+            self.proxy.pause_proof_message = Some("事务前后费用锚点证明逻辑帧未推进".to_string());
+            true
+        } else {
+            self.proxy.pause_proof = PauseProofStatus::Uncertain;
+            self.proxy.pause_proof_message =
+                Some("满费、费用遮挡、相位变化或未回到暂停，无法证明事务内时间未推进".to_string());
+            false
+        }
+    }
+
+    fn schedule_proxy(&mut self, current_frame: u32) {
+        if !self.proxy.enabled
+            || self.clock_mode != ClockMode::Proxy
+            || matches!(
+                self.proxy.status,
+                ProxyStatus::Executing | ProxyStatus::WaitingConfirmation | ProxyStatus::Error
+            )
+            || self.pause_toggle_inflight
+            || self.pending_pause_toggle
+            || !self.pending_execution.is_empty()
+        {
+            return;
+        }
+        let Some(next) = self
+            .axis
+            .events
+            .iter()
+            .find(|event| !self.triggered.contains(&event.id))
+            .cloned()
+        else {
+            self.proxy.status = ProxyStatus::Ready;
+            self.proxy.message = Some("本局代理操作已完成；游戏保持暂停".to_string());
+            return;
+        };
+        if self.pause_toggle_expect_paused.is_some() && current_frame <= next.frame {
+            return;
+        }
+        if current_frame > next.frame {
+            self.proxy.status = ProxyStatus::Executing;
+            self.proxy.message = Some(format!("目标 F{} 已跨过，正在生成失败回执", next.frame));
+            self.pending_execution.extend(
+                self.axis
+                    .events
+                    .iter()
+                    .filter(|event| event.frame == next.frame)
+                    .cloned(),
+            );
+            return;
+        }
+        if self.status == BattleStatus::Paused {
+            if current_frame == next.frame {
+                self.proxy.status = ProxyStatus::Executing;
+                self.proxy.message = Some(format!("正在代理执行 F{current_frame}"));
+                self.pending_execution.extend(
+                    self.axis
+                        .events
+                        .iter()
+                        .filter(|event| {
+                            event.frame == current_frame && !self.triggered.contains(&event.id)
+                        })
+                        .cloned(),
+                );
+            } else {
+                self.proxy.status = ProxyStatus::Pausing;
+                self.proxy.message = Some(format!(
+                    "从暂停 F{current_frame} 恢复以接近 F{}",
+                    next.frame
+                ));
+                self.pending_pause_toggle = true;
+                self.pause_toggle_expect_paused = Some(false);
+            }
+        } else if current_frame.saturating_add(PROXY_PAUSE_LEAD_FRAMES) >= next.frame {
+            self.proxy.status = ProxyStatus::Pausing;
+            self.proxy.message = Some(format!("提前请求暂停以对齐 F{}", next.frame));
+            self.pending_pause_toggle = true;
+            self.pause_toggle_expect_paused = Some(true);
+        }
     }
 
     pub fn set_always_on_top(&mut self, enabled: bool) {
@@ -757,7 +998,20 @@ impl RunnerState {
                 }
                 self.update_active_attempt_stage(&observation);
                 let previous_frame = self.frame;
-                let update = self.observe_clock(&observation);
+                let isolated_transaction_state = self.paused_transaction.is_some()
+                    && self.clock_mode == ClockMode::Proxy
+                    && matches!(
+                        observation.battle_state,
+                        ObservedBattleState::Paused
+                            | ObservedBattleState::PointTwoXRunning
+                            | ObservedBattleState::DeployingOperator
+                            | ObservedBattleState::AdjustingOperatorFacing
+                    );
+                let update = if isolated_transaction_state {
+                    self.proxy_clock.begin_paused_transaction()
+                } else {
+                    self.observe_clock(&observation)
+                };
                 self.frame = update.frame;
                 self.speed = match update.speed_fifths {
                     0 => 0,
@@ -775,13 +1029,31 @@ impl RunnerState {
                 } else {
                     BattleStatus::Running
                 };
+                if !self.pause_toggle_inflight
+                    && !self.pending_pause_toggle
+                    && self
+                        .pause_toggle_expect_paused
+                        .is_some_and(|expect_paused| {
+                            expect_paused == (self.status == BattleStatus::Paused)
+                        })
+                {
+                    self.pause_toggle_expect_paused = None;
+                    self.proxy.status = ProxyStatus::Ready;
+                }
                 match update.transition {
                     ClockTransition::Started => {
                         self.start_recording_attempt(&observation);
                         self.triggered.clear();
                         self.notices.clear();
                         self.last_message = Some("已识别到关卡运行，计时开始".to_string());
-                        self.dispatch_events(0);
+                        if self.proxy.enabled && self.proxy.status == ProxyStatus::Armed {
+                            if let Err(message) = self.activate_proxy_at_f0() {
+                                self.disable_proxy(message);
+                                self.last_message = Some(message.to_string());
+                            }
+                        } else {
+                            self.dispatch_events(0);
+                        }
                     }
                     ClockTransition::Advanced
                         if self.frame > previous_frame
@@ -798,11 +1070,20 @@ impl RunnerState {
                         self.last_message = Some("已离开关卡，计时已归零".to_string());
                     }
                     ClockTransition::Frozen => {
-                        self.disable_proxy("游戏状态不可信，代理执行已关闭");
-                        self.last_message = Some("游戏状态不可信，计时已冻结".to_string());
+                        if isolated_transaction_state {
+                            self.proxy.pause_proof = PauseProofStatus::Uncertain;
+                            self.proxy.pause_proof_message =
+                                Some("暂停事务进行中，时间暂未确认".to_string());
+                            self.last_message =
+                                Some("暂停事务观测已隔离，等待后置锚点".to_string());
+                        } else {
+                            self.disable_proxy("游戏状态不可信，代理执行已关闭");
+                            self.last_message = Some("游戏状态不可信，计时已冻结".to_string());
+                        }
                     }
                     ClockTransition::Paused => {
                         self.last_message = Some("游戏已暂停".to_string());
+                        self.schedule_proxy(self.frame);
                     }
                     ClockTransition::None | ClockTransition::Advanced => {}
                 }
@@ -810,6 +1091,12 @@ impl RunnerState {
                     self.disable_proxy("观测关卡与当前轴不一致，代理执行已关闭");
                     self.last_message =
                         Some("观测关卡与当前轴不一致，调度和录轴已停止".to_string());
+                }
+                if self.proxy.enabled
+                    && self.clock_mode == ClockMode::Proxy
+                    && update.quality == ClockQuality::Trusted
+                {
+                    self.schedule_proxy(self.frame);
                 }
             }
             MonitorEvent::Error(message) => {
@@ -890,12 +1177,22 @@ impl RunnerState {
         }
     }
 
-    pub fn update_settings(&mut self, settings: AppSettings) -> Result<(), CommandError> {
+    pub fn update_settings(&mut self, mut settings: AppSettings) -> Result<(), CommandError> {
         settings
             .validate()
             .map_err(|message| CommandError::field("invalid_settings", message, "settings"))?;
+        let keys_changed = self.settings.pause_key != settings.pause_key
+            || self.settings.skill_key != settings.skill_key
+            || self.settings.retreat_key != settings.retreat_key;
+        if keys_changed {
+            settings.bindings_confirmed = false;
+        }
         self.settings = settings;
-        self.last_message = Some("设置已保存".to_string());
+        self.last_message = Some(if keys_changed {
+            "键位已更新，首次执行前需要重新确认".to_string()
+        } else {
+            "设置已保存".to_string()
+        });
         Ok(())
     }
 
@@ -925,17 +1222,13 @@ impl RunnerState {
     }
 
     fn dispatch_events(&mut self, current_frame: u32) {
+        if self.strategy == RunStrategy::Proxy {
+            self.schedule_proxy(current_frame);
+            return;
+        }
         if self.stage_safety().status != StageSafetyStatus::Matched {
             for event in &self.axis.events {
                 if trigger_frame(event, self.strategy) <= current_frame {
-                    self.triggered.insert(event.id.clone());
-                }
-            }
-            return;
-        }
-        if self.strategy == RunStrategy::Proxy && !self.proxy.enabled {
-            for event in &self.axis.events {
-                if event.frame <= current_frame {
                     self.triggered.insert(event.id.clone());
                 }
             }
@@ -951,22 +1244,6 @@ impl RunnerState {
             })
             .cloned()
             .collect();
-
-        if self.strategy == RunStrategy::Proxy {
-            let mut exact = Vec::new();
-            for event in due {
-                self.triggered.insert(event.id.clone());
-                if event.frame == current_frame {
-                    exact.push(event);
-                }
-            }
-            if !exact.is_empty() {
-                self.proxy.status = ProxyStatus::Executing;
-                self.proxy.message = Some(format!("正在代理执行 F{current_frame}"));
-                self.pending_execution.extend(exact);
-            }
-            return;
-        }
 
         if self.strategy == RunStrategy::Pause {
             let Some(first) = due.first() else {
@@ -1340,9 +1617,11 @@ mod tests {
         runner.monitor.source_kind = MonitorSourceKind::Window;
         runner.monitor.window_id = Some("1".to_string());
         runner.monitor.trusted = true;
-        runner.status = BattleStatus::Running;
+        runner.status = BattleStatus::Paused;
         runner.proxy.enabled = true;
+        runner.proxy.status = ProxyStatus::Ready;
         runner.strategy = RunStrategy::Proxy;
+        runner.clock_mode = ClockMode::Proxy;
         runner.axis.events = vec![
             DraftEvent {
                 id: "second".to_string(),

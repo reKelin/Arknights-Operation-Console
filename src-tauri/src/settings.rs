@@ -22,6 +22,14 @@ pub struct AppSettings {
     pub theme: AppTheme,
     pub frames_per_cost: u16,
     pub game_ui_scale: u8,
+    #[serde(default = "default_pause_key")]
+    pub pause_key: String,
+    #[serde(default = "default_skill_key")]
+    pub skill_key: String,
+    #[serde(default = "default_retreat_key")]
+    pub retreat_key: String,
+    #[serde(default)]
+    pub bindings_confirmed: bool,
 }
 
 impl Default for AppSettings {
@@ -31,6 +39,10 @@ impl Default for AppSettings {
             theme: AppTheme::Dark,
             frames_per_cost: 30,
             game_ui_scale: 100,
+            pause_key: default_pause_key(),
+            skill_key: default_skill_key(),
+            retreat_key: default_retreat_key(),
+            bindings_confirmed: false,
         }
     }
 }
@@ -45,6 +57,15 @@ impl AppSettings {
         }
         if self.game_ui_scale > 100 {
             return Err("游戏 UI 比例必须在 0–100 之间".to_string());
+        }
+        crate::executor::validate_key_name(&self.pause_key)?;
+        crate::executor::validate_key_name(&self.skill_key)?;
+        crate::executor::validate_key_name(&self.retreat_key)?;
+        if self.pause_key.eq_ignore_ascii_case(&self.skill_key)
+            || self.pause_key.eq_ignore_ascii_case(&self.retreat_key)
+            || self.skill_key.eq_ignore_ascii_case(&self.retreat_key)
+        {
+            return Err("暂停、技能和撤退必须使用不同键位".to_string());
         }
         Ok(())
     }
@@ -84,6 +105,18 @@ impl AppSettings {
         }
         fs::rename(temporary, path)
     }
+}
+
+fn default_pause_key() -> String {
+    "Escape".to_string()
+}
+
+fn default_skill_key() -> String {
+    "D".to_string()
+}
+
+fn default_retreat_key() -> String {
+    "A".to_string()
 }
 
 fn temporary_path(path: &Path) -> PathBuf {

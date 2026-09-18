@@ -1,11 +1,12 @@
 mod geometry;
+mod keyboard;
 mod resources;
 mod touch;
 mod vision;
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
         atomic::{AtomicU64, Ordering},
     },
     thread,
@@ -17,15 +18,100 @@ use specta::Type;
 
 use crate::{
     axis::{DraftAxis, DraftEvent, DraftKind},
-    monitor::MonitorSnapshot,
+    monitor::{ClockQuality, MonitorSnapshot, MonitorSourceKind, ObservedBattleState},
     stage::StageCatalog,
 };
 
 use geometry::{ProjectionMap, direction_target, project_tile};
+use keyboard::{KeyboardInjector, parse_virtual_key};
 use resources::ExecutionResources;
 use touch::{ClientSize, TouchInjector};
 pub use vision::ExecutionVision;
-use vision::locate_operator;
+use vision::{OperatorMatch, changed_ratio, locate_operator, match_operator};
+
+const FRESH_FRAME_MAX_AGE: Duration = Duration::from_millis(350);
+const NEXT_FRAME_TIMEOUT: Duration = Duration::from_millis(750);
+
+pub fn validate_key_name(name: &str) -> Result<(), String> {
+    parse_virtual_key(name).map(|_| ())
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ExecutionReceiptStatus {
+    Confirmed,
+    Uncertain,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum PauseProofStatus {
+    #[default]
+    None,
+    Trusted,
+    Uncertain,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionReceipt {
+    pub run_id: String,
+    pub event_id: String,
+    pub receipt_sequence: u32,
+    pub planned_frame: u32,
+    pub observed_frame: Option<u32>,
+    pub source_timestamp_ns: Option<f64>,
+    pub status: ExecutionReceiptStatus,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionBindings {
+    pub pause_key: String,
+    pub skill_key: String,
+    pub retreat_key: String,
+    pub bindings_confirmed: bool,
+}
+
+impl Default for ExecutionBindings {
+    fn default() -> Self {
+        Self {
+            pause_key: "Escape".to_string(),
+            skill_key: "D".to_string(),
+            retreat_key: "A".to_string(),
+            bindings_confirmed: false,
+        }
+    }
+}
+
+impl ExecutionBindings {
+    pub fn validate(&self) -> Result<(), String> {
+        parse_virtual_key(&self.pause_key)?;
+        parse_virtual_key(&self.skill_key)?;
+        parse_virtual_key(&self.retreat_key)?;
+        if self.pause_key.eq_ignore_ascii_case(&self.skill_key)
+            || self.pause_key.eq_ignore_ascii_case(&self.retreat_key)
+            || self.skill_key.eq_ignore_ascii_case(&self.retreat_key)
+        {
+            return Err("暂停、技能和撤退必须使用不同键位".to_string());
+        }
+        Ok(())
+    }
+}
+
+impl From<&crate::settings::AppSettings> for ExecutionBindings {
+    fn from(settings: &crate::settings::AppSettings) -> Self {
+        Self {
+            pause_key: settings.pause_key.clone(),
+            skill_key: settings.skill_key.clone(),
+            retreat_key: settings.retreat_key.clone(),
+            bindings_confirmed: settings.bindings_confirmed,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -33,20 +119,12 @@ pub enum ProxyStatus {
     #[default]
     Disabled,
     Confirming,
+    Armed,
     Ready,
+    Pausing,
     Executing,
+    WaitingConfirmation,
     Error,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ProxyExecutionRecord {
-    pub sequence: u32,
-    pub frame: u32,
-    pub event_id: String,
-    pub kind: DraftKind,
-    pub success: bool,
-    pub message: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Type)]
@@ -55,33 +133,65 @@ pub struct ProxySnapshot {
     pub enabled: bool,
     pub status: ProxyStatus,
     pub message: Option<String>,
-    pub records: Vec<ProxyExecutionRecord>,
+    pub receipts: Vec<ExecutionReceipt>,
+    pub stop_reason: Option<String>,
+    pub pause_proof: PauseProofStatus,
+    pub pause_proof_message: Option<String>,
+    pub run_id: Option<String>,
 }
 
 pub struct SharedExecutor {
     abort_generation: Arc<AtomicU64>,
-    inner: Mutex<ProxyExecutor>,
+    inner: Arc<Mutex<ProxyExecutor>>,
     vision: Arc<ExecutionVision>,
+    worker: Arc<Mutex<WorkerState>>,
+    safety: Arc<RwLock<ExecutionSafetyState>>,
 }
 
 pub struct ProxyBatchResult {
-    pub records: Vec<ProxyExecutionRecord>,
+    pub kind: ProxyBatchKind,
+    pub receipts: Vec<ExecutionReceipt>,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProxyBatchKind {
+    Action,
+    PauseToggle,
+}
+
+#[derive(Default)]
+struct WorkerState {
+    busy: bool,
+    result: Option<ProxyBatchResult>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ExecutionSafetyState {
+    monitor: MonitorSnapshot,
+    clock_quality: ClockQuality,
+    clock_active: bool,
+    stage_matched: bool,
+    proxy_enabled: bool,
 }
 
 impl SharedExecutor {
     pub fn new(cache_root: std::path::PathBuf, catalog: Arc<StageCatalog>) -> Result<Self, String> {
         let abort_generation = Arc::new(AtomicU64::new(0));
         let vision = Arc::new(ExecutionVision::new());
+        let safety = Arc::new(RwLock::new(ExecutionSafetyState::default()));
         Ok(Self {
-            inner: Mutex::new(ProxyExecutor::new(
+            inner: Arc::new(Mutex::new(ProxyExecutor::new(
                 cache_root,
                 catalog,
                 Arc::clone(&abort_generation),
                 Arc::clone(&vision),
-            )?),
+                Arc::clone(&safety),
+            )?)),
             abort_generation,
             vision,
+            worker: Arc::new(Mutex::new(WorkerState::default())),
+            safety,
         })
     }
 
@@ -124,20 +234,135 @@ impl SharedExecutor {
         Ok(())
     }
 
-    pub fn execute(
+    pub fn submit(
         &self,
         events: &[DraftEvent],
+        run_id: &str,
         frame: u32,
         stage_id: &str,
         window_id: &str,
         monitor: &MonitorSnapshot,
-    ) -> ProxyBatchResult {
-        match self.inner.lock() {
-            Ok(mut executor) => executor.execute(events, frame, stage_id, window_id, monitor),
-            Err(_) => ProxyBatchResult {
-                records: Vec::new(),
-                error: Some("代理执行器状态不可用".to_string()),
-            },
+    ) -> Result<(), String> {
+        let mut worker = self
+            .worker
+            .lock()
+            .map_err(|_| "代理执行任务状态不可用".to_string())?;
+        if worker.busy {
+            return Err("已有代理执行事务正在运行".to_string());
+        }
+        worker.busy = true;
+        worker.result = None;
+        drop(worker);
+
+        let inner = Arc::clone(&self.inner);
+        let worker = Arc::clone(&self.worker);
+        let events = events.to_vec();
+        let run_id = run_id.to_string();
+        let stage_id = stage_id.to_string();
+        let window_id = window_id.to_string();
+        let monitor = monitor.clone();
+        thread::Builder::new()
+            .name("paused-execution".to_string())
+            .spawn(move || {
+                let result = match inner.lock() {
+                    Ok(mut executor) => {
+                        executor.execute(&events, &run_id, frame, &stage_id, &window_id, &monitor)
+                    }
+                    Err(_) => ProxyBatchResult {
+                        kind: ProxyBatchKind::Action,
+                        receipts: Vec::new(),
+                        error: Some("代理执行器状态不可用".to_string()),
+                    },
+                };
+                if let Ok(mut state) = worker.lock() {
+                    state.busy = false;
+                    state.result = Some(result);
+                }
+            })
+            .map_err(|error| {
+                if let Ok(mut worker) = self.worker.lock() {
+                    worker.busy = false;
+                }
+                format!("启动代理执行线程失败：{error}")
+            })?;
+        Ok(())
+    }
+
+    pub fn submit_pause_toggle(
+        &self,
+        window_id: &str,
+        monitor: &MonitorSnapshot,
+    ) -> Result<(), String> {
+        let mut worker = self
+            .worker
+            .lock()
+            .map_err(|_| "代理执行任务状态不可用".to_string())?;
+        if worker.busy {
+            return Err("已有代理执行事务正在运行".to_string());
+        }
+        worker.busy = true;
+        worker.result = None;
+        drop(worker);
+
+        let inner = Arc::clone(&self.inner);
+        let worker = Arc::clone(&self.worker);
+        let window_id = window_id.to_string();
+        let monitor = monitor.clone();
+        thread::Builder::new()
+            .name("pause-toggle".to_string())
+            .spawn(move || {
+                let result = match inner.lock() {
+                    Ok(mut executor) => executor.pause_toggle(&window_id, &monitor),
+                    Err(_) => ProxyBatchResult {
+                        kind: ProxyBatchKind::PauseToggle,
+                        receipts: Vec::new(),
+                        error: Some("代理执行器状态不可用".to_string()),
+                    },
+                };
+                if let Ok(mut state) = worker.lock() {
+                    state.busy = false;
+                    state.result = Some(result);
+                }
+            })
+            .map_err(|error| {
+                if let Ok(mut worker) = self.worker.lock() {
+                    worker.busy = false;
+                }
+                format!("启动暂停事务线程失败：{error}")
+            })?;
+        Ok(())
+    }
+
+    pub fn take_result(&self) -> Option<ProxyBatchResult> {
+        self.worker.lock().ok()?.result.take()
+    }
+
+    pub fn configure_bindings(&self, bindings: ExecutionBindings) -> Result<(), String> {
+        bindings.validate()?;
+        let mut executor = self
+            .inner
+            .lock()
+            .map_err(|_| "代理执行器状态不可用".to_string())?;
+        executor.bindings = bindings;
+        Ok(())
+    }
+
+    pub fn update_safety(
+        &self,
+        monitor: &MonitorSnapshot,
+        clock_quality: ClockQuality,
+        clock_active: bool,
+        stage_matched: bool,
+        proxy_enabled: bool,
+    ) {
+        if let Ok(mut safety) = self.safety.write() {
+            *safety = ExecutionSafetyState {
+                monitor: monitor.clone(),
+                clock_quality,
+                clock_active,
+                stage_matched,
+                proxy_enabled,
+            };
         }
     }
 }
@@ -148,7 +373,10 @@ struct ProxyExecutor {
     abort_generation: Arc<AtomicU64>,
     vision: Arc<ExecutionVision>,
     touch: TouchInjector,
+    keyboard: KeyboardInjector,
+    bindings: ExecutionBindings,
     next_record: u32,
+    safety: Arc<RwLock<ExecutionSafetyState>>,
 }
 
 impl ProxyExecutor {
@@ -157,6 +385,7 @@ impl ProxyExecutor {
         catalog: Arc<StageCatalog>,
         abort_generation: Arc<AtomicU64>,
         vision: Arc<ExecutionVision>,
+        safety: Arc<RwLock<ExecutionSafetyState>>,
     ) -> Result<Self, String> {
         Ok(Self {
             resources: ExecutionResources::new(cache_root)?,
@@ -164,27 +393,69 @@ impl ProxyExecutor {
             abort_generation,
             vision,
             touch: TouchInjector::new()?,
+            keyboard: KeyboardInjector::new(),
+            bindings: ExecutionBindings::default(),
             next_record: 1,
+            safety,
         })
     }
 
     fn execute(
         &mut self,
         events: &[DraftEvent],
+        run_id: &str,
         frame: u32,
         stage_id: &str,
         window_id: &str,
         monitor: &MonitorSnapshot,
     ) -> ProxyBatchResult {
+        if events.iter().any(|event| event.frame != frame) {
+            let mut receipts = Vec::with_capacity(events.len());
+            for (index, event) in events.iter().enumerate() {
+                receipts.push(ExecutionReceipt {
+                    run_id: run_id.to_string(),
+                    event_id: event.id.clone(),
+                    receipt_sequence: self.next_record,
+                    planned_frame: event.frame,
+                    observed_frame: Some(frame),
+                    source_timestamp_ns: monitor.last_source_timestamp_ns,
+                    status: if index == 0 {
+                        ExecutionReceiptStatus::Failed
+                    } else {
+                        ExecutionReceiptStatus::Cancelled
+                    },
+                    reason: if index == 0 {
+                        format!("目标 F{} 已跨过，当前为 F{frame}", event.frame)
+                    } else {
+                        "同帧前序操作已错过，未发送输入".to_string()
+                    },
+                });
+                self.next_record = self.next_record.saturating_add(1);
+            }
+            return ProxyBatchResult {
+                kind: ProxyBatchKind::Action,
+                receipts,
+                error: Some("目标帧已跨过，代理已停止且不会补发".to_string()),
+            };
+        }
         let prepared = (|| {
             if !monitor.trusted {
                 return Err("监控状态不可信".to_string());
+            }
+            if monitor.battle_state != crate::monitor::ObservedBattleState::Paused {
+                return Err("代理操作只能从可信暂停状态开始".to_string());
+            }
+            if monitor.cost_full || monitor.cost_phase.is_none() {
+                return Err("满费或费用不可见时无法证明暂停事务未推进".to_string());
             }
             let (hwnd, client) = TouchInjector::validate_window(window_id)?;
             let captured = self
                 .vision
                 .latest()
                 .ok_or_else(|| "尚未取得代理执行视觉帧".to_string())?;
+            if !captured.is_fresh(FRESH_FRAME_MAX_AGE) {
+                return Err("代理执行视觉帧已过期".to_string());
+            }
             if (captured.width as i32 - client.width).abs() > 2
                 || (captured.height as i32 - client.height).abs() > 2
             {
@@ -197,7 +468,8 @@ impl ProxyExecutor {
             Ok(prepared) => prepared,
             Err(message) => {
                 return ProxyBatchResult {
-                    records: Vec::new(),
+                    kind: ProxyBatchKind::Action,
+                    receipts: Vec::new(),
                     error: Some(message),
                 };
             }
@@ -205,44 +477,136 @@ impl ProxyExecutor {
         let generation = self.abort_generation.load(Ordering::Acquire);
         let abort_generation = Arc::clone(&self.abort_generation);
         let allowed = move || abort_generation.load(Ordering::Acquire) == generation;
-        let mut records = Vec::new();
-        for event in events {
-            let result = self.execute_event(event, &map, &captured, hwnd, client, &allowed);
-            records.push(ProxyExecutionRecord {
-                sequence: self.next_record,
-                frame,
-                event_id: event.id.clone(),
-                kind: event.kind,
-                success: result.is_ok(),
-                message: result
+        let mut receipts = Vec::new();
+        for (event_index, event) in events.iter().enumerate() {
+            let event_frame = self
+                .vision
+                .latest()
+                .filter(|latest| latest.sequence >= captured.sequence)
+                .unwrap_or_else(|| captured.clone());
+            let result = self.execute_event(
+                event,
+                EventContext {
+                    map: &map,
+                    captured: &event_frame,
+                    hwnd,
+                    client,
+                    window_id,
+                },
+                &allowed,
+            );
+            let receipt_status =
+                result
                     .as_ref()
-                    .map(|_| "代理执行完成".to_string())
-                    .unwrap_or_else(|message| message.clone()),
+                    .map(|result| result.status)
+                    .unwrap_or_else(|message| {
+                        if message.contains("输入结果未知") {
+                            ExecutionReceiptStatus::Uncertain
+                        } else if message.contains("取消") || message.contains("急停") {
+                            ExecutionReceiptStatus::Cancelled
+                        } else {
+                            ExecutionReceiptStatus::Failed
+                        }
+                    });
+            let reason = result
+                .as_ref()
+                .map(|result| result.reason.clone())
+                .unwrap_or_else(|message| message.clone());
+            let source_timestamp_ns = result
+                .as_ref()
+                .ok()
+                .map(|result| result.source_timestamp_ns as f64)
+                .or(Some(event_frame.source_timestamp_ns as f64));
+            receipts.push(ExecutionReceipt {
+                run_id: run_id.to_string(),
+                event_id: event.id.clone(),
+                receipt_sequence: self.next_record,
+                planned_frame: event.frame,
+                observed_frame: Some(frame),
+                source_timestamp_ns,
+                status: receipt_status,
+                reason: reason.clone(),
             });
             self.next_record = self.next_record.saturating_add(1);
-            if let Err(message) = result {
+            if receipt_status != ExecutionReceiptStatus::Confirmed {
                 self.touch.cancel();
+                self.keyboard.cancel();
+                for remaining in &events[event_index + 1..] {
+                    receipts.push(ExecutionReceipt {
+                        run_id: run_id.to_string(),
+                        event_id: remaining.id.clone(),
+                        receipt_sequence: self.next_record,
+                        planned_frame: remaining.frame,
+                        observed_frame: Some(frame),
+                        source_timestamp_ns: Some(event_frame.source_timestamp_ns as f64),
+                        status: ExecutionReceiptStatus::Cancelled,
+                        reason: "同帧前序操作未确认，未发送输入".to_string(),
+                    });
+                    self.next_record = self.next_record.saturating_add(1);
+                }
                 return ProxyBatchResult {
-                    records,
-                    error: Some(message),
+                    kind: ProxyBatchKind::Action,
+                    receipts,
+                    error: Some(reason),
                 };
             }
         }
         ProxyBatchResult {
-            records,
+            kind: ProxyBatchKind::Action,
+            receipts,
             error: None,
+        }
+    }
+
+    fn pause_toggle(&mut self, window_id: &str, monitor: &MonitorSnapshot) -> ProxyBatchResult {
+        let result = (|| {
+            self.validate_dynamic_safety(window_id, false)?;
+            if !monitor.trusted {
+                return Err("监控状态不可信".to_string());
+            }
+            if !self.bindings.bindings_confirmed {
+                return Err("发送暂停键前必须确认游戏键位".to_string());
+            }
+            let (_, client) = TouchInjector::validate_window(window_id)?;
+            let frame = self
+                .vision
+                .latest()
+                .ok_or_else(|| "尚未取得代理执行视觉帧".to_string())?;
+            if !frame.is_fresh(FRESH_FRAME_MAX_AGE) {
+                return Err("代理执行视觉帧已过期".to_string());
+            }
+            if frame.width.abs_diff(client.width as u32) > 2
+                || frame.height.abs_diff(client.height as u32) > 2
+            {
+                return Err("游戏窗口尺寸已变化".to_string());
+            }
+            let generation = self.abort_generation.load(Ordering::Acquire);
+            let abort_generation = Arc::clone(&self.abort_generation);
+            let key = parse_virtual_key(&self.bindings.pause_key)?;
+            self.keyboard.press(key, || {
+                abort_generation.load(Ordering::Acquire) == generation
+            })
+        })();
+        ProxyBatchResult {
+            kind: ProxyBatchKind::PauseToggle,
+            receipts: Vec::new(),
+            error: result.err(),
         }
     }
 
     fn execute_event(
         &mut self,
         event: &DraftEvent,
-        map: &ProjectionMap,
-        captured: &vision::CapturedFrame,
-        hwnd: windows::Win32::Foundation::HWND,
-        client: ClientSize,
+        context: EventContext<'_>,
         allowed: &impl Fn() -> bool,
-    ) -> Result<(), String> {
+    ) -> Result<ActionResult, String> {
+        let EventContext {
+            map,
+            captured,
+            hwnd,
+            client,
+            window_id,
+        } = context;
         let tile = event
             .tile
             .as_deref()
@@ -259,6 +623,8 @@ impl ProxyExecutor {
                 let avatar = locate_operator(captured, &templates)?;
                 let side = client_point(project_tile(tile, map, true)?, client);
                 self.touch.drag(hwnd, avatar, side, allowed)?;
+                let after_drop =
+                    self.fresh_frame_after(captured.sequence, client, window_id, allowed)?;
                 let direction = event
                     .direction
                     .ok_or_else(|| "部署操作缺少朝向".to_string())?;
@@ -268,25 +634,162 @@ impl ProxyExecutor {
                     side,
                     direction_target(side, direction, distance),
                     allowed,
-                )
+                )?;
+                let after =
+                    self.fresh_frame_after(after_drop.sequence, client, window_id, allowed)?;
+                let target_changed = changed_ratio(captured, &after, front, result_radius(client))?;
+                let match_result = match_operator(&after, &templates)?;
+                if target_changed >= 0.08 && match_result == OperatorMatch::Absent {
+                    Ok(ActionResult::confirmed(
+                        after.source_timestamp_ns,
+                        "部署结果已由部署栏和目标格子变化确认",
+                    ))
+                } else {
+                    Ok(ActionResult::uncertain(
+                        after.source_timestamp_ns,
+                        format!(
+                            "部署输入已发送，但结果证据不足（格子变化 {:.0}%，部署栏 {:?}）",
+                            target_changed * 100.0,
+                            match_result
+                        ),
+                    ))
+                }
             }
             DraftKind::Skill | DraftKind::Retreat => {
-                let pause_left = ratio_point((0.94, 0.07), client);
-                let pause_right = ratio_point((0.965, 0.07), client);
-                self.touch.tap(hwnd, pause_left, allowed)?;
+                if !self.bindings.bindings_confirmed {
+                    return Err("首次执行技能或撤退前必须确认游戏键位".to_string());
+                }
                 self.touch.tap(hwnd, front, allowed)?;
-                self.touch.tap(hwnd, pause_right, allowed)?;
-                thread::sleep(Duration::from_millis(50));
-                let offset = (client.height.min(client.width) as f64 * 0.11) as i32;
-                let button = if event.kind == DraftKind::Skill {
-                    (front.0 + offset, front.1 + offset)
+                let selected =
+                    self.fresh_frame_after(captured.sequence, client, window_id, allowed)?;
+                let key = if event.kind == DraftKind::Skill {
+                    parse_virtual_key(&self.bindings.skill_key)?
                 } else {
-                    (front.0 - offset, front.1 - offset)
+                    parse_virtual_key(&self.bindings.retreat_key)?
                 };
-                self.touch.tap(hwnd, button, allowed)
+                self.keyboard.press(key, allowed)?;
+                let after =
+                    self.fresh_frame_after(selected.sequence, client, window_id, allowed)?;
+                let next = self.fresh_frame_after(after.sequence, client, window_id, allowed)?;
+                let changed = changed_ratio(&selected, &after, front, result_radius(client))?;
+                let stable = changed_ratio(&after, &next, front, result_radius(client))?;
+                Ok(ActionResult::uncertain(
+                    next.source_timestamp_ns,
+                    format!(
+                        "键盘输入已发送；当前视觉只能确认选中区间，不能区分技能与撤退结果（变化 {:.0}%，后续变化 {:.0}%），请人工确认",
+                        changed * 100.0,
+                        stable * 100.0
+                    ),
+                ))
             }
         }
     }
+
+    fn fresh_frame_after(
+        &self,
+        sequence: u64,
+        client: ClientSize,
+        window_id: &str,
+        allowed: &impl Fn() -> bool,
+    ) -> Result<vision::CapturedFrame, String> {
+        if !allowed() {
+            return Err("代理执行已取消（输入结果未知）".to_string());
+        }
+        self.validate_dynamic_safety(window_id, true)?;
+        let (_, current) = TouchInjector::validate_window(window_id)?;
+        if current != client {
+            return Err("游戏窗口尺寸已变化".to_string());
+        }
+        let frame = self
+            .vision
+            .wait_after(sequence, NEXT_FRAME_TIMEOUT)
+            .ok_or_else(|| "等待新鲜代理执行画面超时".to_string())?;
+        if !frame.is_fresh(FRESH_FRAME_MAX_AGE) {
+            return Err("代理执行视觉帧已过期".to_string());
+        }
+        if !allowed() {
+            return Err("代理执行已取消（输入结果未知）".to_string());
+        }
+        self.validate_dynamic_safety(window_id, true)?;
+        if frame.width.abs_diff(client.width as u32) > 2
+            || frame.height.abs_diff(client.height as u32) > 2
+        {
+            return Err("游戏窗口尺寸已变化".to_string());
+        }
+        Ok(frame)
+    }
+
+    fn validate_dynamic_safety(
+        &self,
+        window_id: &str,
+        transaction_in_progress: bool,
+    ) -> Result<(), String> {
+        let safety = self
+            .safety
+            .read()
+            .map_err(|_| "执行安全状态不可用".to_string())?;
+        if !safety.proxy_enabled
+            || !safety.stage_matched
+            || !safety.clock_active
+            || safety.monitor.source_kind != MonitorSourceKind::Window
+            || safety.monitor.window_id.as_deref() != Some(window_id)
+            || !safety.monitor.trusted
+        {
+            return Err("窗口、关卡或监控安全状态已变化".to_string());
+        }
+        if safety.clock_quality == ClockQuality::Trusted {
+            return Ok(());
+        }
+        if transaction_in_progress
+            && safety.clock_quality == ClockQuality::Uncertain
+            && matches!(
+                safety.monitor.battle_state,
+                ObservedBattleState::Paused
+                    | ObservedBattleState::PointTwoXRunning
+                    | ObservedBattleState::DeployingOperator
+                    | ObservedBattleState::AdjustingOperatorFacing
+            )
+        {
+            return Ok(());
+        }
+        Err("可信时钟或暂停事务状态已变化".to_string())
+    }
+}
+
+struct EventContext<'a> {
+    map: &'a ProjectionMap,
+    captured: &'a vision::CapturedFrame,
+    hwnd: windows::Win32::Foundation::HWND,
+    client: ClientSize,
+    window_id: &'a str,
+}
+
+struct ActionResult {
+    status: ExecutionReceiptStatus,
+    source_timestamp_ns: u64,
+    reason: String,
+}
+
+impl ActionResult {
+    fn confirmed(source_timestamp_ns: u64, reason: impl Into<String>) -> Self {
+        Self {
+            status: ExecutionReceiptStatus::Confirmed,
+            source_timestamp_ns,
+            reason: reason.into(),
+        }
+    }
+
+    fn uncertain(source_timestamp_ns: u64, reason: impl Into<String>) -> Self {
+        Self {
+            status: ExecutionReceiptStatus::Uncertain,
+            source_timestamp_ns,
+            reason: reason.into(),
+        }
+    }
+}
+
+fn result_radius(client: ClientSize) -> u32 {
+    (client.width.min(client.height) as f64 * 0.06).round() as u32
 }
 
 fn client_point(point: (f64, f64), client: ClientSize) -> (i32, i32) {

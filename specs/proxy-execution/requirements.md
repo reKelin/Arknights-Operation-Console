@@ -1,11 +1,13 @@
 ---
-status: implemented
+status: superseded
 scope: proxy-execution
 depends_on:
   - specs/axislink-v2/requirements.md
 ---
 
 # 代理执行需求
+
+本规范的输入与急停部分已由 `specs/paused-execution/requirements.md` 取代；既有投影、资源和时间轴要求继续作为历史实现依据。
 
 - REQ-PROXY-001：真实输入必须通过明确的“代理执行”开关启用。
   - AC-PROXY-001：每次启动默认关闭；连续两次确认后开启；离关、换源、失焦、不可信、错关或急停时自动关闭。
