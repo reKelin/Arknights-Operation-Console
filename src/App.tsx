@@ -4,7 +4,9 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import appIcon from "../assets/app-icon-small.png";
 import {
   type AppSettings,
+  type ClockQuality,
   type CommandError,
+  type ConsoleMode,
   commands,
   type DraftDirection,
   type DraftEvent,
@@ -12,6 +14,7 @@ import {
   events,
   type GameWindowCandidate,
   type ObservedBattleState,
+  type RecordingAttempt,
   type RunnerSnapshot,
   type StageCatalogEntry,
   type UpdateEventInput,
@@ -42,6 +45,22 @@ const STATE_LABELS: Record<ObservedBattleState, string> = {
   deployingOperator: "部署中",
   adjustingOperatorFacing: "调整方向",
 };
+const MODE_TO_CONSOLE: Record<Mode, ConsoleMode> = {
+  live: "manualRecording",
+  video: "recordingAnalysis",
+  proxy: "proxy",
+};
+const CONSOLE_TO_MODE: Record<ConsoleMode, Mode> = {
+  manualRecording: "live",
+  recordingAnalysis: "video",
+  proxy: "proxy",
+};
+const CLOCK_QUALITY_LABELS: Record<ClockQuality, string> = {
+  waiting: "等待锚点",
+  trusted: "可信",
+  uncertain: "不确定",
+  lost: "已丢失",
+};
 
 function unwrap<T>(result: TypedResult<T>): T {
   if (result.status === "error") throw result.error;
@@ -71,9 +90,14 @@ function rangeLabel(frames: number): string {
   return seconds < 60 ? `${seconds} 秒` : `${Math.round(seconds / 60)} 分钟`;
 }
 
+function attemptLabel(attempt: RecordingAttempt): string {
+  const stage = attempt.stageId ? ` · ${attempt.stageId}` : "";
+  const status = attempt.status === "active" ? "进行中" : "已结束";
+  return `第 ${attempt.sequence} 局${stage} · ${status}`;
+}
+
 export default function App() {
   const [snapshot, setSnapshot] = useState<RunnerSnapshot | null>(null);
-  const [mode, setMode] = useState<Mode>("live");
   const [page, setPage] = useState<Page>("work");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewFrames, setViewFrames] = useState(900);
@@ -118,17 +142,6 @@ export default function App() {
       disposed = true;
       unlisten?.();
     };
-  }, []);
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    events.openBookmarkList
-      .listen(() => setPage("editor"))
-      .then((stop) => {
-        unlisten = stop;
-      })
-      .catch((reason) => setError(messageOf(reason)));
-    return () => unlisten?.();
   }, []);
 
   useEffect(() => {
@@ -212,13 +225,15 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const editing = ["INPUT", "SELECT", "TEXTAREA"].includes(
-        (event.target as HTMLElement).tagName,
-      );
+      const editing =
+        ["INPUT", "SELECT", "TEXTAREA"].includes(
+          (event.target as HTMLElement).tagName,
+        ) || (event.target as HTMLElement).isContentEditable;
+      if (editing) return;
       if (event.ctrlKey && event.key.toLowerCase() === "s") {
         event.preventDefault();
         exportAxis();
-      } else if (!editing && event.key.toLowerCase() === "h") {
+      } else if (event.key.toLowerCase() === "h") {
         event.preventDefault();
         setPage("editor");
       }
@@ -258,8 +273,9 @@ export default function App() {
       filters: [{ name: "游戏录屏", extensions: ["mkv", "mp4"] }],
     });
     if (typeof path === "string") {
-      setMode("video");
-      await run(() => commands.analyzeRecording(path));
+      if (await run(() => commands.setConsoleMode("recordingAnalysis"))) {
+        await run(() => commands.analyzeRecording(path));
+      }
     }
   }
 
@@ -284,6 +300,7 @@ export default function App() {
   const traceDurationFrames =
     recordingSegment?.gameDurationFrames ??
     snapshot.monitor.traceDurationFrames;
+  const mode = CONSOLE_TO_MODE[snapshot.consoleMode];
   const displayedFrame =
     mode === "video" && tracePreviewFrame !== null
       ? tracePreviewFrame
@@ -324,7 +341,9 @@ export default function App() {
               <button
                 aria-selected={mode === value}
                 key={value}
-                onClick={() => setMode(value)}
+                onClick={() =>
+                  run(() => commands.setConsoleMode(MODE_TO_CONSOLE[value]))
+                }
                 role="tab"
                 type="button"
               >
@@ -457,7 +476,12 @@ export default function App() {
               setSelectedId(event.id);
               setPage("editor");
             }}
-            onMove={(id, frame) => run(() => commands.moveEvent(id, frame))}
+            onMove={async (id, frame) => {
+              if (await run(() => commands.moveEvent(id, frame))) {
+                setSelectedId(id);
+                setPage("editor");
+              }
+            }}
             onSelect={setSelectedId}
             onViewFrames={setViewFrames}
             selectedId={selectedId}
@@ -469,7 +493,7 @@ export default function App() {
           <div className="timeline-footer">
             <span>
               {selected
-                ? `${KIND_LABELS[selected.kind]} · ${selected.label || selected.id} · F${selected.frame}${selected.complete ? "" : " · 待补全"}`
+                ? `${KIND_LABELS[selected.kind]} · ${selected.label || selected.id} · F${selected.frame}${selected.complete ? "" : " · 待补全"}${selected.timeConfirmation === "unconfirmed" ? " · 时间待确认" : ""}`
                 : snapshot.lastMessage || "右键操作点编辑；双击轨道新增操作"}
             </span>
             {mode === "video" && traceDurationFrames !== null && (
@@ -909,10 +933,15 @@ function AxisEditor({
     snapshot.axis.events[0] ??
     null;
   const [filter, setFilter] = useState<"all" | DraftKind>("all");
+  const [attemptFilter, setAttemptFilter] = useState("all");
   const [query, setQuery] = useState("");
   const visible = snapshot.axis.events.filter(
     (event) =>
       (filter === "all" || event.kind === filter) &&
+      (attemptFilter === "all" ||
+        (attemptFilter === "manual"
+          ? event.attemptId === null
+          : event.attemptId === attemptFilter)) &&
       (!query ||
         `${event.id} ${event.label ?? ""}`
           .toLowerCase()
@@ -960,6 +989,19 @@ function AxisEditor({
             ),
           )}
         </select>
+        <select
+          aria-label="筛选录制场次"
+          onChange={(event) => setAttemptFilter(event.target.value)}
+          value={attemptFilter}
+        >
+          <option value="all">全部场次</option>
+          <option value="manual">人工编辑</option>
+          {snapshot.recordingAttempts.map((attempt) => (
+            <option key={attempt.id} value={attempt.id}>
+              {attemptLabel(attempt)}
+            </option>
+          ))}
+        </select>
         <button
           onClick={() =>
             onRun(() =>
@@ -983,7 +1025,13 @@ function AxisEditor({
             >
               <span>{frameTime(event.frame)}</span>
               <strong>{event.label || KIND_LABELS[event.kind]}</strong>
-              <em>{event.complete ? KIND_LABELS[event.kind] : "待补全"}</em>
+              <em>
+                {!event.complete
+                  ? "待补全"
+                  : event.timeConfirmation === "unconfirmed"
+                    ? "时间待确认"
+                    : KIND_LABELS[event.kind]}
+              </em>
             </button>
           ))}
           {!visible.length && <p>没有匹配的操作。</p>}
@@ -993,7 +1041,16 @@ function AxisEditor({
             event={selected}
             key={selected.id}
             onDelete={() => onRun(() => commands.deleteEvent(selected.id))}
-            onSave={(input) => onRun(() => commands.updateEvent(input))}
+            onSave={async (input, manualCorrectionConfirmed) => {
+              if (!(await onRun(() => commands.updateEvent(input)))) return;
+              await onRun(() =>
+                commands.confirmEventTime({
+                  id: input.id,
+                  frame: input.frame,
+                  manualCorrectionConfirmed,
+                }),
+              );
+            }}
           />
         ) : (
           <div className="editor-empty">选择一个操作以编辑参数和备注。</div>
@@ -1077,7 +1134,7 @@ function EventForm({
   onDelete,
 }: {
   event: DraftEvent;
-  onSave: (input: UpdateEventInput) => void;
+  onSave: (input: UpdateEventInput, manualCorrectionConfirmed: boolean) => void;
   onDelete: () => void;
 }) {
   const [frame, setFrame] = useState(String(event.frame));
@@ -1088,20 +1145,31 @@ function EventForm({
     event.direction ?? "right",
   );
   const [label, setLabel] = useState(event.label ?? "");
+  const [manualCorrectionConfirmed, setManualCorrectionConfirmed] =
+    useState(false);
+  const frameNumber = Number(frame);
+  const outsideObservedRange =
+    Number.isFinite(frameNumber) &&
+    (frameNumber < event.frameRange.start ||
+      frameNumber > event.frameRange.end);
   return (
     <form
       className="event-form"
       onSubmit={(submitEvent) => {
         submitEvent.preventDefault();
-        onSave({
-          id: event.id,
-          frame: Number(frame),
-          kind,
-          operator: kind === "deploy" ? operator || null : null,
-          tile: kind === "bookmark" ? null : tile.trim().toUpperCase() || null,
-          direction: kind === "deploy" ? direction : null,
-          label: label || null,
-        });
+        onSave(
+          {
+            id: event.id,
+            frame: frameNumber,
+            kind,
+            operator: kind === "deploy" ? operator || null : null,
+            tile:
+              kind === "bookmark" ? null : tile.trim().toUpperCase() || null,
+            direction: kind === "deploy" ? direction : null,
+            label: label || null,
+          },
+          manualCorrectionConfirmed,
+        );
       }}
     >
       <h2>操作参数</h2>
@@ -1121,6 +1189,34 @@ function EventForm({
             )}
           </select>
         </label>
+        <div className="timing-evidence">
+          <strong>
+            时间{event.timeConfirmation === "unconfirmed" ? "待确认" : "已确认"}
+          </strong>
+          <span>
+            观测范围 F{event.frameRange.start}–F{event.frameRange.end} · 时钟
+            {CLOCK_QUALITY_LABELS[event.clockQuality]}
+          </span>
+          <span>
+            {event.sourceTimestampNs !== null &&
+            Number.isFinite(event.sourceTimestampNs)
+              ? `来源 ${event.sourceTimestampNs} ns`
+              : "人工输入或来源时间未知"}
+          </span>
+          {outsideObservedRange && (
+            <label>
+              <input
+                checked={manualCorrectionConfirmed}
+                onChange={(event) =>
+                  setManualCorrectionConfirmed(event.target.checked)
+                }
+                required
+                type="checkbox"
+              />
+              确认将时间人工校正到观测范围之外
+            </label>
+          )}
+        </div>
         <label>
           帧
           <input

@@ -7,7 +7,7 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	getSnapshot: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("get_snapshot")),
 	setRecording: (enabled: boolean) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_recording", { enabled })),
-	recordEvent: (kind: DraftKind) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("record_event", { kind })),
+	setConsoleMode: (mode: ConsoleMode) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_console_mode", { mode })),
 	recordBookmark: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("record_bookmark")),
 	shiftEvents: (ids: string[], delta: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("shift_events", { ids, delta })),
 	reorderEvent: (id: string, direction: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("reorder_event", { id, direction })),
@@ -15,6 +15,7 @@ export const commands = {
 	addEvent: (input: AddEventInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("add_event", { input })),
 	updateEvent: (input: UpdateEventInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_event", { input })),
 	moveEvent: (id: string, frame: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("move_event", { id, frame })),
+	confirmEventTime: (input: ConfirmEventTimeInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_event_time", { input })),
 	deleteEvent: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("delete_event", { id })),
 	setAxisMetadata: (input: AxisMetadataInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_axis_metadata", { input })),
 	importAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("import_axis", { path })),
@@ -38,7 +39,6 @@ export const commands = {
 
 /** Events */
 export const events = {
-	openBookmarkList: makeEvent<OpenBookmarkListEvent>("openBookmarkList"),
 	runnerSnapshot: makeEvent<RunnerSnapshotEvent>("runnerSnapshot"),
 };
 
@@ -91,6 +91,14 @@ export type CommandError = {
 	field: string | null,
 };
 
+export type ConfirmEventTimeInput = {
+	id: string,
+	frame: number,
+	manualCorrectionConfirmed: boolean,
+};
+
+export type ConsoleMode = "manualRecording" | "recordingAnalysis" | "proxy";
+
 export type DraftAxis = {
 	title: string,
 	stageId: string | null,
@@ -109,9 +117,19 @@ export type DraftEvent = {
 	direction: DraftDirection | null,
 	label: string | null,
 	complete: boolean,
+	attemptId: string | null,
+	sourceTimestampNs: number | null,
+	frameRange: EventFrameRange,
+	clockQuality: ClockQuality,
+	timeConfirmation: TimeConfirmation,
 };
 
 export type DraftKind = "bookmark" | "deploy" | "skill" | "retreat";
+
+export type EventFrameRange = {
+	start: number,
+	end: number,
+};
 
 export type GameWindowCandidate = {
 	id: string,
@@ -152,8 +170,6 @@ export type NoticeKind = "info" | "notify" | "dryRun" | "paused";
 
 export type ObservedBattleState = "unknown" | "notInBattle" | "battleBegin" | "oneXRunning" | "twoXRunning" | "pointTwoXRunning" | "paused" | "deployingOperator" | "adjustingOperatorFacing";
 
-export type OpenBookmarkListEvent = null;
-
 export type ProxyExecutionRecord = {
 	sequence: number,
 	frame: number,
@@ -171,6 +187,18 @@ export type ProxySnapshot = {
 };
 
 export type ProxyStatus = "disabled" | "confirming" | "ready" | "executing" | "error";
+
+export type RecordingAttempt = {
+	id: string,
+	sequence: number,
+	status: RecordingAttemptStatus,
+	stageId: string | null,
+	startedSourceTimestampNs: number | null,
+	endedSourceTimestampNs: number | null,
+	eventIds: string[],
+};
+
+export type RecordingAttemptStatus = "active" | "ended";
 
 export type RecordingSegment = {
 	index: number,
@@ -202,6 +230,8 @@ export type RunStrategy = "notify" | "pause" | "dryRun" | "proxy";
 
 export type RunnerSnapshot = {
 	axis: DraftAxis,
+	consoleMode: ConsoleMode,
+	recordingAttempts: RecordingAttempt[],
 	settings: AppSettings,
 	monitor: MonitorSnapshot,
 	clock: ClockSnapshot,
@@ -251,6 +281,8 @@ export type StageSafetySnapshot = {
 };
 
 export type StageSafetyStatus = "unverified" | "matched" | "mismatched";
+
+export type TimeConfirmation = "unconfirmed" | "observed" | "manuallyCorrected";
 
 export type UpdateEventInput = {
 	id: string,

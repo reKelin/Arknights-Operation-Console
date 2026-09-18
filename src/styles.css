@@ -696,6 +696,27 @@ kbd {
 .note-field {
   grid-column: 1 / -1;
 }
+.timing-evidence {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-raised);
+  color: var(--muted);
+  font-size: 12px;
+}
+.timing-evidence strong {
+  color: var(--text);
+}
+.timing-evidence label {
+  display: flex;
+  grid-column: auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
 .note-field textarea {
   min-height: 64px;
 }

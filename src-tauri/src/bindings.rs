@@ -74,6 +74,33 @@ pub enum RunStrategy {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+pub enum ConsoleMode {
+    ManualRecording,
+    RecordingAnalysis,
+    Proxy,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum RecordingAttemptStatus {
+    Active,
+    Ended,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingAttempt {
+    pub id: String,
+    pub sequence: u32,
+    pub status: RecordingAttemptStatus,
+    pub stage_id: Option<String>,
+    pub started_source_timestamp_ns: f64,
+    pub ended_source_timestamp_ns: Option<f64>,
+    pub event_ids: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub enum NoticeKind {
     Info,
     Notify,
@@ -118,8 +145,18 @@ pub struct UpdateEventInput {
 
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+pub struct ConfirmEventTimeInput {
+    pub id: String,
+    pub frame: u32,
+    pub manual_correction_confirmed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct RunnerSnapshot {
     pub axis: DraftAxis,
+    pub console_mode: ConsoleMode,
+    pub recording_attempts: Vec<RecordingAttempt>,
     pub settings: AppSettings,
     pub monitor: MonitorSnapshot,
     pub clock: ClockSnapshot,
@@ -144,8 +181,3 @@ pub struct RunnerSnapshot {
 #[serde(transparent)]
 #[tauri_specta(event_name = "runnerSnapshot")]
 pub struct RunnerSnapshotEvent(pub RunnerSnapshot);
-
-#[derive(Clone, Debug, Serialize, Type, Event)]
-#[serde(transparent)]
-#[tauri_specta(event_name = "openBookmarkList")]
-pub struct OpenBookmarkListEvent(pub ());
