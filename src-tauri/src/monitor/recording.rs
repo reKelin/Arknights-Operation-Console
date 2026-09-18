@@ -19,6 +19,9 @@ use super::{
     ocr::{StageOcrAccumulator, StageOcrRecognizer, crop_title},
 };
 
+#[cfg(test)]
+mod analysis;
+
 const OUTPUT_FPS: u64 = 30;
 
 pub struct RecordingSession {

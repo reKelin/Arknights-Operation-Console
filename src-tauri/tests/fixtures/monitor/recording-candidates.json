@@ -1,0 +1,51 @@
+{
+  "timeBase": "1/1000",
+  "cases": [
+    {
+      "name": "variable-rate-deployment",
+      "observations": [
+        { "pts": 0, "segment": 0, "gameStart": 0, "gameEnd": 0, "state": "oneXRunning", "confidence": 92, "trusted": true, "discontinuity": false },
+        { "pts": 34, "segment": 0, "gameStart": 1, "gameEnd": 1, "state": "oneXRunning", "confidence": 92, "trusted": true, "discontinuity": false },
+        { "pts": 67, "segment": 0, "gameStart": 2, "gameEnd": 2, "state": "deployingOperator", "confidence": 84, "trusted": true, "discontinuity": false },
+        { "pts": 101, "segment": 0, "gameStart": 3, "gameEnd": 3, "state": "deployingOperator", "confidence": 83, "trusted": true, "discontinuity": false },
+        { "pts": 134, "segment": 0, "gameStart": 4, "gameEnd": 5, "state": "adjustingOperatorFacing", "confidence": 82, "trusted": true, "discontinuity": false },
+        { "pts": 168, "segment": 0, "gameStart": 5, "gameEnd": 6, "state": "adjustingOperatorFacing", "confidence": 81, "trusted": true, "discontinuity": false },
+        { "pts": 201, "segment": 0, "gameStart": 7, "gameEnd": 7, "state": "oneXRunning", "confidence": 93, "trusted": true, "discontinuity": false },
+        { "pts": 235, "segment": 0, "gameStart": 8, "gameEnd": 8, "state": "oneXRunning", "confidence": 93, "trusted": true, "discontinuity": false }
+      ],
+      "expectedEvidence": ["deploymentGesture"]
+    },
+    {
+      "name": "selected-unit-operation-with-paused-game-clock",
+      "observations": [
+        { "pts": 0, "segment": 0, "gameStart": 40, "gameEnd": 40, "state": "pointTwoXRunning", "confidence": 80, "trusted": true, "discontinuity": false },
+        { "pts": 33, "segment": 0, "gameStart": 40, "gameEnd": 41, "state": "pointTwoXRunning", "confidence": 80, "trusted": true, "discontinuity": false },
+        { "pts": 66, "segment": 0, "gameStart": 41, "gameEnd": 41, "state": "paused", "confidence": 92, "trusted": true, "discontinuity": false },
+        { "pts": 100, "segment": 0, "gameStart": 41, "gameEnd": 41, "state": "paused", "confidence": 92, "trusted": true, "discontinuity": false },
+        { "pts": 133, "segment": 0, "gameStart": 42, "gameEnd": 42, "state": "twoXRunning", "confidence": 95, "trusted": true, "discontinuity": false },
+        { "pts": 166, "segment": 0, "gameStart": 44, "gameEnd": 44, "state": "twoXRunning", "confidence": 95, "trusted": true, "discontinuity": false }
+      ],
+      "expectedEvidence": ["selectedUnitInteraction"]
+    },
+    {
+      "name": "single-frame-state-noise",
+      "observations": [
+        { "pts": 0, "segment": 0, "gameStart": 0, "gameEnd": 0, "state": "oneXRunning", "confidence": 90, "trusted": true, "discontinuity": false },
+        { "pts": 33, "segment": 0, "gameStart": 1, "gameEnd": 1, "state": "deployingOperator", "confidence": 84, "trusted": true, "discontinuity": false },
+        { "pts": 66, "segment": 0, "gameStart": 2, "gameEnd": 2, "state": "adjustingOperatorFacing", "confidence": 82, "trusted": true, "discontinuity": false },
+        { "pts": 100, "segment": 0, "gameStart": 3, "gameEnd": 3, "state": "oneXRunning", "confidence": 90, "trusted": true, "discontinuity": false }
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "name": "discontinuity-does-not-complete-gesture",
+      "observations": [
+        { "pts": 0, "segment": 0, "gameStart": 10, "gameEnd": 10, "state": "deployingOperator", "confidence": 84, "trusted": true, "discontinuity": false },
+        { "pts": 33, "segment": 0, "gameStart": 11, "gameEnd": 11, "state": "deployingOperator", "confidence": 84, "trusted": true, "discontinuity": false },
+        { "pts": 500, "segment": 0, "gameStart": 20, "gameEnd": 25, "state": "adjustingOperatorFacing", "confidence": 82, "trusted": false, "discontinuity": true },
+        { "pts": 533, "segment": 0, "gameStart": 26, "gameEnd": 26, "state": "adjustingOperatorFacing", "confidence": 82, "trusted": true, "discontinuity": false }
+      ],
+      "expectedEvidence": ["interruptedInteraction"]
+    }
+  ]
+}
