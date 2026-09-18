@@ -22,7 +22,11 @@ use crate::{
         MonitorEventEnvelope, MonitorSnapshot, MonitorSourceKind, ObservedBattleState, ProxyClock,
         VisualObservation, confirm_candidate,
     },
-    session::{AxisRevisionSource, OperationSession, TakeoverStatus},
+    recording_continuation::{
+        RecordingAlignment, RecordingMergeError, RecordingMergeInput, RecordingMergeMode,
+        RecordingMergePreview, plan_recording_merge, resolve_recording_merge,
+    },
+    session::{AxisRevisionSource, OperationSession, RecordingMergeProvenance, TakeoverStatus},
     settings::AppSettings,
     stage::{
         StageCatalogEntry, StageIdentitySource, StageMapBounds, StageMatchStatus,
@@ -368,13 +372,6 @@ impl RunnerState {
             CommandError::field("invalid_candidate_confirmation", error.message, error.field)
         })?;
         validate_frame(operation.game_frame)?;
-        if let (Some(stage_id), Some((bounds_stage, bounds))) =
-            (self.axis.stage_id.as_deref(), self.stage_bounds.as_ref())
-            && stage_id == bounds_stage
-        {
-            validate_tile_in_map(&operation.tile, *bounds)
-                .map_err(|message| CommandError::field("invalid_tile", message, "tile"))?;
-        }
         let exact_trusted_time = candidate.clock_quality == ClockQuality::Trusted
             && candidate.game_frame_range.start == candidate.game_frame_range.end
             && operation.game_frame == candidate.game_frame_range.start;
@@ -429,6 +426,173 @@ impl RunnerState {
         self.staged_recording_events.push(event);
         self.last_message = Some(format!("已校对录屏候选，等待创建接续版本：{id}"));
         Ok(())
+    }
+
+    pub fn preview_recording_merge(
+        &self,
+        input: &RecordingMergeInput,
+    ) -> Result<RecordingMergePreview, CommandError> {
+        Ok(self.recording_merge_plan(input)?.preview())
+    }
+
+    pub fn create_recording_merge_revision(
+        &mut self,
+        input: RecordingMergeInput,
+    ) -> Result<(), CommandError> {
+        let mode = input.mode;
+        let (_, attempt_id, created_frame) = self.recording_merge_context(&input)?;
+        let plan = self.recording_merge_plan(&input)?;
+        let result = resolve_recording_merge(plan, &input.conflict_decisions)
+            .map_err(recording_merge_error)?;
+        let recording_analysis_id = result.recording_analysis_id.clone();
+        let segment_index = result.segment_index;
+        let candidate_ids = result.candidate_ids.clone();
+        let revision_id = self.session.create_recording_merge_revision(
+            &input.parent_revision_id,
+            attempt_id,
+            created_frame,
+            result.axis,
+            RecordingMergeProvenance {
+                recording_analysis_id: result.recording_analysis_id,
+                segment_index,
+                frame_offset: result.offset_frames,
+                candidate_ids,
+            },
+        )?;
+        self.axis = self.session.current_axis().clone();
+        self.staged_recording_events.retain(|event| {
+            event.source_recording_id.as_deref() != Some(recording_analysis_id.as_str())
+                || event.source_segment_index != Some(segment_index)
+        });
+        self.stage_bounds = None;
+        self.rebuild_triggered();
+        let label = match mode {
+            RecordingMergeMode::NewAxis => "录屏轴版本",
+            RecordingMergeMode::Continuation => "录屏接续版本",
+        };
+        self.last_message = Some(format!("已创建{label} {revision_id}"));
+        Ok(())
+    }
+
+    fn recording_merge_plan(
+        &self,
+        input: &RecordingMergeInput,
+    ) -> Result<crate::recording_continuation::RecordingMergePlan, CommandError> {
+        let (parent_axis, _, _) = self.recording_merge_context(input)?;
+        if self.monitor.recording_analysis_id.as_deref()
+            != Some(input.recording_analysis_id.as_str())
+        {
+            return Err(CommandError::new(
+                "recording_analysis_changed",
+                "录屏分析结果已变化，请重新检查接续",
+            ));
+        }
+        let segment = self
+            .monitor
+            .recording_segments
+            .iter()
+            .find(|segment| segment.index == input.segment_index)
+            .ok_or_else(|| CommandError::new("recording_segment_not_found", "未找到录屏区段"))?;
+        if input.source_anchor_frame > segment.game_duration_frames {
+            return Err(CommandError::field(
+                "recording_anchor_out_of_range",
+                "录屏接管锚点超出所选区段",
+                "sourceAnchorFrame",
+            ));
+        }
+        let candidates = self
+            .staged_recording_events
+            .iter()
+            .filter(|event| {
+                event.source_recording_id.as_deref() == Some(input.recording_analysis_id.as_str())
+                    && event.source_segment_index == Some(input.segment_index)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Err(CommandError::new(
+                "recording_merge_empty",
+                "所选录屏区段没有已校对候选",
+            ));
+        }
+        plan_recording_merge(
+            &parent_axis,
+            &input.recording_analysis_id,
+            input.segment_index,
+            RecordingAlignment {
+                source_anchor_frame: input.source_anchor_frame,
+                target_anchor_frame: input.target_anchor_frame,
+                offset_frames: input.offset_frames,
+                quality: ClockQuality::Uncertain,
+                manual_confirmation: input.manual_alignment_confirmed,
+            },
+            &candidates,
+        )
+        .map_err(recording_merge_error)
+    }
+
+    fn recording_merge_context(
+        &self,
+        input: &RecordingMergeInput,
+    ) -> Result<(DraftAxis, Option<String>, u32), CommandError> {
+        if self.pending_takeover.is_some() {
+            return Err(CommandError::new(
+                "takeover_cancelling",
+                "接管仍在归并最终执行回执，请稍候",
+            ));
+        }
+        if self.proxy.enabled {
+            return Err(CommandError::new(
+                "proxy_active",
+                "代理已武装，停止代理后才能创建接续版本",
+            ));
+        }
+        let parent = self
+            .session
+            .revision(&input.parent_revision_id)
+            .ok_or_else(|| CommandError::new("revision_not_found", "未找到接续父版本"))?;
+        match input.mode {
+            RecordingMergeMode::NewAxis => Ok((
+                DraftAxis {
+                    title: parent.axis.title.clone(),
+                    stage_id: self
+                        .monitor
+                        .recording_segments
+                        .iter()
+                        .find(|segment| segment.index == input.segment_index)
+                        .and_then(|segment| segment.stage_recognition.stage.as_ref())
+                        .map(|stage| stage.id.clone()),
+                    events: Vec::new(),
+                },
+                None,
+                input.target_anchor_frame,
+            )),
+            RecordingMergeMode::Continuation => {
+                if !matches!(
+                    parent.source,
+                    AxisRevisionSource::Takeover | AxisRevisionSource::RecordingMerge
+                ) || parent.attempt_id.is_none()
+                {
+                    return Err(CommandError::new(
+                        "recording_merge_parent_ineligible",
+                        "只能从本局接管或录屏接续版本继续合并",
+                    ));
+                }
+                if input.target_anchor_frame != parent.created_frame {
+                    return Err(CommandError::field(
+                        "recording_target_anchor_mismatch",
+                        "目标锚点必须使用父版本的接管帧",
+                        "targetAnchorFrame",
+                    ));
+                }
+                parent.axis_json_for_use()?;
+                Ok((
+                    parent.axis.clone(),
+                    parent.attempt_id.clone(),
+                    parent.created_frame,
+                ))
+            }
+        }
     }
 
     pub fn update_event(&mut self, input: UpdateEventInput) -> Result<(), CommandError> {
@@ -1786,6 +1950,17 @@ fn normalized_optional(value: Option<String>) -> Option<String> {
     })
 }
 
+fn recording_merge_error(error: RecordingMergeError) -> CommandError {
+    match error.candidate_id {
+        Some(candidate_id) => CommandError::field(
+            error.code,
+            format!("{}（候选 {candidate_id}）", error.message),
+            "candidateId",
+        ),
+        None => CommandError::new(error.code, error.message),
+    }
+}
+
 fn validate_frame(frame: u32) -> Result<(), CommandError> {
     if frame > i32::MAX as u32 {
         return Err(CommandError::field(
@@ -2151,5 +2326,51 @@ mod tests {
 
         assert_eq!(runner.console_mode, ConsoleMode::RecordingAnalysis);
         assert!(!runner.proxy.enabled);
+    }
+
+    #[test]
+    fn new_recording_axis_uses_empty_base_without_live_attempt() {
+        let start = Instant::now();
+        let mut runner = RunnerState::new(start);
+        runner.add_event(30, DraftKind::Skill).unwrap();
+        let input = RecordingMergeInput {
+            mode: RecordingMergeMode::NewAxis,
+            parent_revision_id: runner.session.current_revision_id.clone(),
+            recording_analysis_id: "recording-analysis-000001".to_string(),
+            segment_index: 0,
+            source_anchor_frame: 60,
+            target_anchor_frame: 900,
+            offset_frames: 840,
+            manual_alignment_confirmed: true,
+            conflict_decisions: Vec::new(),
+        };
+
+        let (base, attempt_id, created_frame) = runner.recording_merge_context(&input).unwrap();
+
+        assert!(base.events.is_empty());
+        assert_eq!(attempt_id, None);
+        assert_eq!(created_frame, 900);
+    }
+
+    #[test]
+    fn continuation_rejects_manual_revision_without_attempt() {
+        let start = Instant::now();
+        let runner = RunnerState::new(start);
+        let input = RecordingMergeInput {
+            mode: RecordingMergeMode::Continuation,
+            parent_revision_id: runner.session.current_revision_id.clone(),
+            recording_analysis_id: "recording-analysis-000001".to_string(),
+            segment_index: 0,
+            source_anchor_frame: 0,
+            target_anchor_frame: 0,
+            offset_frames: 0,
+            manual_alignment_confirmed: true,
+            conflict_decisions: Vec::new(),
+        };
+
+        assert_eq!(
+            runner.recording_merge_context(&input).unwrap_err().code,
+            "recording_merge_parent_ineligible"
+        );
     }
 }

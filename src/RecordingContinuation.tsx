@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import type {
+  RecordingMergeInput,
+  RecordingMergePreview,
+} from "./generated/bindings";
 
 export type ContinuationRevisionOption = {
   id: string;
@@ -14,51 +18,33 @@ export type ContinuationSegmentOption = {
   candidateCount: number;
 };
 
-export type ContinuationConflict = {
-  candidateId: string;
-  existingEventId: string;
-  frame: number;
-  operation: string;
-};
-
-export type ContinuationPreview = {
-  conflicts: ContinuationConflict[];
-  skippedBeforeAnchor: number;
-};
-
-export type ContinuationRequest = {
-  parentRevisionId: string;
-  segmentIndex: number;
-  sourceAnchorFrame: number;
-  targetAnchorFrame: number;
-  offsetFrames: number;
-  manualAlignmentConfirmed: boolean;
-  conflictDecisions: Array<{
-    candidateId: string;
-    decision: "keepCandidate" | "excludeCandidate";
-  }>;
-};
-
 type Props = {
+  recordingAnalysisId: string;
   revisions: ContinuationRevisionOption[];
   segments: ContinuationSegmentOption[];
-  onPreview: (request: ContinuationRequest) => Promise<ContinuationPreview>;
-  onCreate: (request: ContinuationRequest) => Promise<boolean>;
+  onPreview: (
+    request: RecordingMergeInput,
+  ) => Promise<RecordingMergePreview | null>;
+  onCreate: (request: RecordingMergeInput) => Promise<boolean>;
 };
 
 export default function RecordingContinuation({
+  recordingAnalysisId,
   revisions,
   segments,
   onPreview,
   onCreate,
 }: Props) {
-  const firstRevision = revisions.find((revision) => revision.eligible) ?? null;
-  const [revisionId, setRevisionId] = useState(firstRevision?.id ?? "");
+  const firstEligibleRevisionId =
+    revisions.find((revision) => revision.eligible)?.id ?? null;
+  const [mode, setMode] = useState<"newAxis" | "continuation">("newAxis");
+  const [revisionId, setRevisionId] = useState(revisions[0]?.id ?? "");
   const [segmentIndex, setSegmentIndex] = useState(segments[0]?.index ?? 0);
   const [sourceAnchorFrame, setSourceAnchorFrame] = useState(0);
+  const [newAxisTargetFrame, setNewAxisTargetFrame] = useState(0);
   const [manualAlignmentConfirmed, setManualAlignmentConfirmed] =
     useState(false);
-  const [preview, setPreview] = useState<ContinuationPreview | null>(null);
+  const [preview, setPreview] = useState<RecordingMergePreview | null>(null);
   const [decisions, setDecisions] = useState<
     Record<string, "keepCandidate" | "excludeCandidate">
   >({});
@@ -66,12 +52,19 @@ export default function RecordingContinuation({
     () => revisions.find((candidate) => candidate.id === revisionId) ?? null,
     [revisionId, revisions],
   );
-  const targetAnchorFrame = revision?.createdFrame ?? 0;
+  const targetAnchorFrame =
+    mode === "newAxis" ? newAxisTargetFrame : (revision?.createdFrame ?? 0);
   const offsetFrames = targetAnchorFrame - sourceAnchorFrame;
 
   useEffect(() => {
-    if (!revision?.eligible && firstRevision) setRevisionId(firstRevision.id);
-  }, [firstRevision, revision]);
+    if (
+      mode === "continuation" &&
+      !revision?.eligible &&
+      firstEligibleRevisionId
+    ) {
+      setRevisionId(firstEligibleRevisionId);
+    }
+  }, [firstEligibleRevisionId, mode, revision]);
 
   useEffect(() => {
     if (
@@ -82,9 +75,11 @@ export default function RecordingContinuation({
     }
   }, [segmentIndex, segments]);
 
-  function request(): ContinuationRequest {
+  function request(): RecordingMergeInput {
     return {
+      mode,
       parentRevisionId: revisionId,
+      recordingAnalysisId,
       segmentIndex,
       sourceAnchorFrame,
       targetAnchorFrame,
@@ -99,7 +94,7 @@ export default function RecordingContinuation({
   if (!revisions.length || !segments.length) {
     return (
       <section className="continuation-panel continuation-panel--empty">
-        需要一个接管版本和一个已完成分析的录屏区段，才能创建接续版本。
+        需要一个会话版本和一个已完成分析的录屏区段，才能创建录屏轴。
       </section>
     );
   }
@@ -112,11 +107,28 @@ export default function RecordingContinuation({
     <section className="continuation-panel" aria-label="录屏接续合并">
       <header>
         <div>
-          <strong>接续到本局版本</strong>
-          <span>父版本保持不变；只合入源锚点后的已确认候选</span>
+          <strong>
+            {mode === "newAxis" ? "创建录屏轴" : "接续到本局版本"}
+          </strong>
+          <span>旧版本保持不变；只合入源锚点后的已确认候选</span>
         </div>
         <label>
-          接管版本
+          生成方式
+          <select
+            onChange={(event) => {
+              setMode(event.target.value as "newAxis" | "continuation");
+              setPreview(null);
+            }}
+            value={mode}
+          >
+            <option value="newAxis">新建录屏轴</option>
+            <option disabled={!firstEligibleRevisionId} value="continuation">
+              接续本局版本
+            </option>
+          </select>
+        </label>
+        <label>
+          {mode === "newAxis" ? "父版本（只读）" : "接管版本"}
           <select
             onChange={(event) => {
               setRevisionId(event.target.value);
@@ -126,7 +138,7 @@ export default function RecordingContinuation({
           >
             {revisions.map((option) => (
               <option
-                disabled={!option.eligible}
+                disabled={mode === "continuation" && !option.eligible}
                 key={option.id}
                 value={option.id}
               >
@@ -167,10 +179,24 @@ export default function RecordingContinuation({
           />
         </label>
         <span>
-          F{sourceAnchorFrame} → 本局 F{targetAnchorFrame} · 偏移{" "}
+          录屏 F{sourceAnchorFrame} → 轴 F{targetAnchorFrame} · 偏移{" "}
           {offsetFrames >= 0 ? "+" : ""}
           {offsetFrames}
         </span>
+        {mode === "newAxis" && (
+          <label>
+            轴目标帧
+            <input
+              min="0"
+              onChange={(event) => {
+                setNewAxisTargetFrame(Number(event.target.value));
+                setPreview(null);
+              }}
+              type="number"
+              value={newAxisTargetFrame}
+            />
+          </label>
+        )}
         <label className="continuation-confirmation">
           <input
             checked={manualAlignmentConfirmed}
@@ -179,13 +205,19 @@ export default function RecordingContinuation({
             }
             type="checkbox"
           />
-          已核对录屏与接管帧
+          已核对录屏源锚点与轴目标帧
         </label>
         <button
-          disabled={!revision?.eligible || !manualAlignmentConfirmed}
+          disabled={
+            !revision ||
+            (mode === "continuation" && !revision.eligible) ||
+            !manualAlignmentConfirmed
+          }
           onClick={async () => {
             setDecisions({});
-            setPreview(await onPreview(request()));
+            setPreview(
+              await onPreview({ ...request(), conflictDecisions: [] }),
+            );
           }}
           type="button"
         >
@@ -195,10 +227,13 @@ export default function RecordingContinuation({
 
       {preview && (
         <div className="continuation-preview">
-          <span>接管前候选已排除 {preview.skippedBeforeAnchor} 个</span>
+          <span>
+            将合入 {preview.candidateCount} 个候选；源锚点前已排除{" "}
+            {preview.skippedBeforeAnchor} 个
+          </span>
           {preview.conflicts.map((conflict) => (
             <label key={`${conflict.candidateId}-${conflict.existingEventId}`}>
-              F{conflict.frame} {conflict.operation} 与{" "}
+              F{conflict.alignedFrame} {conflict.kind} · {conflict.tile} 与{" "}
               {conflict.existingEventId} 冲突
               <select
                 onChange={(event) =>

@@ -25,6 +25,7 @@ use monitor::{
     CandidateConfirmation, GameWindowCandidate, MonitorConnectionState, MonitorManager,
     MonitorSourceKind, VisionConfig,
 };
+use recording_continuation::{RecordingMergeInput, RecordingMergePreview};
 use runner::RunnerState;
 use settings::AppSettings;
 use specta_typescript::Typescript;
@@ -212,6 +213,26 @@ fn confirm_recording_candidate(
     };
     let mut runner = locked(&runner_state)?;
     runner.confirm_recording_candidate(&candidate, &recording_analysis_id, input)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn preview_recording_merge(
+    input: RecordingMergeInput,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RecordingMergePreview, CommandError> {
+    locked(&state)?.preview_recording_merge(&input)
+}
+
+#[tauri::command]
+#[specta::specta]
+fn create_recording_merge_revision(
+    input: RecordingMergeInput,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.create_recording_merge_revision(input)?;
     Ok(runner.snapshot())
 }
 
@@ -648,6 +669,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             move_event,
             confirm_event_time,
             confirm_recording_candidate,
+            preview_recording_merge,
+            create_recording_merge_revision,
             delete_event,
             set_axis_metadata,
             import_axis,

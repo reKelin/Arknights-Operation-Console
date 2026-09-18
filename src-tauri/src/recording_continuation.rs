@@ -42,6 +42,35 @@ pub struct RecordingConflictDecision {
     pub decision: RecordingConflictDecisionKind,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum RecordingMergeMode {
+    NewAxis,
+    Continuation,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingMergeInput {
+    pub mode: RecordingMergeMode,
+    pub parent_revision_id: String,
+    pub recording_analysis_id: String,
+    pub segment_index: u32,
+    pub source_anchor_frame: u32,
+    pub target_anchor_frame: u32,
+    pub offset_frames: i32,
+    pub manual_alignment_confirmed: bool,
+    pub conflict_decisions: Vec<RecordingConflictDecision>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingMergePreview {
+    pub conflicts: Vec<RecordingMergeConflict>,
+    pub skipped_before_anchor: u32,
+    pub candidate_count: u32,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordingMergeError {
     pub code: &'static str,
@@ -57,7 +86,7 @@ pub struct RecordingMergePlan {
     pub recording_analysis_id: String,
     pub segment_index: u32,
     pub offset_frames: i32,
-    pub skipped_before_anchor: usize,
+    pub skipped_before_anchor: u32,
 }
 
 #[derive(Debug)]
@@ -88,7 +117,7 @@ pub fn plan_recording_merge(
         .map(|event| event.id.as_str())
         .collect::<HashSet<_>>();
     let mut batch_candidate_ids = HashSet::new();
-    let mut skipped_before_anchor = 0;
+    let mut skipped_before_anchor = 0_u32;
     let mut aligned_candidates = Vec::new();
 
     for candidate in candidates {
@@ -190,6 +219,16 @@ pub fn plan_recording_merge(
         offset_frames: alignment.offset_frames,
         skipped_before_anchor,
     })
+}
+
+impl RecordingMergePlan {
+    pub fn preview(&self) -> RecordingMergePreview {
+        RecordingMergePreview {
+            conflicts: self.conflicts.clone(),
+            skipped_before_anchor: self.skipped_before_anchor,
+            candidate_count: self.aligned_candidates.len() as u32,
+        }
+    }
 }
 
 pub fn resolve_recording_merge(
