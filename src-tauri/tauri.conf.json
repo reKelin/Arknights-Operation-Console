@@ -31,6 +31,14 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
+    "windows": {
+      "wix": {
+        "upgradeCode": "8922d649-2b95-5acf-9e15-736f7d7a599a"
+      },
+      "nsis": {
+        "installerHooks": "./windows/upgrade-hooks.nsh"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
