@@ -75,16 +75,8 @@
 
 ## Git
 
-- 开始实质改动前检查适用规则、当前分支、工作区、暂存区、未跟踪文件、分支起点和近期提交历史。
-- 边界明确且改动较大的独立功能性修改才需要创建 `<type>/<topic>` 主题分支。
-- 主题分支的 `type` 使用 `feat`、`fix`、`refactor`、`docs`、`test` 或 `chore`。
-- 一个 commit 只有一个可独立回滚的逻辑目的。提交信息使用 `<type>(<scope>): <简洁中文动作>`。
-- 只暂存当前 commit 的明确文件或 hunks；提交前检查 staged diff 和 `git diff --check`。
-- 未经用户明确授权，不得 commit、push、merge、amend、rebase、squash、force push、跳过 hooks、删除分支或丢弃工作区内容。
-- PR 以边界明确、可整体验收的特定功能更新为单位创建，可以包含完成该功能所需的规范、代码、测试、文档及同一功能范围内的小缺陷修复；不按发布版本聚合无关功能，也不机械地为一个版本或单个小缺陷各建一个 PR。
-- 主题分支通过 GitHub Pull Request 的 squash merge 合入 `main`，不使用 merge commit。
-- Release 必须聚合多个已合入的功能与缺陷修复，通常覆盖复数 PR；单个小修改、单个普通缺陷或单个 PR 不单独发布版本，先合入 `main` 并等待后续批量发版。
-- Release 说明固定使用 `## 亮点`、`## 新增`、`## 改进`、`## 修复`、`## 文档`、`## 其他`；`## 亮点` 下每项使用 `###` 标题和描述，其余分类中的每个条目末尾必须补充指向对应 GitHub Pull Request 的 PR 编号超链接，格式为 `([#12](https://github.com/<owner>/<repo>/pull/12))`；空分类保留标题。
+- 如果当前环境提供 `git-workflow` Skill，必须先读取并遵循。
+- 用户允许提交或推送时，只操作当前任务相关的改动，不夹带无关文件、凭据或环境配置。
 
 ## 文档与规范
 
