@@ -78,6 +78,8 @@ pub struct DraftEvent {
     pub label: Option<String>,
     pub complete: bool,
     pub attempt_id: Option<String>,
+    pub source_candidate_id: Option<String>,
+    pub source_segment_index: Option<u32>,
     pub source_timestamp_ns: Option<f64>,
     pub frame_range: EventFrameRange,
     pub clock_quality: ClockQuality,
@@ -97,6 +99,8 @@ impl DraftEvent {
             label: None,
             complete: false,
             attempt_id: None,
+            source_candidate_id: None,
+            source_segment_index: None,
             source_timestamp_ns: None,
             frame_range: EventFrameRange {
                 start: frame,
@@ -279,6 +283,8 @@ fn complete_event(id: &str, frame: u32, order: u32, kind: DraftKind, label: &str
         label: Some(label.to_string()),
         complete: true,
         attempt_id: None,
+        source_candidate_id: None,
+        source_segment_index: None,
         source_timestamp_ns: None,
         frame_range: EventFrameRange {
             start: frame,
@@ -387,6 +393,8 @@ fn event_from_value(value: &Value, order: u32) -> Result<DraftEvent, CommandErro
             .map(ToString::to_string),
         complete: false,
         attempt_id: None,
+        source_candidate_id: None,
+        source_segment_index: None,
         source_timestamp_ns: None,
         frame_range: EventFrameRange {
             start: object["frame"].as_u64().expect("validated frame") as u32,
