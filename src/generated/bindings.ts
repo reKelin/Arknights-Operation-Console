@@ -16,6 +16,7 @@ export const commands = {
 	updateEvent: (input: UpdateEventInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_event", { input })),
 	moveEvent: (id: string, frame: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("move_event", { id, frame })),
 	confirmEventTime: (input: ConfirmEventTimeInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_event_time", { input })),
+	confirmRecordingCandidate: (input: CandidateConfirmation) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_recording_candidate", { input })),
 	deleteEvent: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("delete_event", { id })),
 	setAxisMetadata: (input: AxisMetadataInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_axis_metadata", { input })),
 	importAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("import_axis", { path })),
@@ -52,6 +53,22 @@ export type AddEventInput = {
 	kind: DraftKind,
 };
 
+export type AnalysisCandidate = {
+	id: string,
+	segmentIndex: number,
+	sourceStart: SourceTimestamp,
+	sourceEnd: SourceTimestamp,
+	gameFrameRange: GameFrameRange,
+	clockQuality: ClockQuality,
+	kind: CandidateActionKind | null,
+	operator: string | null,
+	tile: string | null,
+	direction: FacingDirection | null,
+	evidence: CandidateEvidence,
+	confidence: number,
+	unconfirmedFields: UnconfirmedField[],
+};
+
 export type AppSettings = {
 	version: number,
 	theme: AppTheme,
@@ -85,6 +102,20 @@ export type AxisRevision = {
 export type AxisRevisionSource = "imported" | "manual" | "takeover" | "recordingMerge";
 
 export type BattleStatus = "waiting" | "running" | "paused" | "ended";
+
+export type CandidateActionKind = "deploy" | "skill" | "retreat";
+
+export type CandidateConfirmation = {
+	candidateId: string,
+	kind: CandidateActionKind,
+	gameFrame: number,
+	operator: string | null,
+	tile: string | null,
+	direction: FacingDirection | null,
+	manualTimeConfirmation: boolean,
+};
+
+export type CandidateEvidence = "deploymentGesture" | "selectedUnitInteraction" | "interruptedInteraction";
 
 export type ClockAnchor = {
 	frame: number,
@@ -140,6 +171,8 @@ export type DraftEvent = {
 	label: string | null,
 	complete: boolean,
 	attemptId: string | null,
+	sourceCandidateId: string | null,
+	sourceSegmentIndex: number | null,
 	sourceTimestampNs: number | null,
 	frameRange: EventFrameRange,
 	clockQuality: ClockQuality,
@@ -165,6 +198,13 @@ export type ExecutionReceipt = {
 };
 
 export type ExecutionReceiptStatus = "confirmed" | "uncertain" | "failed" | "cancelled";
+
+export type FacingDirection = "up" | "right" | "down" | "left";
+
+export type GameFrameRange = {
+	start: number,
+	end: number,
+};
 
 export type GameWindowCandidate = {
 	id: string,
@@ -197,6 +237,7 @@ export type MonitorSnapshot = {
 	traceDurationFrames: number | null,
 	tracePoints: RecordingTracePoint[],
 	recordingSegments: RecordingSegment[],
+	recordingCandidates: AnalysisCandidate[],
 	stageRecognition: StageRecognition,
 };
 
@@ -309,6 +350,16 @@ export type RunnerSnapshot = {
 
 export type RunnerSnapshotEvent = RunnerSnapshot;
 
+export type SourceTimeBase = {
+	numerator: number,
+	denominator: number,
+};
+
+export type SourceTimestamp = {
+	rawPts: string,
+	timeBase: SourceTimeBase,
+};
+
 export type StageCatalogEntry = {
 	id: string,
 	code: string,
@@ -359,6 +410,8 @@ export type TakeoverState = {
 export type TakeoverStatus = "idle" | "cancelling" | "awaitingPauseProof" | "recording" | "unknown";
 
 export type TimeConfirmation = "unconfirmed" | "observed" | "manuallyCorrected";
+
+export type UnconfirmedField = "actionKind" | "gameFrame" | "operator" | "tile" | "direction";
 
 export type UpdateEventInput = {
 	id: string,
