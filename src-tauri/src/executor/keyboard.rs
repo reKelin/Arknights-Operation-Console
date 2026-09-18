@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, thread, time::Duration};
 
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -59,6 +59,7 @@ impl KeyboardInjector {
         }
         self.send(key, false)?;
         self.active.insert(key);
+        thread::sleep(Duration::from_millis(16));
         if !allowed() {
             self.cancel();
             return Err("代理执行已取消（输入结果未知）".to_string());
