@@ -11,8 +11,9 @@ use crate::{
     },
     executor::{ProxyExecutionRecord, ProxySnapshot, ProxyStatus},
     monitor::{
-        ClockTransition, MonitorEvent, MonitorSnapshot, MonitorSourceKind, ObservationClock,
-        ObservedBattleState,
+        ClockMode, ClockQuality, ClockSnapshot, ClockTransition, HumanClock, MonitorEvent,
+        MonitorEventEnvelope, MonitorSnapshot, MonitorSourceKind, ObservedBattleState, ProxyClock,
+        VisualObservation,
     },
     settings::AppSettings,
     stage::{
@@ -30,7 +31,9 @@ pub struct RunnerState {
     axis: DraftAxis,
     settings: AppSettings,
     monitor: MonitorSnapshot,
-    clock: ObservationClock,
+    human_clock: HumanClock,
+    proxy_clock: ProxyClock,
+    clock_mode: ClockMode,
     frame: u32,
     status: BattleStatus,
     speed: u8,
@@ -68,7 +71,9 @@ impl RunnerState {
             axis: DraftAxis::empty(),
             settings,
             monitor: MonitorSnapshot::default(),
-            clock: ObservationClock::default(),
+            human_clock: HumanClock::default(),
+            proxy_clock: ProxyClock::default(),
+            clock_mode: ClockMode::Human,
             frame: 0,
             status: BattleStatus::Waiting,
             speed: 0,
@@ -114,7 +119,7 @@ impl RunnerState {
                 .last_observation_at
                 .is_some_and(|last| now.saturating_duration_since(last) > OBSERVATION_TIMEOUT)
         {
-            let update = self.clock.freeze();
+            let update = self.freeze_clock();
             if update.active {
                 self.status = BattleStatus::Paused;
             }
@@ -142,6 +147,7 @@ impl RunnerState {
             axis: self.axis.clone(),
             settings: self.settings.clone(),
             monitor: self.monitor.clone(),
+            clock: self.clock_snapshot(),
             stage_safety: self.stage_safety(),
             frame: self.frame,
             time: format_frame(self.frame, self.settings.frames_per_cost),
@@ -446,6 +452,7 @@ impl RunnerState {
             if self.monitor.source_kind != MonitorSourceKind::Window
                 || self.monitor.window_id.is_none()
                 || !self.monitor.trusted
+                || self.clock_snapshot().quality != ClockQuality::Trusted
                 || self.stage_safety().status != StageSafetyStatus::Matched
                 || !matches!(self.status, BattleStatus::Running | BattleStatus::Paused)
             {
@@ -476,6 +483,7 @@ impl RunnerState {
     pub fn complete_proxy_enable(&mut self) -> Result<(), CommandError> {
         if self.monitor.source_kind != MonitorSourceKind::Window
             || !self.monitor.trusted
+            || self.clock_snapshot().quality != ClockQuality::Trusted
             || self.stage_safety().status != StageSafetyStatus::Matched
             || !matches!(self.status, BattleStatus::Running | BattleStatus::Paused)
         {
@@ -486,6 +494,16 @@ impl RunnerState {
             ));
         }
         self.proxy.enabled = true;
+        if let Some(handoff) = self.human_clock.trusted_handoff() {
+            self.proxy_clock.accept_handoff(handoff);
+            self.clock_mode = ClockMode::Proxy;
+        } else {
+            self.disable_proxy("可信时钟交接失败，代理执行未启用");
+            return Err(CommandError::new(
+                "clock_handoff_failed",
+                "可信时钟交接失败，代理执行未启用",
+            ));
+        }
         self.proxy.status = ProxyStatus::Ready;
         self.proxy.message = Some("代理执行已启用；F12 可随时急停".to_string());
         Ok(())
@@ -519,12 +537,50 @@ impl RunnerState {
         }
     }
 
+    fn clock_snapshot(&self) -> ClockSnapshot {
+        match self.clock_mode {
+            ClockMode::Human => self.human_clock.snapshot(),
+            ClockMode::Proxy => self.proxy_clock.snapshot(),
+        }
+    }
+
+    fn observe_clock(&mut self, observation: &VisualObservation) -> crate::monitor::ClockUpdate {
+        match self.clock_mode {
+            ClockMode::Human => self.human_clock.observe(observation),
+            ClockMode::Proxy => self.proxy_clock.observe(observation),
+        }
+    }
+
+    fn mark_clock_gap(&mut self, dropped: u32) -> crate::monitor::ClockUpdate {
+        match self.clock_mode {
+            ClockMode::Human => self.human_clock.mark_observation_gap(dropped),
+            ClockMode::Proxy => self.proxy_clock.mark_observation_gap(dropped),
+        }
+    }
+
+    fn freeze_clock(&mut self) -> crate::monitor::ClockUpdate {
+        match self.clock_mode {
+            ClockMode::Human => self.human_clock.freeze(),
+            ClockMode::Proxy => self.proxy_clock.freeze(),
+        }
+    }
+
+    fn try_return_to_human_clock(&mut self) {
+        if self.clock_mode == ClockMode::Proxy
+            && let Some(handoff) = self.proxy_clock.trusted_handoff()
+        {
+            self.human_clock.accept_handoff(handoff);
+            self.clock_mode = ClockMode::Human;
+        }
+    }
+
     fn disable_proxy(&mut self, message: &str) {
         self.proxy.enabled = false;
         self.proxy.status = ProxyStatus::Disabled;
         self.proxy.message = Some(message.to_string());
         self.proxy_confirm_deadline = None;
         self.pending_execution.clear();
+        self.try_return_to_human_clock();
     }
 
     pub fn set_always_on_top(&mut self, enabled: bool) {
@@ -554,7 +610,9 @@ impl RunnerState {
     }
 
     pub fn reset_monitor_clock(&mut self, message: &str) {
-        self.clock = ObservationClock::default();
+        self.human_clock = HumanClock::default();
+        self.proxy_clock = ProxyClock::default();
+        self.clock_mode = ClockMode::Human;
         self.frame = 0;
         self.status = BattleStatus::Waiting;
         self.speed = 0;
@@ -567,8 +625,24 @@ impl RunnerState {
         self.last_message = Some(message.to_string());
     }
 
-    pub fn apply_monitor_event(&mut self, event: MonitorEvent, received_at: Instant) {
-        match event {
+    pub fn apply_monitor_event(&mut self, envelope: MonitorEventEnvelope, received_at: Instant) {
+        if envelope.dropped_before > 0 {
+            let update = self.mark_clock_gap(envelope.dropped_before);
+            self.frame = update.frame;
+            self.speed = 0;
+            self.error_frames = update.uncertainty_frames.min(u32::from(u16::MAX)) as u16;
+            self.status = if update.active {
+                BattleStatus::Paused
+            } else {
+                BattleStatus::Waiting
+            };
+            self.disable_proxy("监控观测丢失，代理执行已关闭");
+            self.last_message = Some(format!(
+                "丢失 {} 条监控观测，计时等待锚点恢复",
+                envelope.dropped_before
+            ));
+        }
+        match envelope.event {
             MonitorEvent::Observation(observation) => {
                 self.last_observation_at = Some(received_at);
                 if self.axis.stage_id.is_none()
@@ -587,10 +661,14 @@ impl RunnerState {
                         .map(|stage| stage.id.clone());
                 }
                 let previous_frame = self.frame;
-                let update = self.clock.observe(&observation);
+                let update = self.observe_clock(&observation);
                 self.frame = update.frame;
-                self.speed = update.speed;
-                self.error_frames = update.error_frames.min(u32::from(u16::MAX)) as u16;
+                self.speed = match update.speed_fifths {
+                    0 => 0,
+                    10 => 2,
+                    _ => 1,
+                };
+                self.error_frames = update.uncertainty_frames.min(u32::from(u16::MAX)) as u16;
                 self.status = if !update.active {
                     BattleStatus::Waiting
                 } else if matches!(
@@ -608,7 +686,10 @@ impl RunnerState {
                         self.last_message = Some("已识别到关卡运行，计时开始".to_string());
                         self.dispatch_events(0);
                     }
-                    ClockTransition::Advanced if self.frame > previous_frame => {
+                    ClockTransition::Advanced
+                        if self.frame > previous_frame
+                            && update.quality == ClockQuality::Trusted =>
+                    {
                         self.dispatch_events(self.frame);
                     }
                     ClockTransition::Exited => {
@@ -634,7 +715,7 @@ impl RunnerState {
                 }
             }
             MonitorEvent::Error(message) => {
-                let update = self.clock.freeze();
+                let update = self.freeze_clock();
                 if update.active {
                     self.status = BattleStatus::Paused;
                 }
@@ -646,6 +727,9 @@ impl RunnerState {
                 self.last_message = Some(message);
             }
             MonitorEvent::RecordingProgress { .. } | MonitorEvent::RecordingReady { .. } => {}
+        }
+        if !self.proxy.enabled {
+            self.try_return_to_human_clock();
         }
     }
 
@@ -868,17 +952,22 @@ mod tests {
     use super::*;
     use crate::monitor::VisualObservation;
 
-    fn observation(timestamp: u64, state: ObservedBattleState) -> MonitorEvent {
-        MonitorEvent::Observation(VisualObservation {
-            capture_timestamp_ns: timestamp,
-            battle_state: state,
-            confidence: 90,
-            cost_phase: None,
-            cost_total: 30,
-            cost_full: false,
-            stage_recognition: None,
-            title_candidate: false,
-        })
+    fn observation(timestamp: u64, state: ObservedBattleState) -> MonitorEventEnvelope {
+        MonitorEventEnvelope {
+            sequence: timestamp.saturating_add(1),
+            source_timestamp_ns: Some(timestamp),
+            dropped_before: 0,
+            event: MonitorEvent::Observation(VisualObservation {
+                capture_timestamp_ns: timestamp,
+                battle_state: state,
+                confidence: 90,
+                cost_phase: None,
+                cost_total: 30,
+                cost_full: false,
+                stage_recognition: None,
+                title_candidate: false,
+            }),
+        }
     }
 
     fn stage(id: &str) -> StageCatalogEntry {
@@ -890,23 +979,28 @@ mod tests {
         }
     }
 
-    fn observation_with_stage(timestamp: u64, id: &str) -> MonitorEvent {
-        MonitorEvent::Observation(VisualObservation {
-            capture_timestamp_ns: timestamp,
-            battle_state: ObservedBattleState::OneXRunning,
-            confidence: 90,
-            cost_phase: None,
-            cost_total: 30,
-            cost_full: false,
-            stage_recognition: Some(crate::stage::StageRecognition {
-                status: StageMatchStatus::Matched,
-                raw_text: "TEST-1\n测试关卡".to_string(),
-                stage: Some(stage(id)),
-                candidates: vec![stage(id)],
-                warning: None,
+    fn observation_with_stage(timestamp: u64, id: &str) -> MonitorEventEnvelope {
+        MonitorEventEnvelope {
+            sequence: timestamp.saturating_add(1),
+            source_timestamp_ns: Some(timestamp),
+            dropped_before: 0,
+            event: MonitorEvent::Observation(VisualObservation {
+                capture_timestamp_ns: timestamp,
+                battle_state: ObservedBattleState::OneXRunning,
+                confidence: 90,
+                cost_phase: None,
+                cost_total: 30,
+                cost_full: false,
+                stage_recognition: Some(crate::stage::StageRecognition {
+                    status: StageMatchStatus::Matched,
+                    raw_text: "TEST-1\n测试关卡".to_string(),
+                    stage: Some(stage(id)),
+                    candidates: vec![stage(id)],
+                    warning: None,
+                }),
+                title_candidate: false,
             }),
-            title_candidate: false,
-        })
+        }
     }
 
     fn confirm_axis_stage(runner: &mut RunnerState) {
