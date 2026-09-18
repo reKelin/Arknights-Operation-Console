@@ -1411,7 +1411,10 @@ mod tests {
         assert_eq!(event.attempt_id.as_deref(), Some("attempt-000001"));
         assert_eq!(event.source_timestamp_ns, Some(1_000_000_000.0));
         assert_eq!(event.frame_range.start, 0);
-        assert_eq!(runner.recording_attempts[0].event_ids, [event.id.clone()]);
+        assert_eq!(
+            runner.recording_attempts[0].event_ids,
+            std::slice::from_ref(&event.id)
+        );
     }
 
     #[test]
