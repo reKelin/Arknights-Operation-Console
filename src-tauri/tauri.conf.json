@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Arknights Operation Runner",
+  "productName": "Arknights Operation Console",
   "version": "0.0.7",
   "identifier": "io.github.kelin.arknights-operation-runner",
   "build": {
@@ -13,11 +13,11 @@
     "windows": [
       {
         "label": "main",
-        "title": "Arknights Operation Runner",
+        "title": "Arknights Operation Console",
         "width": 1100,
-        "height": 420,
+        "height": 280,
         "minWidth": 860,
-        "minHeight": 340,
+        "minHeight": 280,
         "resizable": true,
         "decorations": false,
         "alwaysOnTop": true,
