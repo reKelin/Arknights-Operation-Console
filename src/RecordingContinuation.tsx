@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type ContinuationRevisionOption = {
   id: string;
@@ -68,6 +68,19 @@ export default function RecordingContinuation({
   );
   const targetAnchorFrame = revision?.createdFrame ?? 0;
   const offsetFrames = targetAnchorFrame - sourceAnchorFrame;
+
+  useEffect(() => {
+    if (!revision?.eligible && firstRevision) setRevisionId(firstRevision.id);
+  }, [firstRevision, revision]);
+
+  useEffect(() => {
+    if (
+      !segments.some((segment) => segment.index === segmentIndex) &&
+      segments[0]
+    ) {
+      setSegmentIndex(segments[0].index);
+    }
+  }, [segmentIndex, segments]);
 
   function request(): ContinuationRequest {
     return {
