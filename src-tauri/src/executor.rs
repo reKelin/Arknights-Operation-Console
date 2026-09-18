@@ -491,6 +491,7 @@ impl ProxyExecutor {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn execute(
         &mut self,
         events: &[DraftEvent],
@@ -738,7 +739,7 @@ impl ProxyExecutor {
             let abort_generation = Arc::clone(&self.abort_generation);
             let allowed = || abort_generation.load(Ordering::Acquire) == generation;
             let key = parse_virtual_key(&self.bindings.pause_key)?;
-            self.keyboard.press(key, &allowed)?;
+            self.keyboard.press(key, allowed)?;
 
             let deadline = Instant::now() + NEXT_FRAME_TIMEOUT;
             let mut seen_sequence = monitor.last_event_sequence.unwrap_or(0.0);

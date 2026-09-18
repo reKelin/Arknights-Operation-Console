@@ -31,6 +31,7 @@ type TimelineProps = {
   tracePoints: RecordingTracePoint[];
   viewFrames: number;
   selectedId: string | null;
+  editable: boolean;
   onSelect: (id: string) => void;
   onCreate: (frame: number, kind: DraftKind) => void;
   onMove: (id: string, frame: number) => void;
@@ -52,6 +53,7 @@ export default function Timeline({
   tracePoints,
   viewFrames,
   selectedId,
+  editable,
   onSelect,
   onCreate,
   onMove,
@@ -137,6 +139,7 @@ export default function Timeline({
     event: ReactPointerEvent<HTMLButtonElement>,
     point: DraftEvent,
   ) {
+    if (!editable) return;
     if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     setDrag({ id: point.id, frame: point.frame });
@@ -145,6 +148,7 @@ export default function Timeline({
   }
 
   function openCreate(event: ReactMouseEvent<HTMLFieldSetElement>) {
+    if (!editable) return;
     if ((event.target as HTMLElement).closest("[data-axis-point]")) return;
     setCreateFrame(frameFromPointer(event.clientX));
   }

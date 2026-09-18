@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 pub use clock::{
-    ClockMode, ClockQuality, ClockSnapshot, ClockTransition, ClockUpdate, HumanClock,
+    ClockAnchor, ClockMode, ClockQuality, ClockSnapshot, ClockTransition, ClockUpdate, HumanClock,
     ObservationClock, ProxyClock,
 };
 pub use vision::{VisionConfig, VisualObservation, analyze_bgra};

@@ -61,6 +61,12 @@ const CLOCK_QUALITY_LABELS: Record<ClockQuality, string> = {
   uncertain: "不确定",
   lost: "已丢失",
 };
+const REVISION_SOURCE_LABELS = {
+  imported: "导入",
+  manual: "人工",
+  takeover: "接管续录",
+  recordingMerge: "录屏接续",
+} as const;
 
 function unwrap<T>(result: TypedResult<T>): T {
   if (result.status === "error") throw result.error;
@@ -301,6 +307,17 @@ export default function App() {
     recordingSegment?.gameDurationFrames ??
     snapshot.monitor.traceDurationFrames;
   const mode = CONSOLE_TO_MODE[snapshot.consoleMode];
+  const revisionEditable =
+    snapshot.session.currentRevisionId ===
+    snapshot.session.activeRecordingRevisionId;
+  const pendingReceipts = snapshot.proxy.receipts.filter(
+    (receipt) =>
+      receipt.status === "uncertain" &&
+      (receipt.runId === snapshot.proxy.runId ||
+        snapshot.session.takeover.uncertainReceiptSequences.includes(
+          receipt.receiptSequence,
+        )),
+  );
   const displayedFrame =
     mode === "video" && tracePreviewFrame !== null
       ? tracePreviewFrame
@@ -426,18 +443,74 @@ export default function App() {
             onToggleRecording={() =>
               run(() => commands.setRecording(!snapshot.recording))
             }
+            onRun={run}
             snapshot={snapshot}
           />
 
+          {pendingReceipts.map((receipt) => (
+            <div className="receipt-confirmation" key={receipt.receiptSequence}>
+              <span>
+                {receipt.eventId} 的执行结果待确认 · {receipt.reason}
+              </span>
+              <button
+                onClick={() =>
+                  run(() =>
+                    commands.resolveExecutionReceipt({
+                      receiptSequence: receipt.receiptSequence,
+                      confirmed: true,
+                    }),
+                  )
+                }
+                type="button"
+              >
+                已完成
+              </button>
+              <button
+                onClick={() =>
+                  run(() =>
+                    commands.resolveExecutionReceipt({
+                      receiptSequence: receipt.receiptSequence,
+                      confirmed: false,
+                    }),
+                  )
+                }
+                type="button"
+              >
+                未完成
+              </button>
+            </div>
+          ))}
+
           <div className="axis-heading">
-            <button
-              className="axis-title"
-              onClick={() => setPage("editor")}
-              type="button"
-            >
-              <strong>{snapshot.axis.title}</strong>
-              <span>{snapshot.axis.events.length} 个操作</span>
-            </button>
+            <div className="axis-title-group">
+              <button
+                className="axis-title"
+                onClick={() => setPage("editor")}
+                type="button"
+              >
+                <strong>{snapshot.axis.title}</strong>
+                <span>{snapshot.axis.events.length} 个操作</span>
+              </button>
+              <select
+                aria-label="轴版本"
+                disabled={snapshot.proxy.enabled}
+                onChange={(event) =>
+                  run(() => commands.selectAxisRevision(event.target.value))
+                }
+                value={snapshot.session.currentRevisionId}
+              >
+                {snapshot.session.revisions.map((revision) => (
+                  <option key={revision.id} value={revision.id}>
+                    v{revision.sequence} ·{" "}
+                    {REVISION_SOURCE_LABELS[revision.source]}
+                    {revision.id === snapshot.session.activeRecordingRevisionId
+                      ? " · 续录中"
+                      : ""}
+                  </option>
+                ))}
+              </select>
+              {!revisionEditable && <em>旧版本只读</em>}
+            </div>
             <div className="axis-actions">
               <button onClick={importAxis} type="button">
                 导入
@@ -468,6 +541,7 @@ export default function App() {
 
           <Timeline
             currentFrame={displayedFrame}
+            editable={revisionEditable}
             events={snapshot.axis.events}
             onCreate={(frame, kind) =>
               run(() => commands.addEvent({ frame, kind }))
@@ -597,6 +671,9 @@ type ModeHeroProps = {
   onToggleRecording: () => void;
   onChooseRecording: () => void;
   onEdit: () => void;
+  onRun: (
+    operation: () => Promise<TypedResult<RunnerSnapshot>>,
+  ) => Promise<boolean>;
 };
 
 function ModeHero({
@@ -607,6 +684,7 @@ function ModeHero({
   onToggleRecording,
   onChooseRecording,
   onEdit,
+  onRun,
 }: ModeHeroProps) {
   const stageWarning =
     snapshot.monitor.sourceKind !== "none" &&
@@ -636,14 +714,22 @@ function ModeHero({
           <>
             <span>下一操作</span>
             <strong>
-              {next
-                ? `${KIND_LABELS[next.kind]} · ${next.label || next.id}`
-                : "暂无后续操作"}
+              {snapshot.session.takeover.status === "cancelling" ||
+              snapshot.session.takeover.status === "awaitingPauseProof"
+                ? snapshot.session.takeover.status === "cancelling"
+                  ? "接管中 · 正在归并最终回执"
+                  : "接管中 · 正在确认游戏保持暂停"
+                : snapshot.session.takeover.status === "unknown"
+                  ? "接管状态未知 · 暂停或时间锚点待确认"
+                  : next
+                    ? `${KIND_LABELS[next.kind]} · ${next.label || next.id}`
+                    : "暂无后续操作"}
             </strong>
             <small>
-              {snapshot.recording
-                ? "P 记录待分类操作；H 整理"
-                : "进入关卡后自动计时"}
+              {snapshot.session.takeover.message ??
+                (snapshot.recording
+                  ? "P 记录待分类操作；H 整理"
+                  : "进入关卡后自动计时")}
             </small>
           </>
         )}
@@ -663,8 +749,17 @@ function ModeHero({
         {mode === "proxy" && (
           <>
             <span>代理指挥</span>
-            <strong>暂停执行事务尚未接入</strong>
-            <small>完成键位确认、状态回执与接管续录后开放</small>
+            <strong>
+              {snapshot.proxy.message ??
+                (snapshot.proxy.enabled ? "代理已武装" : "等待武装")}
+            </strong>
+            <small>
+              {snapshot.proxy.runId
+                ? `${snapshot.proxy.runId} · 暂停证明 ${snapshot.proxy.pauseProof}`
+                : snapshot.settings.bindingsConfirmed
+                  ? "用于下一局：可信 F0 后开始执行"
+                  : "请先在设置中确认暂停、技能与撤退键位"}
+            </small>
           </>
         )}
       </div>
@@ -674,6 +769,10 @@ function ModeHero({
           <>
             <button
               className="button--primary"
+              disabled={
+                snapshot.session.takeover.status === "cancelling" ||
+                snapshot.session.takeover.status === "awaitingPauseProof"
+              }
               onClick={onToggleRecording}
               type="button"
             >
@@ -693,11 +792,35 @@ function ModeHero({
             选择录屏
           </button>
         )}
-        {mode === "proxy" && (
-          <button disabled title="v0.1.1 接入暂停执行事务后开放" type="button">
-            代理执行尚不可用
-          </button>
-        )}
+        {mode === "proxy" &&
+          (snapshot.proxy.enabled ? (
+            <>
+              {snapshot.proxy.runId && (
+                <button
+                  className="button--primary"
+                  onClick={() => onRun(() => commands.takeoverNow())}
+                  type="button"
+                >
+                  立即接管 <kbd>K</kbd>
+                </button>
+              )}
+              <button
+                onClick={() => onRun(() => commands.emergencyStop())}
+                type="button"
+              >
+                停止代理
+              </button>
+            </>
+          ) : (
+            <button
+              className="button--primary"
+              disabled={!snapshot.settings.bindingsConfirmed}
+              onClick={() => onRun(() => commands.requestProxyExecution())}
+              type="button"
+            >
+              用于下一局代理
+            </button>
+          ))}
       </div>
     </section>
   );
@@ -731,10 +854,23 @@ function SettingsPage({
   const [gameUiScale, setGameUiScale] = useState(
     String(snapshot.settings.gameUiScale),
   );
+  const [pauseKey, setPauseKey] = useState(
+    snapshot.settings.pauseKey ?? "Escape",
+  );
+  const [skillKey, setSkillKey] = useState(snapshot.settings.skillKey ?? "D");
+  const [retreatKey, setRetreatKey] = useState(
+    snapshot.settings.retreatKey ?? "A",
+  );
 
   function updateSettings(input: Partial<AppSettings>) {
     return onRun(() =>
-      commands.updateSettings({ ...snapshot.settings, ...input }),
+      commands.updateSettings({
+        ...snapshot.settings,
+        pauseKey,
+        skillKey,
+        retreatKey,
+        ...input,
+      }),
     );
   }
 
@@ -862,6 +998,9 @@ function SettingsPage({
             <SettingRow label="导出作战轴" note="Console 位于前台时">
               <kbd>Ctrl S</kbd>
             </SettingRow>
+            <SettingRow label="即时接管" note="代理运行且游戏窗口位于前台时">
+              <kbd>K</kbd>
+            </SettingRow>
           </>
         )}
         {tab === "execution" && (
@@ -875,12 +1014,40 @@ function SettingsPage({
               </button>
             </SettingRow>
             <SettingRow
-              label="代理执行"
-              note="等待暂停事务、键位确认与结果回执接入"
+              label="暂停键"
+              note="部署、技能和撤退均在暂停事务中执行"
             >
-              <button disabled type="button">
-                尚不可用
-              </button>
+              <input
+                onBlur={() => updateSettings({ pauseKey })}
+                onChange={(event) => setPauseKey(event.target.value)}
+                value={pauseKey}
+              />
+            </SettingRow>
+            <SettingRow label="技能键">
+              <input
+                onBlur={() => updateSettings({ skillKey })}
+                onChange={(event) => setSkillKey(event.target.value)}
+                value={skillKey}
+              />
+            </SettingRow>
+            <SettingRow label="撤退键">
+              <input
+                onBlur={() => updateSettings({ retreatKey })}
+                onChange={(event) => setRetreatKey(event.target.value)}
+                value={retreatKey}
+              />
+            </SettingRow>
+            <SettingRow
+              label="确认游戏键位"
+              note="更改任一键位后必须重新确认；确认仅解锁下一次代理武装"
+            >
+              <input
+                checked={snapshot.settings.bindingsConfirmed ?? false}
+                onChange={(event) =>
+                  updateSettings({ bindingsConfirmed: event.target.checked })
+                }
+                type="checkbox"
+              />
             </SettingRow>
           </>
         )}
@@ -928,6 +1095,9 @@ function AxisEditor({
   onRun,
   onSearchStages,
 }: AxisEditorProps) {
+  const editable =
+    snapshot.session.currentRevisionId ===
+    snapshot.session.activeRecordingRevisionId;
   const selected =
     snapshot.axis.events.find((event) => event.id === selectedId) ??
     snapshot.axis.events[0] ??
@@ -961,11 +1131,18 @@ function AxisEditor({
           ← 返回
         </button>
       </div>
-      <AxisMetadata
-        snapshot={snapshot}
-        onRun={onRun}
-        onSearchStages={onSearchStages}
-      />
+      {!editable && (
+        <div className="readonly-notice">
+          旧轴版本仅供查看和导出；切回续录版本后可编辑。
+        </div>
+      )}
+      <fieldset className="editor-fieldset" disabled={!editable}>
+        <AxisMetadata
+          snapshot={snapshot}
+          onRun={onRun}
+          onSearchStages={onSearchStages}
+        />
+      </fieldset>
       <div className="editor-toolbar">
         <input
           aria-label="搜索操作"
@@ -1003,6 +1180,7 @@ function AxisEditor({
           ))}
         </select>
         <button
+          disabled={!editable}
           onClick={() =>
             onRun(() =>
               commands.addEvent({ frame: snapshot.frame, kind: "bookmark" }),
@@ -1037,21 +1215,23 @@ function AxisEditor({
           {!visible.length && <p>没有匹配的操作。</p>}
         </div>
         {selected ? (
-          <EventForm
-            event={selected}
-            key={selected.id}
-            onDelete={() => onRun(() => commands.deleteEvent(selected.id))}
-            onSave={async (input, manualCorrectionConfirmed) => {
-              if (!(await onRun(() => commands.updateEvent(input)))) return;
-              await onRun(() =>
-                commands.confirmEventTime({
-                  id: input.id,
-                  frame: input.frame,
-                  manualCorrectionConfirmed,
-                }),
-              );
-            }}
-          />
+          <fieldset className="editor-fieldset" disabled={!editable}>
+            <EventForm
+              event={selected}
+              key={selected.id}
+              onDelete={() => onRun(() => commands.deleteEvent(selected.id))}
+              onSave={async (input, manualCorrectionConfirmed) => {
+                if (!(await onRun(() => commands.updateEvent(input)))) return;
+                await onRun(() =>
+                  commands.confirmEventTime({
+                    id: input.id,
+                    frame: input.frame,
+                    manualCorrectionConfirmed,
+                  }),
+                );
+              }}
+            />
+          </fieldset>
         ) : (
           <div className="editor-empty">选择一个操作以编辑参数和备注。</div>
         )}

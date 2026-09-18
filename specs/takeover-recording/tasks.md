@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: takeover-recording
 depends_on:
   - specs/takeover-recording/requirements.md

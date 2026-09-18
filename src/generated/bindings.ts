@@ -20,9 +20,12 @@ export const commands = {
 	setAxisMetadata: (input: AxisMetadataInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_axis_metadata", { input })),
 	importAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("import_axis", { path })),
 	exportAxis: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("export_axis", { path })),
+	exportAxisRevision: (path: string, revisionId: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("export_axis_revision", { path, revisionId })),
+	selectAxisRevision: (revisionId: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_axis_revision", { revisionId })),
 	setStrategy: (strategy: RunStrategy) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_strategy", { strategy })),
 	requestProxyExecution: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("request_proxy_execution")),
 	emergencyStop: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("emergency_stop")),
+	takeoverNow: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("takeover_now")),
 	resolveExecutionReceipt: (input: ResolveExecutionReceiptInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("resolve_execution_receipt", { input })),
 	setAlwaysOnTop: (enabled: boolean) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_always_on_top", { enabled })),
 	updateSettings: (input: AppSettings) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_settings", { input })),
@@ -66,6 +69,20 @@ export type AxisMetadataInput = {
 	title: string,
 	stageId: string | null,
 };
+
+export type AxisRevision = {
+	id: string,
+	sequence: number,
+	parentRevisionId: string | null,
+	source: AxisRevisionSource,
+	attemptId: string | null,
+	createdFrame: number,
+	axis: DraftAxis,
+	takeover: TakeoverRevisionProvenance | null,
+	recordingMerge: RecordingMergeProvenance | null,
+};
+
+export type AxisRevisionSource = "imported" | "manual" | "takeover" | "recordingMerge";
 
 export type BattleStatus = "waiting" | "running" | "paused" | "ended";
 
@@ -189,6 +206,15 @@ export type NoticeKind = "info" | "notify" | "dryRun" | "paused";
 
 export type ObservedBattleState = "unknown" | "notInBattle" | "battleBegin" | "oneXRunning" | "twoXRunning" | "pointTwoXRunning" | "paused" | "deployingOperator" | "adjustingOperatorFacing";
 
+export type OperationSession = {
+	id: string,
+	revisions: AxisRevision[],
+	currentRevisionId: string,
+	activeRecordingRevisionId: string,
+	armedRevisionId: string | null,
+	takeover: TakeoverState,
+};
+
 export type PauseProofStatus = "none" | "trusted" | "uncertain";
 
 export type ProxySnapshot = {
@@ -215,6 +241,13 @@ export type RecordingAttempt = {
 };
 
 export type RecordingAttemptStatus = "active" | "ended";
+
+export type RecordingMergeProvenance = {
+	recordingAnalysisId: string,
+	segmentIndex: number,
+	frameOffset: number,
+	candidateIds: string[],
+};
 
 export type RecordingSegment = {
 	index: number,
@@ -251,6 +284,7 @@ export type RunStrategy = "notify" | "pause" | "dryRun" | "proxy";
 
 export type RunnerSnapshot = {
 	axis: DraftAxis,
+	session: OperationSession,
 	consoleMode: ConsoleMode,
 	recordingAttempts: RecordingAttempt[],
 	settings: AppSettings,
@@ -302,6 +336,27 @@ export type StageSafetySnapshot = {
 };
 
 export type StageSafetyStatus = "unverified" | "matched" | "mismatched";
+
+export type TakeoverRevisionProvenance = {
+	runId: string,
+	receiptSequences: number[],
+	uncertainReceiptSequence: number | null,
+	uncertainEventId: string | null,
+	timeTrusted: boolean,
+};
+
+export type TakeoverState = {
+	status: TakeoverStatus,
+	generation: number,
+	baseRevisionId: string | null,
+	newRevisionId: string | null,
+	requestedSourceTimestampNs: number | null,
+	inheritedAnchor: ClockAnchor | null,
+	uncertainReceiptSequences: number[],
+	message: string | null,
+};
+
+export type TakeoverStatus = "idle" | "cancelling" | "awaitingPauseProof" | "recording" | "unknown";
 
 export type TimeConfirmation = "unconfirmed" | "observed" | "manuallyCorrected";
 
