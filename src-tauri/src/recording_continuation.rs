@@ -54,6 +54,7 @@ pub struct RecordingMergePlan {
     parent_axis: DraftAxis,
     aligned_candidates: Vec<DraftEvent>,
     pub conflicts: Vec<RecordingMergeConflict>,
+    pub recording_analysis_id: String,
     pub segment_index: u32,
     pub offset_frames: i32,
     pub skipped_before_anchor: usize,
@@ -62,6 +63,7 @@ pub struct RecordingMergePlan {
 #[derive(Debug)]
 pub struct RecordingMergeResult {
     pub axis: DraftAxis,
+    pub recording_analysis_id: String,
     pub candidate_ids: Vec<String>,
     pub segment_index: u32,
     pub offset_frames: i32,
@@ -69,15 +71,16 @@ pub struct RecordingMergeResult {
 
 pub fn plan_recording_merge(
     parent_axis: &DraftAxis,
+    recording_analysis_id: &str,
     segment_index: u32,
     alignment: RecordingAlignment,
     candidates: &[DraftEvent],
 ) -> Result<RecordingMergePlan, RecordingMergeError> {
     validate_alignment(alignment)?;
-    let parent_candidate_ids = parent_axis
+    let parent_candidate_sources = parent_axis
         .events
         .iter()
-        .filter_map(|event| event.source_candidate_id.clone())
+        .filter_map(candidate_source)
         .collect::<HashSet<_>>();
     let parent_event_ids = parent_axis
         .events
@@ -96,6 +99,13 @@ pub fn plan_recording_merge(
                 candidate.source_candidate_id.clone(),
             ));
         }
+        if candidate.source_recording_id.as_deref() != Some(recording_analysis_id) {
+            return Err(error(
+                "recording_analysis_source_mismatch",
+                "候选不属于所选录屏分析任务",
+                candidate.source_candidate_id.clone(),
+            ));
+        }
         let candidate_id = candidate.source_candidate_id.as_ref().ok_or_else(|| {
             error(
                 "recording_candidate_source_missing",
@@ -103,8 +113,12 @@ pub fn plan_recording_merge(
                 None,
             )
         })?;
-        if parent_candidate_ids.contains(candidate_id) || !batch_candidate_ids.insert(candidate_id)
-        {
+        let source = (
+            recording_analysis_id.to_string(),
+            segment_index,
+            candidate_id.clone(),
+        );
+        if parent_candidate_sources.contains(&source) || !batch_candidate_ids.insert(source) {
             return Err(error(
                 "recording_candidate_duplicate",
                 "同一录屏候选不能重复合并",
@@ -171,6 +185,7 @@ pub fn plan_recording_merge(
         parent_axis: parent_axis.clone(),
         aligned_candidates,
         conflicts,
+        recording_analysis_id: recording_analysis_id.to_string(),
         segment_index,
         offset_frames: alignment.offset_frames,
         skipped_before_anchor,
@@ -245,6 +260,7 @@ pub fn resolve_recording_merge(
     axis.sort_events();
     Ok(RecordingMergeResult {
         axis,
+        recording_analysis_id: plan.recording_analysis_id,
         candidate_ids,
         segment_index: plan.segment_index,
         offset_frames: plan.offset_frames,
@@ -309,6 +325,14 @@ fn is_semantic_conflict(existing: &DraftEvent, candidate: &DraftEvent) -> bool {
         && existing.source_candidate_id != candidate.source_candidate_id
 }
 
+fn candidate_source(event: &DraftEvent) -> Option<(String, u32, String)> {
+    Some((
+        event.source_recording_id.clone()?,
+        event.source_segment_index?,
+        event.source_candidate_id.clone()?,
+    ))
+}
+
 fn error(
     code: &'static str,
     message: impl Into<String>,
@@ -333,7 +357,8 @@ mod tests {
             event("draft-b", 30, 8, Some("candidate-b"), "D5"),
             event("draft-a", 30, 4, Some("candidate-a"), "E5"),
         ];
-        let plan = plan_recording_merge(&parent, 3, alignment(20, 110), &candidates).unwrap();
+        let plan = plan_recording_merge(&parent, "analysis-a", 3, alignment(20, 110), &candidates)
+            .unwrap();
         let result = resolve_recording_merge(plan, &[]).unwrap();
 
         assert_eq!(
@@ -351,7 +376,8 @@ mod tests {
     fn requires_explicit_resolution_without_dropping_same_frame_operation() {
         let parent = axis(vec![event("executed", 120, 2, None, "C5")]);
         let candidates = vec![event("draft-a", 30, 4, Some("candidate-a"), "C5")];
-        let plan = plan_recording_merge(&parent, 3, alignment(20, 110), &candidates).unwrap();
+        let plan = plan_recording_merge(&parent, "analysis-a", 3, alignment(20, 110), &candidates)
+            .unwrap();
         assert_eq!(plan.conflicts.len(), 1);
 
         let error = resolve_recording_merge(plan, &[]).unwrap_err();
@@ -364,19 +390,44 @@ mod tests {
         let mut wrong_segment = event("draft-a", 30, 0, Some("candidate-a"), "C5");
         wrong_segment.source_segment_index = Some(4);
         assert_eq!(
-            plan_recording_merge(&parent, 3, alignment(20, 110), &[wrong_segment])
-                .unwrap_err()
-                .code,
+            plan_recording_merge(
+                &parent,
+                "analysis-a",
+                3,
+                alignment(20, 110),
+                &[wrong_segment],
+            )
+            .unwrap_err()
+            .code,
             "recording_segment_mismatch"
         );
 
         let candidate = event("draft-a", 30, 0, Some("candidate-a"), "C5");
         let duplicate = event("draft-b", 31, 1, Some("candidate-a"), "D5");
         assert_eq!(
-            plan_recording_merge(&parent, 3, alignment(20, 110), &[candidate, duplicate])
-                .unwrap_err()
-                .code,
+            plan_recording_merge(
+                &parent,
+                "analysis-a",
+                3,
+                alignment(20, 110),
+                &[candidate, duplicate],
+            )
+            .unwrap_err()
+            .code,
             "recording_candidate_duplicate"
+        );
+    }
+
+    #[test]
+    fn same_candidate_id_from_another_analysis_is_not_a_duplicate() {
+        let mut previous = event("previous", 20, 0, Some("candidate-a"), "D5");
+        previous.source_recording_id = Some("analysis-b".to_string());
+        let parent = axis(vec![previous]);
+        let candidates = [event("draft-a", 30, 1, Some("candidate-a"), "C5")];
+
+        assert!(
+            plan_recording_merge(&parent, "analysis-a", 3, alignment(20, 110), &candidates,)
+                .is_ok()
         );
     }
 
@@ -388,13 +439,13 @@ mod tests {
         uncertain.quality = ClockQuality::Uncertain;
 
         assert_eq!(
-            plan_recording_merge(&parent, 3, uncertain, &candidates)
+            plan_recording_merge(&parent, "analysis-a", 3, uncertain, &candidates)
                 .unwrap_err()
                 .code,
             "recording_alignment_confirmation_required"
         );
         uncertain.manual_confirmation = true;
-        assert!(plan_recording_merge(&parent, 3, uncertain, &candidates).is_ok());
+        assert!(plan_recording_merge(&parent, "analysis-a", 3, uncertain, &candidates).is_ok());
     }
 
     #[test]
@@ -403,9 +454,15 @@ mod tests {
         let candidates = [event("draft-a", 21, 0, Some("candidate-a"), "C5")];
 
         assert_eq!(
-            plan_recording_merge(&parent, 3, alignment(20, i32::MAX as u32), &candidates)
-                .unwrap_err()
-                .code,
+            plan_recording_merge(
+                &parent,
+                "analysis-a",
+                3,
+                alignment(20, i32::MAX as u32),
+                &candidates,
+            )
+            .unwrap_err()
+            .code,
             "recording_aligned_frame_out_of_range"
         );
     }
@@ -446,6 +503,7 @@ mod tests {
             label: None,
             complete: true,
             attempt_id: None,
+            source_recording_id: candidate_id.map(|_| "analysis-a".to_string()),
             source_candidate_id: candidate_id.map(str::to_string),
             source_segment_index: candidate_id.map(|_| 3),
             source_timestamp_ns: Some(1_000_000_000.0),

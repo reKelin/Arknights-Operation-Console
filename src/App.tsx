@@ -492,6 +492,7 @@ export default function App() {
                   run(() => commands.confirmRecordingCandidate(input))
                 }
                 onPreview={setTracePreviewFrame}
+                recordingAnalysisId={snapshot.monitor.recordingAnalysisId}
                 segmentIndex={recordingSegmentIndex}
               />
             )}

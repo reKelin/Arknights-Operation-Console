@@ -186,7 +186,7 @@ fn confirm_recording_candidate(
     runner_state: tauri::State<'_, SharedRunner>,
     monitor_state: tauri::State<'_, SharedMonitor>,
 ) -> Result<RunnerSnapshot, CommandError> {
-    let candidate = {
+    let (candidate, recording_analysis_id) = {
         let monitor = locked_monitor(&monitor_state)?;
         let snapshot = monitor.snapshot();
         if snapshot.source_kind != MonitorSourceKind::Recording
@@ -197,14 +197,21 @@ fn confirm_recording_candidate(
                 "录屏分析尚未完成，不能确认操作候选",
             ));
         }
-        snapshot
+        let recording_analysis_id = snapshot.recording_analysis_id.ok_or_else(|| {
+            CommandError::new(
+                "recording_analysis_identity_missing",
+                "录屏分析缺少会话来源标识",
+            )
+        })?;
+        let candidate = snapshot
             .recording_candidates
             .into_iter()
             .find(|candidate| candidate.id == input.candidate_id)
-            .ok_or_else(|| CommandError::new("candidate_not_found", "未找到录屏操作候选"))?
+            .ok_or_else(|| CommandError::new("candidate_not_found", "未找到录屏操作候选"))?;
+        (candidate, recording_analysis_id)
     };
     let mut runner = locked(&runner_state)?;
-    runner.confirm_recording_candidate(&candidate, input)?;
+    runner.confirm_recording_candidate(&candidate, &recording_analysis_id, input)?;
     Ok(runner.snapshot())
 }
 

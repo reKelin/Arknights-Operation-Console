@@ -117,6 +117,7 @@ pub struct MonitorSnapshot {
     pub last_source_timestamp_ns: Option<f64>,
     pub dropped_observations: u32,
     pub recording_progress: Option<u8>,
+    pub recording_analysis_id: Option<String>,
     pub trace_duration_frames: Option<u32>,
     pub trace_points: Vec<RecordingTracePoint>,
     pub recording_segments: Vec<RecordingSegment>,
@@ -237,6 +238,7 @@ pub struct MonitorManager {
     #[cfg(windows)]
     live: Option<live::LiveSession>,
     recording: Option<recording::RecordingSession>,
+    next_recording_analysis_sequence: u32,
     connection_deadline: Option<Instant>,
 }
 
@@ -255,6 +257,7 @@ impl MonitorManager {
             #[cfg(windows)]
             live: None,
             recording: None,
+            next_recording_analysis_sequence: 1,
             connection_deadline: None,
         }
     }
@@ -462,6 +465,12 @@ impl MonitorManager {
             Arc::clone(&self.catalog),
             Arc::clone(&self.events),
         )?;
+        let analysis_id = format!(
+            "recording-analysis-{:06}",
+            self.next_recording_analysis_sequence
+        );
+        self.next_recording_analysis_sequence =
+            self.next_recording_analysis_sequence.saturating_add(1);
         self.recording = Some(session);
         self.snapshot = MonitorSnapshot {
             source_kind: MonitorSourceKind::Recording,
@@ -469,6 +478,7 @@ impl MonitorManager {
             source_name: Some(name),
             cost_total: total,
             recording_progress: Some(0),
+            recording_analysis_id: Some(analysis_id),
             ..MonitorSnapshot::default()
         };
         Ok(())

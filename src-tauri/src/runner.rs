@@ -335,6 +335,7 @@ impl RunnerState {
     pub fn confirm_recording_candidate(
         &mut self,
         candidate: &AnalysisCandidate,
+        recording_analysis_id: &str,
         confirmation: CandidateConfirmation,
     ) -> Result<(), CommandError> {
         if self.console_mode != ConsoleMode::RecordingAnalysis {
@@ -343,12 +344,11 @@ impl RunnerState {
                 "请先切换到录屏分析模式",
             ));
         }
-        if self
-            .axis
-            .events
-            .iter()
-            .any(|event| event.source_candidate_id.as_deref() == Some(candidate.id.as_str()))
-        {
+        if self.axis.events.iter().any(|event| {
+            event.source_recording_id.as_deref() == Some(recording_analysis_id)
+                && event.source_segment_index == Some(candidate.segment_index)
+                && event.source_candidate_id.as_deref() == Some(candidate.id.as_str())
+        }) {
             return Err(CommandError::new(
                 "candidate_already_confirmed",
                 "该录屏候选已加入当前轴",
@@ -407,6 +407,7 @@ impl RunnerState {
             FacingDirection::Left => DraftDirection::Left,
         });
         event.label = Some("录屏校对操作".to_string());
+        event.source_recording_id = Some(recording_analysis_id.to_string());
         event.source_candidate_id = Some(operation.candidate_id);
         event.source_segment_index = Some(candidate.segment_index);
         event.source_timestamp_ns = Some(source_timestamp_ns);

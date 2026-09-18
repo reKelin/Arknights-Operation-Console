@@ -22,6 +22,7 @@ const KIND_LABELS: Record<CandidateActionKind, string> = {
 type Props = {
   candidates: AnalysisCandidate[];
   events: DraftEvent[];
+  recordingAnalysisId: string | null;
   segmentIndex: number;
   onConfirm: (input: CandidateConfirmation) => Promise<boolean>;
   onPreview: (frame: number) => void;
@@ -30,6 +31,7 @@ type Props = {
 export default function RecordingCandidates({
   candidates,
   events,
+  recordingAnalysisId,
   segmentIndex,
   onConfirm,
   onPreview,
@@ -49,8 +51,15 @@ export default function RecordingCandidates({
   const selected =
     visible.find((candidate) => candidate.id === selectedId) ?? null;
   const convertedIds = useMemo(
-    () => new Set(events.flatMap((event) => event.sourceCandidateId ?? [])),
-    [events],
+    () =>
+      new Set(
+        events.flatMap((event) =>
+          event.sourceRecordingId === recordingAnalysisId
+            ? (event.sourceCandidateId ?? [])
+            : [],
+        ),
+      ),
+    [events, recordingAnalysisId],
   );
 
   function choose(candidate: AnalysisCandidate) {
