@@ -1,6 +1,6 @@
 [package]
 name = "arknights-operation-runner"
-version = "0.0.7"
+version = "0.2.0-rc.1"
 description = "明日方舟实机计时与作战轴工具"
 authors = ["Kelin"]
 edition = "2024"
