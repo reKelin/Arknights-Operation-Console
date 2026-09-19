@@ -62,6 +62,9 @@ jobs:
       - name: Test timeline logic
         run: npm test
 
+      - name: Build frontend for Tauri context
+        run: npm run build
+
       - name: Check Rust
         working-directory: src-tauri
         run: |
