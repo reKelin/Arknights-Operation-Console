@@ -1,107 +1,58 @@
 # AGENTS.md
 
-本文件适用于整个仓库。面向用户的界面和文档使用简体中文；代码标识符使用英文；注释只解释不明显的约束，默认使用中文。
+界面、文档和必要注释使用简体中文，代码标识符使用英文。本文适用于整个仓库。
 
-## 产品与技术边界
+## 开发入口
 
-- 本仓库只实现 Arknights Operation Console；Arknights Operation Studio 是外部系统。
-- 首版仅支持 Windows 10/11 和明日方舟官方 PC 客户端，不实现模拟器或多设备适配。
-- Console 是轻量计时与作战轴工具，不渲染游戏画面、关卡地图或战斗模拟。
-- 技术基线为 Tauri 2、React、TypeScript、Vite、Rust 2024 和 npm。
-- 使用官方单应用布局：根目录承载 React，`src-tauri/` 是唯一 Rust crate。只有出现真实的第二个二进制或独立领域边界时才建立 Cargo workspace。
-- bundle identifier 固定为 `io.github.kelin.arknights-operation-console`。
-- UI 使用普通 CSS/SVG，不引入 Tailwind 或组件库。前端状态优先使用 React 自带的 state、useReducer 和必要的 Context，不预装状态管理库。
-- 仓库使用 Apache-2.0 许可证。
+- [README](README.md)：产品能力、环境与启动。
+- [架构约束](docs/architecture.md)：术语、职责边界和必须保持的行为。
+- [ADR 0001](docs/adr/0001-state-and-protocol.md)：Rust 权威状态与协议边界。
+- [ADR 0002](docs/adr/0002-time-and-execution-evidence.md)：来源时间、双时钟与执行证据。
 
-## 项目布局
+Graft 用于定位当前实现，架构约束与 ADR 用于判断修改是否符合设计。本机可用时，先用 `graft ask "<问题>" --source` 辅助定位；当前源码、测试和配置始终是实现事实的依据。大型代码变更后运行 `graft build`，图文件作为可再生本地缓存处理。
 
-- `src/`：React/TypeScript 界面。
-- `src-tauri/`：Tauri 配置、Rust 权威状态与 Windows 集成。
-- `protocol/`：AxisLink 等跨进程或跨仓库协议的 JSON Schema。
-- `docs/product/`：产品级 requirements、architecture 和 roadmap。
-- `docs/subsystems/`：只在子系统进入设计或开发时创建对应文档。
-- `specs/<kebab-case-feature>/`：需要正式设计的功能规范。
-- `.local/`：本地缓存和开发制品，禁止提交。
+## 实现规则
 
-不要预建空模块、空 crate、占位接口或“以后可能用到”的目录。
+- 使用现有 Tauri 2、React、TypeScript、Vite、Rust 2024 和 npm；根目录为前端，`src-tauri/` 是唯一 Rust crate。
+- UI 使用普通 CSS/SVG 和 React 状态。按领域组织代码，保持依赖单向；优先标准库和已有依赖，有真实复用需求时再抽取共享代码。
+- 名称表达领域含义和单位；函数职责单一，注释解释不明显的约束。
+- 工具链版本以 `.node-version`、`rust-toolchain.toml` 为准，提交 npm/Cargo lockfile。
+- 修改 Schema 或 Rust 命令类型后运行 `npm run bindings`，提交规范源与生成结果；生成文件不得手工修改。
+- 更新关卡目录使用 `npm run stages:sync`，核对来源版本与生成 diff。
+- `.local/` 存放本地缓存和制品，禁止提交；凭据、令牌和个人敏感信息不得写入源码、日志或文档。
 
-## 核心公约
+## 本地验证
 
-- 权威游戏逻辑时钟固定为 30 tick/s，并与 UI 渲染频率分离。
-- 计时与关卡状态绑定：识别到进入关卡后自动归零并开始，暂停和倍速跟随游戏状态，离开关卡后结束；正式 UI 不提供手动开始或停止计时。
-- Rust 持有时钟、调度、运行状态和真实副作用；React 发送命令并展示不可变快照或增量，不实现第二套权威调度器。
-- AxisLink v2 的事件类型只表示玩家可执行的 `deploy`、`skill`、`retreat`。部署保存干员、格子与朝向；技能和撤退只保存目标格子。格子使用 A1（左下）到 I36（右上）的短代码。提醒、到点暂停和自动执行属于 Console 运行策略，不写入轴事件。
-- AxisLink 使用 JSON，JSON Schema 是唯一规范源并生成 Rust/TypeScript 类型。Tauri 内部命令以 Rust 类型为源生成 TypeScript 绑定，不套用 AxisLink。
-- 选定游戏窗口位于前台时，P 记录带时间证据的待分类操作；Console 位于前台时，H 打开整理页，Ctrl+S 导出。待分类操作不属于 AxisLink，完成时间与参数确认前不得导出。
-- 操作点在时间轴上以标点展示；执行参数保存在标点数据中，通过右键编辑，不增加常驻侧栏。
-- 真实输入默认关闭，必须显式启用代理执行。窗口、时钟或状态不可信、K 接管或界面停止触发时立即停止，不盲目补发输入。
-- 代理执行只允许通过 Windows `InjectTouchInput`、标准键盘输入模拟和窗口坐标 API 产生输入；技能与撤退键位首次使用前必须确认。不得读取游戏内存或注入游戏代码。
+按修改范围选择检查；非平凡逻辑保留能在错误时失败的最小测试。
 
-## UI 约束
+| 修改范围 | 命令 |
+|---|---|
+| 前端格式、类型与构建 | `npm run check`、`npm run build` |
+| 前端纯逻辑 | `npm test` |
+| UI 基本交互 | 首次运行 `npx playwright install chromium`，然后 `npm run check:smoke`、`npm run test:smoke` |
+| CI 脚本与工作流 | `npm run test:ci` |
+| Rust | 先 `npm run build`，再执行下方命令 |
+| 原生调试应用 | `npm run app:build:local` |
 
-- 工作台默认约 1100×280，最小约 860×280；设置和编辑页允许随内容增高，宽高均可调整。
-- 默认置顶，允许从“视图”菜单关闭置顶。
-- 最小化进入托盘，关闭窗口直接退出。
-- 界面只保留标题栏、计时器、下一操作、录轴控制和单轨时间轴；不添加游戏画面、侧栏、操作队列或独立浮窗。
-- 时间轴支持横向滚动和缩放；当前帧之前的轨道与操作点必须高亮。
-- 界面支持深色与浅色主题；主题和监控设置可以持久化，轴草稿仍不得自动保存。
+```powershell
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+```
 
-## 依赖与生成代码
+UI 冒烟使用受控 Tauri IPC，不发送真实游戏输入。窗口、全局快捷键、WGC 捕获、时钟误差、代理接管、真实录屏识别和安装升级另做 Windows 实机验收，记录提交号、环境、步骤与结果。自动测试通过不代表实机行为已验收；只报告实际执行的检查。
 
-- 前端只使用 npm，并提交 `package-lock.json`；Rust 应用提交 `Cargo.lock`。
-- 初始化应用时固定当时的 Node LTS 和 Rust stable 具体版本，分别写入 `.node-version` 和 `rust-toolchain.toml`。
-- 优先使用标准库和已有依赖；没有第二个实现时不创建接口、工厂或兼容层。
-- 生成文件必须由单一规范源产生并在 CI 检查漂移，不得手工修改。
+## CI 与 Release
 
-## 可读性与功能模块化
+- [Smoke Test](.github/workflows/smoke-tests.yml) 用于 PR、main 推送、merge queue、手动运行及 Release 调用。合并前要求 `Static checks`、`Unit tests`、`Generated code drift`、`Rust tests`、`UI smoke tests` 和汇总 `Smoke Test` 通过。
+- [Release](.github/workflows/release.yml) 仅接受 `v*` tag 或手动触发，私有仓库不运行。先复用同一提交的 Smoke Test，再在 Windows 构建安装包、检查原生启动与制品。
+- tag 版本须与 npm、Cargo、Tauri 清单一致。tag 触发时发布已验证制品；手动运行只上传制品。发布前校验 SHA256SUMS，生产构建不作为 PR required check。
+- 创建 PR 不等于授权合并、创建 tag 或发布；生产 Release 须有用户授权。按需构建本地调试应用。
+- 数据下载的 GitHub Token 仅发送给 `api.github.com`。
+- 当前环境提供 git-workflow 时遵循其规则；仅提交当前任务相关改动。
 
-- 命名必须表达领域含义和单位，避免无上下文缩写、含糊名称以及散落的魔法数字；代码结构应优先做到自解释，注释只说明无法由代码表达的原因、约束和取舍。
-- 函数和组件应该只承担一个可描述的职责；优先使用提前返回和直线式流程，避免深层嵌套、隐式状态变化及同时混合解析、业务决策与副作用。
-- 代码必须按功能或领域能力保持内聚，同一功能的状态、纯逻辑、界面和必要测试放在易于共同定位的位置；跨功能依赖通过最小且明确的公开入口，不读取其他模块内部实现。
-- 模块依赖必须保持单向。共享代码只在存在真实的多个调用方且语义一致时提取，不建立无边界的 `utils`、`common` 或通用服务容器。
-- 模块化以职责边界和可独立验证为依据，不以文件行数为依据；没有真实复用或独立变化原因时，不拆分文件、不增加抽象层。
-- 修改既有功能时应遵循周边代码的命名与组织方式；如果局部结构已经妨碍理解，应在当前需求范围内完成最小必要整理，不顺带进行无关重构。
+## 文档维护
 
-## 测试与验证
+只维护 README、本文、架构约束和少量 ADR。代码布局、符号和调用关系通过源码或 Graft 查询，不在文档中重复维护。
 
-- 当前 CI 与验收规范以 `docs/subsystems/ci.md` 为准；与旧规格中的开发期执行习惯冲突时使用本节。
-- PR 必须通过 `Smoke Test` 后才允许合并；不得继续采用“不等 CI 直接合并”的旧约定。创建 PR 不等于授权自动合并。
-- `Smoke Test` 按测试类型提供静态检查、单元测试、生成代码漂移、Rust 测试和 UI 冒烟五个独立 job。不能用纯逻辑测试、类型检查或截图替代功能冒烟。
-- 前端功能冒烟使用固定小样本和受控的 Tauri IPC；不连接真实游戏或发送输入，未知调用与页面异常必须失败。原生窗口、系统全局快捷键和实机行为另做本地 app 验收。
-- Vitest 运行 `src` 中的纯逻辑测试，Playwright 运行 `tests/smoke/ui`；两个入口不得互相收集对方的用例。
-- Rust 全量验证、Tauri 绑定生成和目录漂移属于 PR 的 `Smoke Test`；生产构建和原生启动检查保留在独立 Release Pipeline，仅由版本 tag 或手动触发，私有仓库不运行该发布流程。
-- 允许本地运行与改动相关的快速检查与测试，按需用 `npm run app:build:local` 编译调试 app；不为一般 PR 擅自运行完整发布构建或触发云端 Release。
-- 非平凡的分支、循环、解析器和状态转换至少保留一个能在错误时失败的最小检查。
-- 只报告实际执行过的检查；未具备依赖或平台条件时明确说明未执行项，不跳过失败用例或删除测试。
-
-## Git
-
-- 如果当前环境提供 `git-workflow` Skill，必须先读取并遵循。
-- 用户允许提交或推送时，只操作当前任务相关的改动，不夹带无关文件、凭据或环境配置。
-
-## 文档与规范
-
-- README 面向使用者，不是规范来源；demo 完成后再补全功能、使用说明和声明。
-- 产品级约束分别写入 `docs/product/requirements.md`、`architecture.md` 和 `roadmap.md`。
-- 局部设计写入 `docs/subsystems/<subsystem>.md`，不得在多个文档重复定义同一规范。
-- Git 保存历史，不维护手工文档变更日志。
-- 跨进程协议、持久化格式、游戏时钟语义、真实输入、执行解锁与急停，以及架构边界变化，必须先创建 feature spec。
-- feature spec 固定包含 `requirements.md`、`design.md`、`tasks.md`；规范完成后即可开始编码，不设置独立审查门槛。
-- 规范文档使用 YAML front matter，字段为 `status`、`scope`、`depends_on`；状态只使用 `draft`、`approved`、`implemented`、`superseded`。
-- 需求编号使用 `REQ-<SCOPE>-###`，验收编号使用 `AC-<FEATURE>-###`；删除后的编号不得复用。
-- “必须/应该/可以”分别表示强制、默认和可选；每条“必须”要求必须关联可验证的验收标准。
-- 明确区分事实、决定、假设和未知项。结论必须能追溯到代码、版本化资料或实机证据。
-- 规范图表只使用 Mermaid 或纯文本字符图。
-
-## 代码公约
-
-- 同帧操作使用明确且稳定的顺序，不依赖 `HashMap` 遍历顺序。
-- 外部命令、内部调度项、执行请求和只读运行记录使用不同类型，不建设会隐式改变顺序的通用事件总线。
-- 信任边界必须验证输入并返回结构化错误。
-- 不得把凭据、令牌、Cookie、私钥或个人敏感信息写入代码、日志、文档和提交。
-
-## Graft
-
-本机可用 Graft 时，可以先用 `graft ask "<问题>" --source` 辅助定位代码。
-Graft 图是可再生缓存；当前源码、测试和配置始终是权威依据。
-大型代码变更后运行 `graft build` 刷新索引。
+改变协议、持久化、时钟、输入授权或模块权威边界前，先更新架构约束；影响跨模块或长期取舍的重要决策才写 ADR，包含背景、决定、代价和已否决/被替代方案。ADR 不猜测历史动机；完成任务清单、实现流水账和过期方案由 Git 保存。
