@@ -9,15 +9,19 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "vitest run",
-    "test:ci": "node --test scripts/ci/contracts.test.mjs",
+    "test": "vitest run src",
     "check": "biome ci .",
     "format": "biome check --write .",
     "bindings": "npm run bindings:axis && npm run bindings:tauri",
     "bindings:axis": "json2ts -i protocol/axislink.schema.json -o src/generated/axislink.ts",
     "bindings:tauri": "node scripts/export-bindings.mjs",
     "stages:sync": "node scripts/sync-stage-catalog.mjs",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:ci": "node --test scripts/ci/timing.test.mjs scripts/ci/contracts.test.mjs",
+    "test:smoke": "playwright test",
+    "check:smoke": "tsc --project tsconfig.smoke.json",
+    "app:dev": "tauri dev",
+    "app:build:local": "tauri build --debug --no-bundle"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
@@ -27,7 +31,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
+    "@playwright/test": "1.56.1",
     "@tauri-apps/cli": "2.11.4",
+    "@types/node": "22.20.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",

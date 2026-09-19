@@ -31,10 +31,20 @@ Tools。录屏分析还需要 PATH 中可用的 `ffmpeg` 和 `ffprobe`。自动�
 ```powershell
 npm ci
 npm run bindings
-npm run tauri dev
+npm run app:dev
 ```
 
-格式、类型、测试和 Windows 构建由 GitHub Actions 执行。
+PR 自动运行快速检查和基本功能冒烟；完整 Windows 验证与发布构建仅在版本 tag 或手动触发时运行。
+测试范围、耗时观察和门禁配置见 [CI 与验收说明](docs/subsystems/ci.md)。
+
+按需编译本机调试 app，不等待云端发布：
+
+```powershell
+npm run app:build:local
+```
+
+Windows 产物为 `src-tauri/target/debug/arknights-operation-runner.exe`，不生成安装包。
+真实窗口、系统快捷键与游戏行为按 [Windows 验收清单](docs/subsystems/ci-manual-acceptance.md) 检查。
 
 关卡目录与地图来自固定版本的
 [Kengxxiao/ArknightsGameData](https://github.com/Kengxxiao/ArknightsGameData)，
