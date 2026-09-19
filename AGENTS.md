@@ -9,7 +9,7 @@
 - Console 是轻量计时与作战轴工具，不渲染游戏画面、关卡地图或战斗模拟。
 - 技术基线为 Tauri 2、React、TypeScript、Vite、Rust 2024 和 npm。
 - 使用官方单应用布局：根目录承载 React，`src-tauri/` 是唯一 Rust crate。只有出现真实的第二个二进制或独立领域边界时才建立 Cargo workspace。
-- bundle identifier 固定为 `io.github.kelin.arknights-operation-runner`。
+- bundle identifier 固定为 `io.github.kelin.arknights-operation-console`。
 - UI 使用普通 CSS/SVG，不引入 Tailwind 或组件库。前端状态优先使用 React 自带的 state、useReducer 和必要的 Context，不预装状态管理库。
 - 仓库使用 Apache-2.0 许可证。
 

@@ -321,7 +321,7 @@ fn safe_level_path(path: &str) -> bool {
 fn download_map(url: &str) -> Result<Vec<u8>, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
-        .user_agent("Arknights-Operation-Runner")
+        .user_agent("Arknights-Operation-Console")
         .build()
         .map_err(|error| format!("创建地图下载请求失败：{error}"))?;
     let response = client

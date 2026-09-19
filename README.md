@@ -40,7 +40,7 @@ npm run app:dev
 npm run app:build:local
 ```
 
-Windows 产物为 `src-tauri/target/debug/arknights-operation-runner.exe`，不生成安装包。
+Windows 产物为 `src-tauri/target/debug/arknights-operation-console.exe`，不生成安装包。
 
 关卡目录与地图来自固定版本的
 [Kengxxiao/ArknightsGameData](https://github.com/Kengxxiao/ArknightsGameData)，

@@ -138,7 +138,7 @@ fn read_or_download(path: &Path, url: &str) -> Result<Vec<u8>, String> {
     }
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(20))
-        .user_agent("Arknights-Operation-Runner")
+        .user_agent("Arknights-Operation-Console")
         .build()
         .map_err(|error| format!("创建资源请求失败：{error}"))?;
     let response = client

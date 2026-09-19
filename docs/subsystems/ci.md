@@ -50,7 +50,7 @@ npm run app:dev
 npm run app:build:local
 ```
 
-调试程序位于 `src-tauri/target/debug/arknights-operation-runner.exe`。
+调试程序位于 `src-tauri/target/debug/arknights-operation-console.exe`。
 
 ## Release Pipeline
 
