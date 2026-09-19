@@ -23,7 +23,7 @@ json_row = map_height - 1 - row_from_bottom
 
 `scripts/sync-stage-catalog.mjs` 从固定提交的 `stage_table.json` 和 `roguelike_topic_table.json` 生成 `src-tauri/data/stages.json`。运行时目录只读；地图按 `levelId` 的小写安全路径从同一提交下载到 Tauri 缓存目录，并在完整解析后原子替换缓存。
 
-地图只保留当前阶段需要的矩形网格、尺寸和格子属性。不渲染地图，不把敌人、波次和路线引入 Runner。目录中存在但上游缺少地图的关卡返回 `map_unavailable`，仍允许手动选作轴关卡。
+地图只保留当前阶段需要的矩形网格、尺寸和格子属性。不渲染地图，不把敌人、波次和路线引入 Console。目录中存在但上游缺少地图的关卡返回 `map_unavailable`，仍允许手动选作轴关卡。
 
 ## OCR 与匹配
 

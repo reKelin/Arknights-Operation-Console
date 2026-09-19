@@ -11,11 +11,11 @@ depends_on: []
 - 明日方舟战斗逻辑时钟为 30 tick/s。
 - 官方 PC 客户端支持暂停时拖拽部署干员。
 - 暂停选中、零帧技能和零帧撤退可参考 Arknights Frame Assistant 的公开实现。
-- Arknights Operation Studio 是独立软件，通过 AxisLink 与 Runner 交换作战轴。
+- Arknights Operation Studio 是独立软件，通过 AxisLink 与 Console 交换作战轴。
 
 ## 产品边界
 
-- REQ-PRODUCT-001：Runner 必须是 Windows 10/11 上面向明日方舟官方 PC 客户端的轻量计时与作战轴工具。
+- REQ-PRODUCT-001：Console 必须是 Windows 10/11 上面向明日方舟官方 PC 客户端的轻量计时与作战轴工具。
   - AC-PRODUCT-001：发行物不包含模拟器适配、游戏画面、关卡地图或战斗模拟。
 - REQ-PRODUCT-002：界面必须以计时器和单轨时间轴为核心。
   - AC-PRODUCT-002：工作台默认窗口约 1100×280、最小约 860×280、默认置顶；设置和编辑页允许增高；支持深色与浅色主题。
@@ -29,17 +29,17 @@ depends_on: []
   - AC-PRODUCT-006：事件类型只有 `deploy`、`skill`、`retreat`；部署包含干员、格子和朝向，技能与撤退只包含目标格子；提醒、暂停事务和执行策略不写入轴事件。
 - REQ-PRODUCT-007：用户必须能导入和导出 AxisLink JSON。
   - AC-PRODUCT-007：合法文件往返不丢字段；无效文件返回可定位的结构化错误。
-- REQ-PRODUCT-008：Runner 必须支持按轴提醒和按轴操作 PC 客户端。
+- REQ-PRODUCT-008：Console 必须支持按轴提醒和按轴操作 PC 客户端。
   - AC-PRODUCT-008：运行时可选择仅提醒、到点暂停或代理执行；默认不启用代理执行。
 - REQ-PRODUCT-009：真实执行必须保留急停和故障边界。
   - AC-PRODUCT-009：窗口、时钟或状态不可信时停止；不得盲目补发输入。
-- REQ-PRODUCT-010：Runner 不得通过读取游戏内存、DLL 注入、Hook、调试附加或网络包解析获取状态。
+- REQ-PRODUCT-010：Console 不得通过读取游戏内存、DLL 注入、Hook、调试附加或网络包解析获取状态。
   - AC-PRODUCT-010：游戏集成仅使用窗口捕获、视觉识别和 Windows 输入 API。
 - REQ-PRODUCT-011：代理执行必须分别支持暂停部署和暂停选中两条零帧路径。
   - AC-PRODUCT-011：部署在持续暂停中完成拖拽、落点和朝向；技能与撤退按固定 AFA 参考版本完成短暂接触运行状态、选中目标和恢复暂停；两条路径执行前后逻辑帧必须一致。
 - REQ-PRODUCT-012：代理执行与人类操作必须使用独立的高层时钟路径。
   - AC-PRODUCT-012：代理时钟发现 0.2×或未知状态即停机；人类时钟能累计 0.2×并在不确定时输出帧范围。两者可以共享捕获时间戳和定点运算等无状态基础函数。
-- REQ-PRODUCT-013：Runner 必须独立选择并监控官方 PC 客户端窗口。
+- REQ-PRODUCT-013：Console 必须独立选择并监控官方 PC 客户端窗口。
   - AC-PRODUCT-013：只列出由 `Arknights.exe` 持有且可以捕获的顶层窗口；选择后通过 Windows Graphics Capture 获取画面，不依赖 CostBarRuler 进程或 API。
 - REQ-PRODUCT-014：实机计时必须由可信视觉状态与费用观测共同驱动。
   - AC-PRODUCT-014：首次识别到关卡内运行状态时从 F0 开始；1×、2×、0.2×和暂停按实际状态累计，费用条可见时负责锚定，满费时仅在状态可信时按单调时钟外推，未知或过期观测冻结计时。
@@ -49,9 +49,9 @@ depends_on: []
   - AC-PRODUCT-016：支持 30、45、60、90 和 15–150 的自定义整数；分母用于费用周期分析和 `MM:SS:FF/N` 显示，AxisLink 事件仍使用固定 30 Hz 游戏帧且不因配置变化而重写。
 - REQ-PRODUCT-017：默认轴必须为空，用户必须能显式清空当前轴。
   - AC-PRODUCT-017：首次启动没有预置操作点；界面入口可以请求清空，非空轴必须经过二次确认。
-- REQ-PRODUCT-018：Runner 必须能从游戏录屏离线提取监控轨迹。
+- REQ-PRODUCT-018：Console 必须能从游戏录屏离线提取监控轨迹。
   - AC-PRODUCT-018：用户可以选择 MKV 或 MP4；窗口和录屏复用同一视觉与时钟状态机，输出关卡区段、状态、费用相位和 30 Hz 游戏帧轨迹，但本阶段不自动生成玩家操作点。
-- REQ-PRODUCT-019：Runner 必须识别并验证当前关卡身份。
+- REQ-PRODUCT-019：Console 必须识别并验证当前关卡身份。
   - AC-PRODUCT-019：进关标题 OCR 同时使用关卡代码和中文名匹配内置目录；歧义或失败时允许手动选择；轴关卡与观测关卡不一致时不得调度或补发操作。
 - REQ-PRODUCT-020：轴格子必须使用统一的短坐标。
   - AC-PRODUCT-020：短坐标范围为 A1 到 I36，字母从下到上、数字从左到右；地图可用时按实际宽高校验。

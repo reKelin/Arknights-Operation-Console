@@ -4,9 +4,9 @@
 
 ## 产品与技术边界
 
-- 本仓库只实现 Arknights Operation Runner；Arknights Operation Studio 是外部系统。
+- 本仓库只实现 Arknights Operation Console；Arknights Operation Studio 是外部系统。
 - 首版仅支持 Windows 10/11 和明日方舟官方 PC 客户端，不实现模拟器或多设备适配。
-- Runner 是轻量计时与作战轴工具，不渲染游戏画面、关卡地图或战斗模拟。
+- Console 是轻量计时与作战轴工具，不渲染游戏画面、关卡地图或战斗模拟。
 - 技术基线为 Tauri 2、React、TypeScript、Vite、Rust 2024 和 npm。
 - 使用官方单应用布局：根目录承载 React，`src-tauri/` 是唯一 Rust crate。只有出现真实的第二个二进制或独立领域边界时才建立 Cargo workspace。
 - bundle identifier 固定为 `io.github.kelin.arknights-operation-runner`。
@@ -30,7 +30,7 @@
 - 权威游戏逻辑时钟固定为 30 tick/s，并与 UI 渲染频率分离。
 - 计时与关卡状态绑定：识别到进入关卡后自动归零并开始，暂停和倍速跟随游戏状态，离开关卡后结束；正式 UI 不提供手动开始或停止计时。
 - Rust 持有时钟、调度、运行状态和真实副作用；React 发送命令并展示不可变快照或增量，不实现第二套权威调度器。
-- AxisLink v2 的事件类型只表示玩家可执行的 `deploy`、`skill`、`retreat`。部署保存干员、格子与朝向；技能和撤退只保存目标格子。格子使用 A1（左下）到 I36（右上）的短代码。提醒、到点暂停和自动执行属于 Runner 运行策略，不写入轴事件。
+- AxisLink v2 的事件类型只表示玩家可执行的 `deploy`、`skill`、`retreat`。部署保存干员、格子与朝向；技能和撤退只保存目标格子。格子使用 A1（左下）到 I36（右上）的短代码。提醒、到点暂停和自动执行属于 Console 运行策略，不写入轴事件。
 - AxisLink 使用 JSON，JSON Schema 是唯一规范源并生成 Rust/TypeScript 类型。Tauri 内部命令以 Rust 类型为源生成 TypeScript 绑定，不套用 AxisLink。
 - 选定游戏窗口位于前台时，P 记录带时间证据的待分类操作；Console 位于前台时，H 打开整理页，Ctrl+S 导出。待分类操作不属于 AxisLink，完成时间与参数确认前不得导出。
 - 操作点在时间轴上以标点展示；执行参数保存在标点数据中，通过右键编辑，不增加常驻侧栏。

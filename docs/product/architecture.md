@@ -19,7 +19,7 @@ depends_on:
 ```mermaid
 flowchart LR
   UI["React：计时器与时间轴"] --> Commands["生成的 Tauri 绑定"]
-  Commands --> Core["Rust Runner Core"]
+  Commands --> Core["Rust Console Core"]
   Window["Arknights.exe 窗口"] --> Capture["WGC 捕获"]
   Recording["MKV 或 MP4"] --> Decode["FFmpeg 解码"]
   Capture --> Vision["视觉状态与费用观测"]
@@ -45,7 +45,7 @@ flowchart LR
 
 ## 监控链
 
-- Runner 使用 `windows-capture` 提供的 Windows Graphics Capture 封装选择并捕获 `Arknights.exe` 窗口；CostBarRuler 仅作为公开行为基线，不作为运行时依赖。
+- Console 使用 `windows-capture` 提供的 Windows Graphics Capture 封装选择并捕获 `Arknights.exe` 窗口；CostBarRuler 仅作为公开行为基线，不作为运行时依赖。
 - 捕获线程向有界队列发布带序号的观测，并向执行器发布带序号的最新完整画面；两条发布路径都不等待消费者，丢失必须显式可见。
 - 视觉识别在归一化的 1920×1080 参考坐标中采样费用条、速度键和暂停键，不渲染或保存完整游戏画面。
 - 录屏使用 `ffprobe` 读取元数据并由 `ffmpeg` 解码为 30 Hz BGRA 帧，随后进入同一视觉与时钟状态机；离线结果只保存在内存。
@@ -78,5 +78,5 @@ flowchart LR
 ## 安全边界
 
 - 默认 dry-run，代理执行需要显式启用。
-- 游戏窗口必须在前台且不被 Runner 覆盖；窗口变化、输入失败、时钟不确定或急停均终止事务。
+- 游戏窗口必须在前台且不被 Console 覆盖；窗口变化、输入失败、时钟不确定或急停均终止事务。
 - 不读取或修改游戏内存，不注入代码，不绕过反作弊，不解析网络协议。

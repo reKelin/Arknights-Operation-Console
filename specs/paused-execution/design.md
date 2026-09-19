@@ -9,13 +9,13 @@ depends_on:
 
 ## 模块边界
 
-`executor.rs` 持有异步事务、取消代次、回执序号和待人工确认项；`executor/touch.rs` 与 `executor/keyboard.rs` 只封装 Windows 输入；`executor/vision.rs` 发布带序号和源时间戳的最新执行画面并提供结果比较。捕获回调只复制并发布画面，不等待事务。Runner 在后续集成中持有调度游标、ProxyClock 和 UI 快照，不把时钟判断移入 React。
+`executor.rs` 持有异步事务、取消代次、回执序号和待人工确认项；`executor/touch.rs` 与 `executor/keyboard.rs` 只封装 Windows 输入；`executor/vision.rs` 发布带序号和源时间戳的最新执行画面并提供结果比较。捕获回调只复制并发布画面，不等待事务。Console 在后续集成中持有调度游标、ProxyClock 和 UI 快照，不把时钟判断移入 React。
 
 执行线程逐项运行，同一时刻只有一个事务。取消代次在 K 接管、失焦或安全门失败时递增。触摸与键盘封装都在错误、取消和析构路径释放活动输入。
 
 ## 调度与暂停证明
 
-Runner 只在 `ClockQuality::Trusted`、同一关卡和新鲜窗口源上调度。下一操作进入提前量后先请求暂停；新画面证明 `Paused` 且仍为计划帧时，执行器建立 `PauseProof`，其中包含窗口、客户区、监控事件序号、源时间戳和计划帧。超过计划帧属于 `missedTarget`，不进入动作事务。
+Console 只在 `ClockQuality::Trusted`、同一关卡和新鲜窗口源上调度。下一操作进入提前量后先请求暂停；新画面证明 `Paused` 且仍为计划帧时，执行器建立 `PauseProof`，其中包含窗口、客户区、监控事件序号、源时间戳和计划帧。超过计划帧属于 `missedTarget`，不进入动作事务。
 
 事务允许的交互状态有严格范围：部署可以出现 `DeployingOperator` 和 `AdjustingOperatorFacing`；技能／撤退选中可以短暂出现 `PointTwoXRunning`。当前视觉分类在选中界面隐藏暂停控件后不能独立判断引擎是否暂停，因此进入隔离区后时钟质量立即显示为暂未确认并冻结，不能继续显示 `Trusted`，也不能仅凭旧的 `PauseProof` 宣告安全。事务结束时必须重新观察可信 `Paused`，并用事务前后的非满费费用相位在视觉分辨率和既有误差范围内证明逻辑帧未推进；满费、费用不可见或锚点变化均缺少不推进证据，结果进入 `uncertain` 并停止。费用相位只证明时间边界，不证明技能、撤退或部署成功；动作仍需下节所述的独立结果证据。暂存样本不送入 ProxyClock、不作为新的可信锚点。捕获不连续、画面过期、窗口或尺寸变化、出现 1×/2×推进时立即撤销暂停证明并停止。
 
