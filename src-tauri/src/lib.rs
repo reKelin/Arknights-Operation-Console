@@ -227,6 +227,17 @@ fn preview_recording_merge(
 
 #[tauri::command]
 #[specta::specta]
+fn select_recording_segment(
+    segment_index: u32,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.select_recording_segment(segment_index)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
 fn create_recording_merge_revision(
     input: RecordingMergeInput,
     state: tauri::State<'_, SharedRunner>,
@@ -670,6 +681,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             confirm_event_time,
             confirm_recording_candidate,
             preview_recording_merge,
+            select_recording_segment,
             create_recording_merge_revision,
             delete_event,
             set_axis_metadata,

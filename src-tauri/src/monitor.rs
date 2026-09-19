@@ -23,7 +23,7 @@ pub use clock::{
 };
 pub use recording::analysis::{
     AnalysisCandidate, CandidateActionKind, CandidateConfirmation, FacingDirection,
-    confirm_candidate,
+    UnconfirmedField, confirm_candidate,
 };
 pub use vision::{VisionConfig, VisualObservation, analyze_bgra};
 
