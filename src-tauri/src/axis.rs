@@ -615,7 +615,7 @@ fn valid_event_id(value: &str) -> bool {
         })
 }
 
-fn valid_operator_id(value: &str) -> bool {
+pub(crate) fn valid_operator_id(value: &str) -> bool {
     value.len() <= 128
         && value.strip_prefix("char_").is_some_and(|rest| {
             !rest.is_empty()

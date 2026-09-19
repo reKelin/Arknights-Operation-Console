@@ -6,7 +6,7 @@ use std::{
 use crate::{
     axis::{
         DraftAxis, DraftDirection, DraftEvent, DraftKind, EventFrameRange, TimeConfirmation,
-        valid_tile_code,
+        valid_operator_id, valid_tile_code,
     },
     bindings::{
         AxisMetadataInput, BattleStatus, CommandError, ConfirmEventTimeInput, ConsoleMode,
@@ -18,9 +18,9 @@ use crate::{
     },
     monitor::{
         AnalysisCandidate, CandidateActionKind, CandidateConfirmation, ClockMode, ClockQuality,
-        ClockSnapshot, ClockTransition, FacingDirection, HumanClock, MonitorEvent,
-        MonitorEventEnvelope, MonitorSnapshot, MonitorSourceKind, ObservedBattleState, ProxyClock,
-        VisualObservation, confirm_candidate,
+        ClockSnapshot, ClockTransition, FacingDirection, HumanClock, MonitorConnectionState,
+        MonitorEvent, MonitorEventEnvelope, MonitorSnapshot, MonitorSourceKind,
+        ObservedBattleState, ProxyClock, UnconfirmedField, VisualObservation, confirm_candidate,
     },
     recording_continuation::{
         RecordingAlignment, RecordingMergeError, RecordingMergeInput, RecordingMergeMode,
@@ -503,6 +503,9 @@ impl RunnerState {
         let candidates = self
             .staged_recording_events
             .iter()
+            .chain(self.axis.events.iter().filter(|event| {
+                event.complete && event.time_confirmation != TimeConfirmation::Unconfirmed
+            }))
             .filter(|event| {
                 event.source_recording_id.as_deref() == Some(input.recording_analysis_id.as_str())
                     && event.source_segment_index == Some(input.segment_index)
@@ -1481,10 +1484,191 @@ impl RunnerState {
     }
 
     pub fn set_monitor_snapshot(&mut self, monitor: MonitorSnapshot) {
+        let analysis_completed = monitor.source_kind == MonitorSourceKind::Recording
+            && monitor.connection_state == MonitorConnectionState::Ready
+            && (self.monitor.connection_state != MonitorConnectionState::Ready
+                || monitor.recording_analysis_id != self.monitor.recording_analysis_id);
         if monitor.recording_analysis_id != self.monitor.recording_analysis_id {
             self.staged_recording_events.clear();
         }
         self.monitor = monitor;
+        if analysis_completed
+            && let Some(segment_index) = self
+                .monitor
+                .recording_candidates
+                .iter()
+                .map(|candidate| candidate.segment_index)
+                .min()
+            && let Err(error) = self.select_recording_segment(segment_index)
+        {
+            self.last_message = Some(error.message);
+        }
+    }
+
+    pub fn select_recording_segment(&mut self, segment_index: u32) -> Result<(), CommandError> {
+        if self.monitor.source_kind != MonitorSourceKind::Recording
+            || self.monitor.connection_state != MonitorConnectionState::Ready
+        {
+            return Err(CommandError::new(
+                "recording_analysis_not_ready",
+                "录屏分析尚未完成",
+            ));
+        }
+        if self.proxy.enabled || self.pending_takeover.is_some() {
+            return Err(CommandError::new(
+                "recording_axis_busy",
+                "代理或接管尚未停止，不能切换录屏轴",
+            ));
+        }
+        let analysis_id = self.monitor.recording_analysis_id.clone().ok_or_else(|| {
+            CommandError::new(
+                "recording_analysis_identity_missing",
+                "录屏分析缺少来源标识",
+            )
+        })?;
+        if let Some(revision_id) = self
+            .session
+            .revisions
+            .iter()
+            .rev()
+            .find(|revision| {
+                revision.attempt_id.is_none()
+                    && revision.recording_merge.as_ref().is_some_and(|source| {
+                        source.recording_analysis_id == analysis_id
+                            && source.segment_index == segment_index
+                    })
+            })
+            .map(|revision| revision.id.clone())
+        {
+            return self.select_axis_revision(&revision_id);
+        }
+        let segment = self
+            .monitor
+            .recording_segments
+            .iter()
+            .find(|segment| segment.index == segment_index)
+            .ok_or_else(|| CommandError::new("recording_segment_not_found", "未找到录屏区段"))?;
+        let stage = segment.stage_recognition.stage.clone();
+        let candidates = self
+            .monitor
+            .recording_candidates
+            .iter()
+            .filter(|candidate| candidate.segment_index == segment_index)
+            .cloned()
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Err(CommandError::new(
+                "recording_candidates_empty",
+                "该区段没有识别到操作",
+            ));
+        }
+        let mut axis = DraftAxis {
+            title: format!(
+                "{} · 录屏轴",
+                stage
+                    .as_ref()
+                    .map_or("未确认关卡", |stage| stage.code.as_str())
+            ),
+            stage_id: stage.map(|stage| stage.id),
+            events: Vec::with_capacity(candidates.len()),
+        };
+        for candidate in &candidates {
+            if candidate.game_frame_range.start > candidate.game_frame_range.end {
+                return Err(CommandError::new(
+                    "recording_time_invalid",
+                    "录屏候选时间范围无效",
+                ));
+            }
+            validate_frame(candidate.game_frame_range.end)?;
+            let known = |field| {
+                candidate.confidence >= 70 && !candidate.unconfirmed_fields.contains(&field)
+            };
+            let kind = if known(UnconfirmedField::ActionKind) {
+                match candidate.kind {
+                    Some(CandidateActionKind::Deploy) => DraftKind::Deploy,
+                    Some(CandidateActionKind::Skill) => DraftKind::Skill,
+                    Some(CandidateActionKind::Retreat) => DraftKind::Retreat,
+                    None => DraftKind::Bookmark,
+                }
+            } else {
+                DraftKind::Bookmark
+            };
+            let mut event = self.allocate_draft(candidate.game_frame_range.start, kind);
+            event.source_recording_id = Some(analysis_id.clone());
+            event.source_candidate_id = Some(candidate.id.clone());
+            event.source_segment_index = Some(segment_index);
+            event.source_timestamp_ns = candidate
+                .source_start
+                .nanoseconds()
+                .ok()
+                .map(|value| value as f64);
+            event.frame_range = EventFrameRange {
+                start: candidate.game_frame_range.start,
+                end: candidate.game_frame_range.end,
+            };
+            event.clock_quality = candidate.clock_quality;
+            event.time_confirmation = if known(UnconfirmedField::GameFrame)
+                && candidate.clock_quality == ClockQuality::Trusted
+                && candidate.game_frame_range.start == candidate.game_frame_range.end
+                && event.source_timestamp_ns.is_some()
+            {
+                TimeConfirmation::Observed
+            } else {
+                TimeConfirmation::Unconfirmed
+            };
+            if kind != DraftKind::Bookmark && known(UnconfirmedField::Tile) {
+                event.tile = candidate.tile.clone().filter(|tile| valid_tile_code(tile));
+            }
+            if kind == DraftKind::Deploy {
+                if known(UnconfirmedField::Operator) {
+                    event.operator = candidate
+                        .operator
+                        .clone()
+                        .filter(|operator| valid_operator_id(operator));
+                }
+                if known(UnconfirmedField::Direction) {
+                    event.direction = candidate.direction.map(|direction| match direction {
+                        FacingDirection::Up => DraftDirection::Up,
+                        FacingDirection::Right => DraftDirection::Right,
+                        FacingDirection::Down => DraftDirection::Down,
+                        FacingDirection::Left => DraftDirection::Left,
+                    });
+                }
+            }
+            event.refresh_complete();
+            axis.events.push(event);
+        }
+        axis.sort_events();
+        let pending = axis
+            .events
+            .iter()
+            .filter(|event| {
+                !event.complete || event.time_confirmation == TimeConfirmation::Unconfirmed
+            })
+            .count();
+        let parent_id = self.session.current_revision_id.clone();
+        self.session.create_recording_merge_revision(
+            &parent_id,
+            None,
+            0,
+            axis.clone(),
+            RecordingMergeProvenance {
+                recording_analysis_id: analysis_id,
+                segment_index,
+                frame_offset: 0,
+                candidate_ids: candidates
+                    .into_iter()
+                    .map(|candidate| candidate.id)
+                    .collect(),
+            },
+        )?;
+        self.axis = axis;
+        self.stage_bounds = None;
+        self.rebuild_triggered();
+        self.last_message = Some(format!(
+            "录屏轴已自动填充，{pending} 个操作待校对；按 H 编辑"
+        ));
+        Ok(())
     }
 
     pub fn set_manual_stage(&mut self, stage: StageCatalogEntry) -> Result<(), CommandError> {
@@ -2038,6 +2222,63 @@ mod tests {
         let runner = RunnerState::new(Instant::now());
 
         assert!(runner.axis.events.is_empty());
+    }
+
+    #[test]
+    fn recording_ready_fills_known_fields_once_and_preserves_uncertainty() {
+        let mut runner = RunnerState::new(Instant::now());
+        let candidate: AnalysisCandidate = serde_json::from_value(serde_json::json!({
+            "id": "candidate-1", "segmentIndex": 0,
+            "sourceStart": { "rawPts": "100", "timeBase": { "numerator": 1, "denominator": 1000 } },
+            "sourceEnd": { "rawPts": "200", "timeBase": { "numerator": 1, "denominator": 1000 } },
+            "gameFrameRange": { "start": 30, "end": 30 }, "clockQuality": "trusted",
+            "kind": "deploy", "operator": "char_002_amiya", "tile": "C5", "direction": "right",
+            "evidence": "deploymentGesture", "confidence": 90, "unconfirmedFields": []
+        }))
+        .unwrap();
+        let mut uncertain = candidate.clone();
+        uncertain.id = "candidate-2".to_string();
+        uncertain.game_frame_range.end = 34;
+        uncertain.unconfirmed_fields = vec![UnconfirmedField::Tile];
+        let mut second_segment = candidate.clone();
+        second_segment.id = "candidate-3".to_string();
+        second_segment.segment_index = 1;
+        let segments = serde_json::from_value(serde_json::json!([
+            { "index": 0, "sourceStartFrame": 0, "sourceEndFrame": 300, "gameDurationFrames": 90, "stageRecognition": { "status": "matched", "rawText": "TEST-1", "stage": { "id": "test", "code": "TEST-1", "name": "测试", "levelPath": "test.json" }, "candidates": [], "warning": null } },
+            { "index": 1, "sourceStartFrame": 301, "sourceEndFrame": 600, "gameDurationFrames": 90, "stageRecognition": { "status": "unavailable", "rawText": "", "stage": null, "candidates": [], "warning": null } }
+        ])).unwrap();
+        let monitor = MonitorSnapshot {
+            source_kind: MonitorSourceKind::Recording,
+            connection_state: MonitorConnectionState::Ready,
+            recording_analysis_id: Some("analysis-1".to_string()),
+            recording_candidates: vec![candidate, uncertain, second_segment],
+            recording_segments: segments,
+            ..MonitorSnapshot::default()
+        };
+        runner.set_monitor_snapshot(monitor.clone());
+        assert_eq!(runner.axis.events.len(), 2);
+        assert!(runner.axis.events[0].complete);
+        assert_eq!(
+            runner.axis.events[0].time_confirmation,
+            TimeConfirmation::Observed
+        );
+        assert_eq!(runner.axis.events[1].tile, None);
+        assert!(!runner.axis.events[1].complete);
+        assert_eq!(
+            runner.axis.events[1].time_confirmation,
+            TimeConfirmation::Unconfirmed
+        );
+        assert!(runner.axis_json_for_export().is_err());
+        assert!(runner.session.revisions[0].axis.events.is_empty());
+        runner.set_monitor_snapshot(monitor);
+        assert_eq!(runner.session.revisions.len(), 2);
+        runner.select_recording_segment(1).unwrap();
+        assert_eq!(runner.axis.events.len(), 1);
+        assert_eq!(runner.axis.events[0].source_segment_index, Some(1));
+        runner.select_recording_segment(0).unwrap();
+        assert_eq!(runner.axis.events.len(), 2);
+        assert_eq!(runner.session.revisions.len(), 3);
+        assert!(runner.select_recording_segment(9).is_err());
     }
 
     #[test]

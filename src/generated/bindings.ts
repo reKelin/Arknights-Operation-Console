@@ -18,6 +18,7 @@ export const commands = {
 	confirmEventTime: (input: ConfirmEventTimeInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_event_time", { input })),
 	confirmRecordingCandidate: (input: CandidateConfirmation) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_recording_candidate", { input })),
 	previewRecordingMerge: (input: RecordingMergeInput) => typedError<RecordingMergePreview, CommandError>(__TAURI_INVOKE("preview_recording_merge", { input })),
+	selectRecordingSegment: (segmentIndex: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_recording_segment", { segmentIndex })),
 	createRecordingMergeRevision: (input: RecordingMergeInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("create_recording_merge_revision", { input })),
 	deleteEvent: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("delete_event", { id })),
 	setAxisMetadata: (input: AxisMetadataInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("set_axis_metadata", { input })),
