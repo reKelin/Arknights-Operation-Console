@@ -8,7 +8,7 @@ depends_on:
 
 # Windows 人工验收
 
-本页保留早期 demo 的验收定义，不再作为当前操作指令。当前窗口、快捷键与本地 app 验收使用 [现行验收清单](../../docs/subsystems/ci-manual-acceptance.md)。
+本页保留早期 demo 的验收定义。
 
 以下是早期 demo 的历史验收范围：
 
