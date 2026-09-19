@@ -29,7 +29,7 @@ depends_on:
 - 接管前缀由当前 `runId` 的有序执行回执决定，不按帧粗略截断；未确认回执继续阻止导出和武装。
 - 录屏合并按完整来源身份去重；同帧不同来源保持稳定顺序，同格同类冲突必须人工保留或排除。
 - 停止代理不会创建 revision；只有 K 接管收尾或已确认录屏合并创建子版本。
-- 生成绑定来自 Rust 类型；CI 检查绑定漂移、Biome、TypeScript、既有 Vitest、rustfmt、Clippy 和 Rust 测试。
+- 生成绑定来自 Rust 类型；PR Smoke Test 与发布验证分离，检查范围及本地验收边界见 [CI 规范](ci.md)。Tauri 绑定漂移、rustfmt、Clippy 和 Rust 测试属于 PR Smoke Test，Release Pipeline 复用这些门禁后再构建。
 - Console 更名保持旧 WiX UpgradeCode；NSIS 仅在默认当前用户安装路径和旧卸载信息一致时迁移 Runner，并在安装成功后清理旧项。
 
 ## 未验收项

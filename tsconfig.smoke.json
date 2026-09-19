@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "tsBuildInfoFile": "./.local/tsconfig.smoke.tsbuildinfo"
+  },
+  "include": ["playwright.config.ts", "tests/smoke/**/*.ts"]
+}

@@ -17,7 +17,10 @@ async function loadUrl(url, label) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       const headers = { "User-Agent": "Arknights-Operation-Runner" };
-      if (process.env.GITHUB_TOKEN) {
+      if (
+        process.env.GITHUB_TOKEN &&
+        new URL(url).hostname === "api.github.com"
+      ) {
         headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
       }
       const response = await fetch(url, { headers });

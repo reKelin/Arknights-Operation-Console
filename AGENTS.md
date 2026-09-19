@@ -64,13 +64,15 @@
 
 ## 测试与验证
 
-- Agent Hub 不在本地运行测试；默认由 GitHub Actions 的 Windows runner 执行验证。
-- 开发过程中只保留可快速验证的基础检查：生成文件漂移、Biome、`tsc`、rustfmt、Clippy 和 Rust 测试；不得执行 `tauri build --release` 或启动冒烟。正式发布时才执行 release 构建与启动冒烟。
-- 前端首版不引入 React Testing Library 或端到端测试框架；Vitest 只覆盖时间轴帧/像素换算、滚动范围和拖动落点等纯逻辑。
+- 当前 CI 与验收规范以 `docs/subsystems/ci.md` 为准；与旧规格中的开发期执行习惯冲突时使用本节。
+- PR 必须通过 `Smoke Test` 后才允许合并；不得继续采用“不等 CI 直接合并”的旧约定。创建 PR 不等于授权自动合并。
+- `Smoke Test` 按测试类型提供静态检查、单元测试、生成代码漂移、Rust 测试和 UI 冒烟五个独立 job。不能用纯逻辑测试、类型检查或截图替代功能冒烟。
+- 前端功能冒烟使用固定小样本和受控的 Tauri IPC；不连接真实游戏或发送输入，未知调用与页面异常必须失败。原生窗口、系统全局快捷键和实机行为另做本地 app 验收。
+- Vitest 运行 `src` 中的纯逻辑测试，Playwright 运行 `tests/smoke/ui`；两个入口不得互相收集对方的用例。
+- Rust 全量验证、Tauri 绑定生成和目录漂移属于 PR 的 `Smoke Test`；生产构建和原生启动检查保留在独立 Release Pipeline，仅由版本 tag 或手动触发，私有仓库不运行该发布流程。
+- 允许本地运行与改动相关的快速检查与测试，按需用 `npm run app:build:local` 编译调试 app；不为一般 PR 擅自运行完整发布构建或触发云端 Release。
 - 非平凡的分支、循环、解析器和状态转换至少保留一个能在错误时失败的最小检查。
-- 快速开发阶段不要求独立 Agent 审查。创建 PR 并确认可以合并后立即使用 squash merge 合入 `main`，不等待完整 CI。
-- 不等待任何 CI 流程；CI 始终在后台运行，不主动 watch、poll 或阻塞等待，收到失败结果后再定位、修复并提交。开发速度优先。
-- 只报告实际执行过的检查；失败时修复原因，不跳过 hooks 或删除测试。
+- 只报告实际执行过的检查；未具备依赖或平台条件时明确说明未执行项，不跳过失败用例或删除测试。
 
 ## Git
 

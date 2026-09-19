@@ -123,6 +123,7 @@ export default function SettingsPage({
           <>
             <SettingRow label="主题">
               <select
+                aria-label="主题"
                 onChange={(event) =>
                   updateSettings({
                     theme: event.target.value as AppSettings["theme"],
@@ -200,6 +201,7 @@ export default function SettingsPage({
               note="部署、技能和撤退均在暂停事务中执行"
             >
               <input
+                aria-label="暂停键"
                 onBlur={() => updateSettings({ pauseKey })}
                 onChange={(event) => setPauseKey(event.target.value)}
                 value={pauseKey}
@@ -207,6 +209,7 @@ export default function SettingsPage({
             </SettingRow>
             <SettingRow label="技能键">
               <input
+                aria-label="技能键"
                 onBlur={() => updateSettings({ skillKey })}
                 onChange={(event) => setSkillKey(event.target.value)}
                 value={skillKey}
@@ -214,6 +217,7 @@ export default function SettingsPage({
             </SettingRow>
             <SettingRow label="撤退键">
               <input
+                aria-label="撤退键"
                 onBlur={() => updateSettings({ retreatKey })}
                 onChange={(event) => setRetreatKey(event.target.value)}
                 value={retreatKey}
@@ -224,6 +228,7 @@ export default function SettingsPage({
               note="更改任一键位后必须重新确认；确认仅解锁下一次代理武装"
             >
               <input
+                aria-label="确认游戏键位"
                 checked={snapshot.settings.bindingsConfirmed ?? false}
                 onChange={(event) =>
                   updateSettings({ bindingsConfirmed: event.target.checked })

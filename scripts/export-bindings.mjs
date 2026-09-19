@@ -6,6 +6,7 @@ if (!process.argv.includes("--normalize-only")) {
     "cargo",
     [
       "run",
+      "--locked",
       "--no-default-features",
       "--manifest-path",
       "src-tauri/Cargo.toml",

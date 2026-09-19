@@ -40,7 +40,7 @@ type Page = "work" | "settings" | "editor" | "analysis";
 export default function App() {
   const [snapshot, setSnapshot] = useState<RunnerSnapshot | null>(null);
   const [page, setPage] = useState<Page>("work");
-  const workHeight = useRef(280);
+  const workSize = useRef({ width: 1100, height: 280 });
   const previousPage = useRef<Page>("work");
   const [pendingMode, setPendingMode] = useState<Mode | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -64,15 +64,22 @@ export default function App() {
 
   useEffect(() => {
     if (page === previousPage.current) return;
-    if (previousPage.current === "work")
-      workHeight.current = window.innerHeight;
+    if (previousPage.current === "work") {
+      workSize.current = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+    }
     previousPage.current = page;
-    const height =
+    const size =
       page === "work"
-        ? workHeight.current
-        : Math.max(window.innerHeight, page === "editor" ? 460 : 420);
+        ? workSize.current
+        : {
+            width: window.innerWidth,
+            height: Math.max(window.innerHeight, page === "editor" ? 460 : 420),
+          };
     getCurrentWindow()
-      .setSize(new LogicalSize(window.innerWidth, height))
+      .setSize(new LogicalSize(size.width, size.height))
       .catch((reason) => setError(messageOf(reason)));
   }, [page]);
 
@@ -686,9 +693,10 @@ export default function App() {
                 className="revision-select"
                 aria-label="轴版本"
                 disabled={snapshot.proxy.enabled}
-                onChange={(event) =>
-                  run(() => commands.selectAxisRevision(event.target.value))
-                }
+                onChange={(event) => {
+                  const revisionId = event.target.value;
+                  run(() => commands.selectAxisRevision(revisionId));
+                }}
                 value={snapshot.session.currentRevisionId}
               >
                 {snapshot.session.revisions.map((revision) => (
