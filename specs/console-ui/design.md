@@ -1,11 +1,13 @@
 ---
-status: implemented
+status: superseded
 scope: console-ui
 depends_on:
   - specs/console-ui/requirements.md
 ---
 
 # Console 界面设计
+
+当前界面结构与能力以 [原型工作流重构](../console-workflow/design.md) 为准。
 
 ## 页面结构
 

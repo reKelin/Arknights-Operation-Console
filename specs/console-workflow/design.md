@@ -1,5 +1,5 @@
 ---
-status: approved
+status: implemented
 scope: console-workflow
 depends_on:
   - specs/console-workflow/requirements.md

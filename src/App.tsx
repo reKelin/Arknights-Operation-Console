@@ -1,116 +1,50 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import appIcon from "../assets/app-icon-small.png";
+import { version } from "../package.json";
+import AxisEditor from "./AxisEditor";
 import {
-  type AppSettings,
-  type ClockQuality,
-  type CommandError,
-  type ConsoleMode,
+  CONSOLE_TO_MODE,
+  frameTime,
+  MODE_TO_CONSOLE,
+  type Mode,
+  messageOf,
+  REVISION_SOURCE_LABELS,
+  type TypedResult,
+  unwrap,
+} from "./console";
+import Picker from "./Dialog";
+import {
   commands,
-  type DraftDirection,
-  type DraftEvent,
-  type DraftKind,
   events,
   type GameWindowCandidate,
-  type ObservedBattleState,
-  type RecordingAttempt,
   type RecordingMergeInput,
   type RecordingMergePreview,
   type RunnerSnapshot,
   type StageCatalogEntry,
-  type UpdateEventInput,
 } from "./generated/bindings";
-import RecordingCandidates from "./RecordingCandidates";
+import Icon from "./Icon";
+import ModeHero from "./ModeHero";
 import RecordingContinuation from "./RecordingContinuation";
+import SettingsPage from "./SettingsPage";
 import Timeline from "./Timeline";
-import { clampViewFrames } from "./timelineMath";
+import {
+  clampViewFrames,
+  MAX_VIEW_FRAMES,
+  MIN_VIEW_FRAMES,
+} from "./timelineMath";
 
-type TypedResult<T> =
-  | { status: "ok"; data: T }
-  | { status: "error"; error: CommandError };
-type Mode = "live" | "video" | "proxy";
-type Page = "work" | "settings" | "editor";
-
-const KIND_LABELS: Record<DraftKind, string> = {
-  bookmark: "待分类",
-  deploy: "部署",
-  skill: "技能",
-  retreat: "撤退",
-};
-const STATE_LABELS: Record<ObservedBattleState, string> = {
-  unknown: "状态未知",
-  notInBattle: "关卡外",
-  battleBegin: "正在进入关卡",
-  oneXRunning: "1× 运行",
-  twoXRunning: "2× 运行",
-  pointTwoXRunning: "0.2× 运行",
-  paused: "暂停",
-  deployingOperator: "部署中",
-  adjustingOperatorFacing: "调整方向",
-};
-const MODE_TO_CONSOLE: Record<Mode, ConsoleMode> = {
-  live: "manualRecording",
-  video: "recordingAnalysis",
-  proxy: "proxy",
-};
-const CONSOLE_TO_MODE: Record<ConsoleMode, Mode> = {
-  manualRecording: "live",
-  recordingAnalysis: "video",
-  proxy: "proxy",
-};
-const CLOCK_QUALITY_LABELS: Record<ClockQuality, string> = {
-  waiting: "等待锚点",
-  trusted: "可信",
-  uncertain: "不确定",
-  lost: "已丢失",
-};
-const REVISION_SOURCE_LABELS = {
-  imported: "导入",
-  manual: "人工",
-  takeover: "接管续录",
-  recordingMerge: "录屏接续",
-} as const;
-
-function unwrap<T>(result: TypedResult<T>): T {
-  if (result.status === "error") throw result.error;
-  return result.data;
-}
-
-function messageOf(error: unknown): string {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-  return String(error);
-}
-
-function frameTime(frame: number, denominator = 30): string {
-  const seconds = Math.floor(frame / denominator);
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}:${String(frame % denominator).padStart(2, "0")}`;
-}
-
-function rangeLabel(frames: number): string {
-  if (frames < 30) return `${frames} 帧`;
-  const seconds = Math.round(frames / 30);
-  return seconds < 60 ? `${seconds} 秒` : `${Math.round(seconds / 60)} 分钟`;
-}
-
-function attemptLabel(attempt: RecordingAttempt): string {
-  const stage = attempt.stageId ? ` · ${attempt.stageId}` : "";
-  const status = attempt.status === "active" ? "进行中" : "已结束";
-  return `第 ${attempt.sequence} 局${stage} · ${status}`;
-}
+type Page = "work" | "settings" | "editor" | "analysis";
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<RunnerSnapshot | null>(null);
   const [page, setPage] = useState<Page>("work");
+  const workHeight = useRef(280);
+  const previousPage = useRef<Page>("work");
+  const [pendingMode, setPendingMode] = useState<Mode | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [viewFrames, setViewFrames] = useState(900);
+  const [viewFrames, setViewFrames] = useState(5400);
   const [tracePreviewFrame, setTracePreviewFrame] = useState<number | null>(
     null,
   );
@@ -124,6 +58,41 @@ export default function App() {
   const [stageSearching, setStageSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastNoticeSequence = useRef(0);
+  const commandQueue = useRef<Promise<boolean>>(Promise.resolve(true));
+  const [proxyConfirmationOpen, setProxyConfirmationOpen] = useState(false);
+  const [validationOpen, setValidationOpen] = useState(false);
+
+  useEffect(() => {
+    if (page === previousPage.current) return;
+    if (previousPage.current === "work")
+      workHeight.current = window.innerHeight;
+    previousPage.current = page;
+    const height =
+      page === "work"
+        ? workHeight.current
+        : Math.max(window.innerHeight, page === "editor" ? 460 : 420);
+    getCurrentWindow()
+      .setSize(new LogicalSize(window.innerWidth, height))
+      .catch((reason) => setError(messageOf(reason)));
+  }, [page]);
+
+  useEffect(() => {
+    if (
+      !pendingMode ||
+      !snapshot ||
+      ["cancelling", "awaitingPauseProof"].includes(
+        snapshot.session.takeover.status,
+      )
+    )
+      return;
+    if (snapshot.session.takeover.status === "recording") {
+      commands
+        .setConsoleMode(MODE_TO_CONSOLE[pendingMode])
+        .then((result) => setSnapshot(unwrap(result)))
+        .catch((reason) => setError(messageOf(reason)));
+    }
+    setPendingMode(null);
+  }, [pendingMode, snapshot]);
 
   const selected = useMemo(
     () =>
@@ -189,17 +158,21 @@ export default function App() {
     }
   }, [snapshot?.notices]);
 
-  async function run(
+  function run(
     operation: () => Promise<TypedResult<RunnerSnapshot>>,
   ): Promise<boolean> {
-    try {
-      setSnapshot(unwrap(await operation()));
-      setError(null);
-      return true;
-    } catch (reason) {
-      setError(messageOf(reason));
-      return false;
-    }
+    const result = commandQueue.current.then(async () => {
+      try {
+        setSnapshot(unwrap(await operation()));
+        setError(null);
+        return true;
+      } catch (reason) {
+        setError(messageOf(reason));
+        return false;
+      }
+    });
+    commandQueue.current = result;
+    return result;
   }
 
   async function runVoid(operation: () => Promise<TypedResult<null>>) {
@@ -239,6 +212,8 @@ export default function App() {
 
   async function exportAxis() {
     if (!snapshot) return;
+    (document.activeElement as HTMLElement | null)?.blur();
+    await commandQueue.current;
     const path = await save({
       defaultPath: `${snapshot.axis.title || "未命名轴"}.axis.json`,
       filters: [{ name: "AxisLink JSON", extensions: ["json"] }],
@@ -248,17 +223,17 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       const editing =
         ["INPUT", "SELECT", "TEXTAREA"].includes(
           (event.target as HTMLElement).tagName,
         ) || (event.target as HTMLElement).isContentEditable;
-      if (editing) return;
       if (event.ctrlKey && event.key.toLowerCase() === "s") {
         event.preventDefault();
         exportAxis();
-      } else if (event.key.toLowerCase() === "h") {
+      } else if (!editing && event.key.toLowerCase() === "h") {
         event.preventDefault();
-        setPage("editor");
+        openPage("editor");
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -302,6 +277,66 @@ export default function App() {
     }
   }
 
+  async function openPage(nextPage: Page) {
+    await commandQueue.current;
+    if (
+      nextPage !== "work" &&
+      snapshot?.proxy.enabled &&
+      !(await run(() => commands.emergencyStop()))
+    )
+      return;
+    setPage(nextPage);
+  }
+
+  async function switchMode(nextMode: Mode) {
+    if (!snapshot || nextMode === CONSOLE_TO_MODE[snapshot.consoleMode]) return;
+    if (
+      snapshot.proxy.enabled &&
+      snapshot.proxy.runId &&
+      nextMode !== "proxy"
+    ) {
+      if (!(await run(() => commands.takeoverNow()))) return;
+      if (nextMode === "video") setPendingMode(nextMode);
+      return;
+    }
+    await run(() => commands.setConsoleMode(MODE_TO_CONSOLE[nextMode]));
+    setSelectedId(null);
+  }
+
+  async function selectRecordingSegment(index: number) {
+    if (await run(() => commands.selectRecordingSegment(index))) {
+      setRecordingSegmentIndex(index);
+      setSelectedId(null);
+      setTracePreviewFrame(0);
+    }
+  }
+
+  async function prepareProxy() {
+    if (!snapshot) return;
+    const source = snapshot.session.revisions.find(
+      (revision) => revision.id === snapshot.session.currentRevisionId,
+    )?.recordingMerge;
+    if (
+      snapshot.consoleMode === "recordingAnalysis" &&
+      (!snapshot.monitor.recordingAnalysisId ||
+        source?.recordingAnalysisId !== snapshot.monitor.recordingAnalysisId)
+    ) {
+      setError("当前录屏尚未生成作战轴");
+      return;
+    }
+    if (
+      !snapshot.axis.events.length ||
+      snapshot.axis.events.some(
+        (event) => !event.complete || event.timeConfirmation === "unconfirmed",
+      ) ||
+      snapshot.stagedRecordingEvents.length
+    ) {
+      setValidationOpen(true);
+      return;
+    }
+    await switchMode("proxy");
+  }
+
   if (!snapshot) {
     return (
       <main className="loading-shell">
@@ -311,8 +346,26 @@ export default function App() {
     );
   }
 
+  const mode = CONSOLE_TO_MODE[snapshot.consoleMode];
+  const currentRevision = snapshot.session.revisions.find(
+    (revision) => revision.id === snapshot.session.currentRevisionId,
+  );
+  const recordingSource = currentRevision?.recordingMerge;
+  const videoHasAxis =
+    mode !== "video" ||
+    (snapshot.monitor.recordingAnalysisId !== null &&
+      recordingSource?.recordingAnalysisId ===
+        snapshot.monitor.recordingAnalysisId);
+  const axisEvents = videoHasAxis ? snapshot.axis.events : [];
+  const currentSegmentIndex =
+    recordingSource?.recordingAnalysisId ===
+    snapshot.monitor.recordingAnalysisId
+      ? recordingSource.segmentIndex
+      : recordingSegmentIndex;
   const recordingSegment =
-    snapshot.monitor.recordingSegments[recordingSegmentIndex] ?? null;
+    snapshot.monitor.recordingSegments.find(
+      (segment) => segment.index === currentSegmentIndex,
+    ) ?? null;
   const visibleTracePoints = recordingSegment
     ? snapshot.monitor.tracePoints.filter(
         (point) =>
@@ -323,7 +376,6 @@ export default function App() {
   const traceDurationFrames =
     recordingSegment?.gameDurationFrames ??
     snapshot.monitor.traceDurationFrames;
-  const mode = CONSOLE_TO_MODE[snapshot.consoleMode];
   const revisionEditable =
     snapshot.session.currentRevisionId ===
     snapshot.session.activeRecordingRevisionId;
@@ -336,13 +388,15 @@ export default function App() {
         )),
   );
   const displayedFrame =
-    mode === "video" && tracePreviewFrame !== null
-      ? tracePreviewFrame
+    mode === "video"
+      ? !videoHasAxis
+        ? 0
+        : (selected?.frame ?? tracePreviewFrame ?? axisEvents[0]?.frame ?? 0)
       : snapshot.frame;
   const displayedTime =
-    mode === "video" && tracePreviewFrame !== null
-      ? frameTime(displayedFrame)
-      : snapshot.time;
+    mode === "video"
+      ? frameTime(displayedFrame, snapshot.settings.framesPerCost)
+      : frameTime(snapshot.frame, snapshot.settings.framesPerCost);
   const continuationRevisions = snapshot.session.revisions
     .map((revision) => ({
       id: revision.id,
@@ -363,8 +417,13 @@ export default function App() {
     (segment) => ({
       index: segment.index,
       label: `区段 ${segment.index + 1} · F0–F${segment.gameDurationFrames}`,
-      candidateCount: snapshot.stagedRecordingEvents.filter(
+      candidateCount: [
+        ...snapshot.axis.events,
+        ...snapshot.stagedRecordingEvents,
+      ].filter(
         (event) =>
+          event.complete &&
+          event.timeConfirmation !== "unconfirmed" &&
           event.sourceRecordingId === snapshot.monitor.recordingAnalysisId &&
           event.sourceSegmentIndex === segment.index,
       ).length,
@@ -389,45 +448,15 @@ export default function App() {
         <div className="brand">
           <img alt="" className="brand-mark" src={appIcon} />
           <strong>Arknights Operation Console</strong>
+          <span className="version">v{version}</span>
         </div>
-        {page === "work" && (
-          <div aria-label="工作模式" className="mode-tabs" role="tablist">
-            {(
-              [
-                ["live", "人工录轴"],
-                ["video", "录屏分析"],
-                ["proxy", "代理指挥"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                aria-selected={mode === value}
-                key={value}
-                onClick={() =>
-                  run(() => commands.setConsoleMode(MODE_TO_CONSOLE[value]))
-                }
-                role="tab"
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        <span
-          className="source-status"
-          title={snapshot.monitor.sourceName ?? ""}
-        >
-          {snapshot.monitor.sourceName
-            ? `${snapshot.monitor.sourceName} · ${STATE_LABELS[snapshot.monitor.battleState]}`
-            : "未选择游戏窗口"}
-        </span>
         <button
           aria-label={page === "settings" ? "返回工作台" : "打开设置"}
           className="icon-button"
-          onClick={() => setPage(page === "settings" ? "work" : "settings")}
+          onClick={() => openPage(page === "settings" ? "work" : "settings")}
           type="button"
         >
-          {page === "settings" ? "←" : "⚙"}
+          <Icon name={page === "settings" ? "back" : "settings"} />
         </button>
         <button
           aria-label="最小化到托盘"
@@ -435,7 +464,7 @@ export default function App() {
           onClick={() => runVoid(() => commands.hideToTray())}
           type="button"
         >
-          —
+          <Icon name="minus" />
         </button>
         <button
           aria-label="关闭"
@@ -445,7 +474,7 @@ export default function App() {
           }
           type="button"
         >
-          ×
+          <Icon name="close" />
         </button>
       </header>
 
@@ -467,30 +496,32 @@ export default function App() {
             await searchStages("");
           }}
         />
-      ) : page === "editor" ? (
-        <AxisEditor
-          selectedId={selectedId}
-          snapshot={snapshot}
-          onBack={() => setPage("work")}
-          onRun={run}
-          onSearchStages={searchStages}
-          onSelect={setSelectedId}
-        />
-      ) : (
-        <section className="work-page">
-          <ModeHero
-            displayedFrame={displayedFrame}
-            displayedTime={displayedTime}
-            mode={mode}
-            onChooseRecording={chooseRecording}
-            onEdit={() => setPage("editor")}
-            onToggleRecording={() =>
-              run(() => commands.setRecording(!snapshot.recording))
-            }
-            onRun={run}
-            snapshot={snapshot}
-          />
-
+      ) : page === "analysis" ? (
+        <section className="analysis-page">
+          <div className="page-heading">
+            <strong>校对录屏操作</strong>
+            <button onClick={() => setPage("work")} type="button">
+              <Icon name="back" />
+              返回
+            </button>
+          </div>
+          <label className="analysis-segment">
+            关卡区段
+            <select
+              aria-label="校对关卡区段"
+              value={currentSegmentIndex}
+              onChange={(event) =>
+                selectRecordingSegment(Number(event.target.value))
+              }
+            >
+              {snapshot.monitor.recordingSegments.map((segment) => (
+                <option key={segment.index} value={segment.index}>
+                  {segment.stageRecognition.stage?.code ?? "未确认关卡"} · 区段{" "}
+                  {segment.index + 1}
+                </option>
+              ))}
+            </select>
+          </label>
           {pendingReceipts.map((receipt) => (
             <div className="receipt-confirmation" key={receipt.receiptSequence}>
               <span>
@@ -525,48 +556,134 @@ export default function App() {
             </div>
           ))}
 
-          {mode === "video" &&
-            snapshot.monitor.sourceKind === "recording" &&
-            snapshot.monitor.connectionState === "ready" && (
-              <>
-                <RecordingCandidates
-                  candidates={snapshot.monitor.recordingCandidates}
-                  events={[
-                    ...snapshot.axis.events,
-                    ...snapshot.stagedRecordingEvents,
-                  ]}
-                  onConfirm={(input) =>
-                    run(() => commands.confirmRecordingCandidate(input))
-                  }
-                  onPreview={setTracePreviewFrame}
-                  recordingAnalysisId={snapshot.monitor.recordingAnalysisId}
-                  segmentIndex={recordingSegmentIndex}
-                />
-                {snapshot.monitor.recordingAnalysisId && (
-                  <RecordingContinuation
-                    onCreate={(input) =>
-                      run(() => commands.createRecordingMergeRevision(input))
-                    }
-                    onPreview={previewRecordingMerge}
-                    recordingAnalysisId={snapshot.monitor.recordingAnalysisId}
-                    revisions={continuationRevisions}
-                    segments={continuationSegments}
-                  />
+          {snapshot.monitor.sourceKind === "recording" &&
+            snapshot.monitor.connectionState === "ready" &&
+            snapshot.monitor.recordingAnalysisId && (
+              <RecordingContinuation
+                onCreate={(input) =>
+                  run(() => commands.createRecordingMergeRevision(input))
+                }
+                onPreview={previewRecordingMerge}
+                recordingAnalysisId={snapshot.monitor.recordingAnalysisId}
+                revisions={continuationRevisions}
+                key={`${snapshot.monitor.recordingAnalysisId}:${currentSegmentIndex}`}
+                segments={continuationSegments.filter(
+                  (segment) => segment.index === currentSegmentIndex,
                 )}
-              </>
+              />
             )}
+        </section>
+      ) : page === "editor" ? (
+        <AxisEditor
+          selectedId={selectedId}
+          snapshot={snapshot}
+          onBack={() => setPage("work")}
+          onRun={run}
+          onReviewRecording={() => openPage("analysis")}
+          onSearchStages={searchStages}
+          onSelect={async (id) => {
+            await commandQueue.current;
+            setSelectedId(id);
+          }}
+        />
+      ) : (
+        <section className="work-page">
+          <nav className="modebar" aria-label="工作模式与文件操作">
+            <div aria-label="工作模式" className="mode-tabs" role="tablist">
+              {(
+                [
+                  ["live", "实时录轴"],
+                  ["proxy", "代理指挥"],
+                  ["video", "视频分析"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  aria-selected={mode === value}
+                  key={value}
+                  onClick={() => switchMode(value)}
+                  role="tab"
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="toolbar">
+              {mode === "video" ? (
+                <button onClick={chooseRecording} type="button">
+                  {snapshot.monitor.sourceKind === "recording"
+                    ? "更换录屏"
+                    : "选择录屏"}
+                </button>
+              ) : (
+                <button onClick={importAxis} type="button">
+                  导入
+                </button>
+              )}
+              {(mode !== "video" ||
+                snapshot.monitor.connectionState === "ready") && (
+                <>
+                  <button onClick={exportAxis} type="button" title="Ctrl+S">
+                    导出
+                  </button>
+                  <button
+                    onClick={() => openPage("editor")}
+                    type="button"
+                    title="H"
+                  >
+                    编辑轴
+                  </button>
+                </>
+              )}
+            </div>
+          </nav>
+          <ModeHero
+            axisEvents={axisEvents}
+            displayedFrame={displayedFrame}
+            displayedTime={displayedTime}
+            mode={mode}
+            onChooseRecording={chooseRecording}
+            selected={videoHasAxis ? selected : null}
+            onEdit={() => openPage("editor")}
+            onUseAxis={prepareProxy}
+            onRequestProxy={async () => {
+              if (await run(() => commands.requestProxyExecution()))
+                setProxyConfirmationOpen(true);
+            }}
+            onSwitchVideo={() => switchMode("video")}
+            onSelectEvent={(id) => {
+              setSelectedId(id);
+              setTracePreviewFrame(
+                snapshot.axis.events.find((event) => event.id === id)?.frame ??
+                  0,
+              );
+            }}
+            recordingSegmentIndex={currentSegmentIndex}
+            onSelectSegment={(index) => {
+              selectRecordingSegment(index);
+            }}
+            onToggleRecording={() =>
+              run(() => commands.setRecording(!snapshot.recording))
+            }
+            onRun={run}
+            snapshot={snapshot}
+          />
 
           <div className="axis-heading">
             <div className="axis-title-group">
               <button
                 className="axis-title"
-                onClick={() => setPage("editor")}
+                onClick={() => openPage("editor")}
                 type="button"
               >
-                <strong>{snapshot.axis.title}</strong>
-                <span>{snapshot.axis.events.length} 个操作</span>
+                <strong>
+                  {videoHasAxis ? snapshot.axis.title : "未发现可提取的操作"}
+                </strong>
               </button>
               <select
+                hidden={!videoHasAxis}
+                className="revision-select"
                 aria-label="轴版本"
                 disabled={snapshot.proxy.enabled}
                 onChange={(event) =>
@@ -586,98 +703,212 @@ export default function App() {
               </select>
               {!revisionEditable && <em>旧版本只读</em>}
             </div>
-            <div className="axis-actions">
-              <button onClick={importAxis} type="button">
-                导入
-              </button>
-              <button onClick={exportAxis} type="button">
-                导出 <kbd>Ctrl S</kbd>
-              </button>
-              <button onClick={() => setPage("editor")} type="button">
-                整理 <kbd>H</kbd>
+            <div className="zoom-tools">
+              <button
+                aria-label="自适应轨道"
+                title="自适应轨道"
+                onClick={() =>
+                  setViewFrames(
+                    clampViewFrames(
+                      Math.max(
+                        40,
+                        displayedFrame,
+                        ...snapshot.axis.events.map((event) => event.frame),
+                      ) * 1.05,
+                    ),
+                  )
+                }
+                type="button"
+              >
+                <Icon name="fit" />
               </button>
               <button
-                aria-label="缩小时间轴"
+                aria-label="轨道缩小"
+                title="轨道缩小"
                 onClick={() => setViewFrames(clampViewFrames(viewFrames * 1.5))}
                 type="button"
               >
-                −
+                <Icon name="zoomOut" />
               </button>
-              <span>{rangeLabel(viewFrames)}</span>
+              <input
+                aria-label="轨道缩放"
+                aria-valuetext={`视野 ${viewFrames} 帧`}
+                type="range"
+                min="0"
+                max="1000"
+                value={
+                  (1000 * Math.log(MAX_VIEW_FRAMES / viewFrames)) /
+                  Math.log(MAX_VIEW_FRAMES / MIN_VIEW_FRAMES)
+                }
+                onChange={(event) =>
+                  setViewFrames(
+                    clampViewFrames(
+                      MAX_VIEW_FRAMES *
+                        (MIN_VIEW_FRAMES / MAX_VIEW_FRAMES) **
+                          (Number(event.target.value) / 1000),
+                    ),
+                  )
+                }
+              />
               <button
-                aria-label="放大时间轴"
+                aria-label="轨道放大"
+                title="轨道放大"
                 onClick={() => setViewFrames(clampViewFrames(viewFrames / 1.5))}
                 type="button"
               >
-                +
+                <Icon name="zoomIn" />
               </button>
             </div>
           </div>
 
-          <Timeline
-            currentFrame={displayedFrame}
-            editable={revisionEditable}
-            events={snapshot.axis.events}
-            onCreate={(frame, kind) =>
-              run(() => commands.addEvent({ frame, kind }))
-            }
-            onEdit={(event) => {
-              setSelectedId(event.id);
-              setPage("editor");
-            }}
-            onMove={async (id, frame) => {
-              if (await run(() => commands.moveEvent(id, frame))) {
-                setSelectedId(id);
-                setPage("editor");
+          {mode === "video" &&
+          (snapshot.monitor.sourceKind !== "recording" ||
+            snapshot.monitor.connectionState !== "ready") ? (
+            <div className="analysis-progress">
+              <progress
+                aria-label="录屏分析进度"
+                max="100"
+                value={snapshot.monitor.recordingProgress ?? 0}
+              />
+            </div>
+          ) : (
+            <Timeline
+              currentFrame={displayedFrame}
+              editable={revisionEditable}
+              events={axisEvents}
+              onCreate={(frame, kind) =>
+                run(() => commands.addEvent({ frame, kind }))
               }
-            }}
-            onSelect={setSelectedId}
-            onViewFrames={setViewFrames}
-            selectedId={selectedId}
-            traceDurationFrames={mode === "video" ? traceDurationFrames : null}
-            tracePoints={mode === "video" ? visibleTracePoints : []}
-            viewFrames={viewFrames}
-          />
-
-          <div className="timeline-footer">
-            <span>
-              {selected
-                ? `${KIND_LABELS[selected.kind]} · ${selected.label || selected.id} · F${selected.frame}${selected.complete ? "" : " · 待补全"}${selected.timeConfirmation === "unconfirmed" ? " · 时间待确认" : ""}`
-                : snapshot.lastMessage || "右键操作点编辑；双击轨道新增操作"}
-            </span>
-            {mode === "video" && traceDurationFrames !== null && (
-              <label className="trace-control">
-                {snapshot.monitor.recordingSegments.length > 1 && (
-                  <select
-                    aria-label="录屏关卡区段"
-                    onChange={(event) => {
-                      setRecordingSegmentIndex(Number(event.target.value));
-                      setTracePreviewFrame(0);
-                    }}
-                    value={recordingSegmentIndex}
-                  >
-                    {snapshot.monitor.recordingSegments.map((segment) => (
-                      <option key={segment.index} value={segment.index}>
-                        {segment.stageRecognition.stage?.code ??
-                          `区段 ${segment.index + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <input
-                  aria-label="录屏时间预览"
-                  max={traceDurationFrames}
-                  min="0"
-                  onChange={(event) =>
-                    setTracePreviewFrame(Number(event.target.value))
-                  }
-                  type="range"
-                  value={tracePreviewFrame ?? 0}
-                />
-              </label>
-            )}
-          </div>
+              onEdit={(event) => {
+                setSelectedId(event.id);
+                openPage("editor");
+              }}
+              onMove={async (id, frame) => {
+                if (await run(() => commands.moveEvent(id, frame))) {
+                  setSelectedId(id);
+                  openPage("editor");
+                }
+              }}
+              onSelect={(id) => {
+                setSelectedId(id);
+                if (mode === "video")
+                  setTracePreviewFrame(
+                    snapshot.axis.events.find((event) => event.id === id)
+                      ?.frame ?? 0,
+                  );
+              }}
+              onViewFrames={setViewFrames}
+              selectedId={selectedId}
+              traceDurationFrames={
+                mode === "video" ? traceDurationFrames : null
+              }
+              tracePoints={mode === "video" ? visibleTracePoints : []}
+              viewFrames={viewFrames}
+            />
+          )}
         </section>
+      )}
+
+      {proxyConfirmationOpen && (
+        <Picker
+          title="启用代理执行"
+          onClose={() => setProxyConfirmationOpen(false)}
+        >
+          <p>{snapshot.proxy.message}</p>
+          {error && (
+            <p className="error-text" role="alert">
+              {error}
+            </p>
+          )}
+          <p>确认后等待下一局可信起点；K 接管或停止代理可立即终止输入。</p>
+          <div className="dialog-actions">
+            <button
+              onClick={() => setProxyConfirmationOpen(false)}
+              type="button"
+            >
+              取消
+            </button>
+            <button
+              className="button--primary"
+              onClick={async () => {
+                let enabled = false;
+                await run(async () => {
+                  const result = await commands.requestProxyExecution();
+                  enabled = result.status === "ok" && result.data.proxy.enabled;
+                  return result;
+                });
+                if (enabled) setProxyConfirmationOpen(false);
+              }}
+              type="button"
+            >
+              确认启用
+            </button>
+          </div>
+        </Picker>
+      )}
+      {validationOpen && (
+        <Picker title="先整理操作" onClose={() => setValidationOpen(false)}>
+          <p>
+            轴已自动填入识别结果。请补全待校对参数并确认不确定的时间后再用于代理。
+          </p>
+          <div className="dialog-actions">
+            <button onClick={() => setValidationOpen(false)} type="button">
+              返回
+            </button>
+            <button
+              className="button--primary"
+              onClick={() => {
+                setValidationOpen(false);
+                setPage(
+                  snapshot.stagedRecordingEvents.length ? "analysis" : "editor",
+                );
+              }}
+              type="button"
+            >
+              整理操作
+            </button>
+          </div>
+        </Picker>
+      )}
+      {page === "work" && pendingReceipts.length > 0 && (
+        <Picker
+          title="确认接管前的执行结果"
+          onClose={() => openPage("analysis")}
+        >
+          {pendingReceipts.map((receipt) => (
+            <div className="receipt-confirmation" key={receipt.receiptSequence}>
+              <span>
+                {receipt.eventId} · {receipt.reason}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  run(() =>
+                    commands.resolveExecutionReceipt({
+                      receiptSequence: receipt.receiptSequence,
+                      confirmed: true,
+                    }),
+                  )
+                }
+              >
+                已完成
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  run(() =>
+                    commands.resolveExecutionReceipt({
+                      receiptSequence: receipt.receiptSequence,
+                      confirmed: false,
+                    }),
+                  )
+                }
+              >
+                未完成
+              </button>
+            </div>
+          ))}
+        </Picker>
       )}
 
       {windowPickerOpen && (
@@ -735,841 +966,6 @@ export default function App() {
         </button>
       )}
     </main>
-  );
-}
-
-type ModeHeroProps = {
-  mode: Mode;
-  snapshot: RunnerSnapshot;
-  displayedFrame: number;
-  displayedTime: string;
-  onToggleRecording: () => void;
-  onChooseRecording: () => void;
-  onEdit: () => void;
-  onRun: (
-    operation: () => Promise<TypedResult<RunnerSnapshot>>,
-  ) => Promise<boolean>;
-};
-
-function ModeHero({
-  mode,
-  snapshot,
-  displayedFrame,
-  displayedTime,
-  onToggleRecording,
-  onChooseRecording,
-  onEdit,
-  onRun,
-}: ModeHeroProps) {
-  const stageWarning =
-    snapshot.monitor.sourceKind !== "none" &&
-    snapshot.stageSafety.status !== "matched"
-      ? snapshot.stageSafety.status === "mismatched"
-        ? "关卡不匹配"
-        : "关卡未确认"
-      : null;
-  const statusLabel =
-    stageWarning ?? STATE_LABELS[snapshot.monitor.battleState];
-  const next = snapshot.nextEvent;
-
-  return (
-    <section className={`mode-hero mode-hero--${mode}`}>
-      <div className="clock-block">
-        <strong>{displayedTime}</strong>
-        <span>F{displayedFrame.toString().padStart(5, "0")} · 30 Hz</span>
-        <span className={snapshot.monitor.trusted ? "trust trusted" : "trust"}>
-          {snapshot.monitor.sourceKind === "none"
-            ? `等待监控源 · ±${snapshot.errorFrames} 帧`
-            : `${statusLabel} · 可信度 ${snapshot.monitor.confidence}%`}
-        </span>
-      </div>
-
-      <div className="mode-summary">
-        {mode === "live" && (
-          <>
-            <span>下一操作</span>
-            <strong>
-              {snapshot.session.takeover.status === "cancelling" ||
-              snapshot.session.takeover.status === "awaitingPauseProof"
-                ? snapshot.session.takeover.status === "cancelling"
-                  ? "接管中 · 正在归并最终回执"
-                  : "接管中 · 正在确认游戏保持暂停"
-                : snapshot.session.takeover.status === "unknown"
-                  ? "接管状态未知 · 暂停或时间锚点待确认"
-                  : next
-                    ? `${KIND_LABELS[next.kind]} · ${next.label || next.id}`
-                    : "暂无后续操作"}
-            </strong>
-            <small>
-              {snapshot.session.takeover.message ??
-                (snapshot.recording
-                  ? "P 记录待分类操作；H 整理"
-                  : "进入关卡后自动计时")}
-            </small>
-          </>
-        )}
-        {mode === "video" && (
-          <>
-            <span>录屏时钟轨迹</span>
-            <strong>
-              {snapshot.monitor.connectionState === "analyzing"
-                ? `正在分析 ${snapshot.monitor.recordingProgress ?? 0}%`
-                : snapshot.monitor.sourceKind === "recording"
-                  ? `${snapshot.monitor.recordingSegments.length || 1} 个关卡区段`
-                  : "尚未选择录屏"}
-            </strong>
-            <small>
-              {snapshot.monitor.recordingCandidates.length
-                ? `${snapshot.monitor.recordingCandidates.length} 个操作区间待人工校对`
-                : "等待可辨认的操作状态变化；未知参数不会自动推断"}
-            </small>
-          </>
-        )}
-        {mode === "proxy" && (
-          <>
-            <span>代理指挥</span>
-            <strong>
-              {snapshot.proxy.message ??
-                (snapshot.proxy.enabled ? "代理已武装" : "等待武装")}
-            </strong>
-            <small>
-              {snapshot.proxy.runId
-                ? `${snapshot.proxy.runId} · 暂停证明 ${snapshot.proxy.pauseProof}`
-                : snapshot.settings.bindingsConfirmed
-                  ? "用于下一局：可信 F0 后开始执行"
-                  : "请先在设置中确认暂停、技能与撤退键位"}
-            </small>
-          </>
-        )}
-      </div>
-
-      <div className="mode-actions">
-        {mode === "live" && (
-          <>
-            <button
-              className="button--primary"
-              disabled={
-                snapshot.session.takeover.status === "cancelling" ||
-                snapshot.session.takeover.status === "awaitingPauseProof"
-              }
-              onClick={onToggleRecording}
-              type="button"
-            >
-              {snapshot.recording ? "停止录轴" : "开始录轴"}
-            </button>
-            <button onClick={onEdit} type="button">
-              整理操作
-            </button>
-          </>
-        )}
-        {mode === "video" && (
-          <button
-            className="button--primary"
-            onClick={onChooseRecording}
-            type="button"
-          >
-            选择录屏
-          </button>
-        )}
-        {mode === "proxy" &&
-          (snapshot.proxy.enabled ? (
-            <>
-              {snapshot.proxy.runId && (
-                <button
-                  className="button--primary"
-                  onClick={() => onRun(() => commands.takeoverNow())}
-                  type="button"
-                >
-                  立即接管 <kbd>K</kbd>
-                </button>
-              )}
-              <button
-                onClick={() => onRun(() => commands.emergencyStop())}
-                type="button"
-              >
-                停止代理
-              </button>
-            </>
-          ) : (
-            <button
-              className="button--primary"
-              disabled={!snapshot.settings.bindingsConfirmed}
-              onClick={() => onRun(() => commands.requestProxyExecution())}
-              type="button"
-            >
-              用于下一局代理
-            </button>
-          ))}
-      </div>
-    </section>
-  );
-}
-
-type SettingsPageProps = {
-  snapshot: RunnerSnapshot;
-  onBack: () => void;
-  onRun: (
-    operation: () => Promise<TypedResult<RunnerSnapshot>>,
-  ) => Promise<boolean>;
-  onScanWindows: () => void;
-  onSelectForeground: () => void;
-  onSelectStage: () => void;
-};
-
-function SettingsPage({
-  snapshot,
-  onBack,
-  onRun,
-  onScanWindows,
-  onSelectForeground,
-  onSelectStage,
-}: SettingsPageProps) {
-  const [tab, setTab] = useState<
-    "monitor" | "appearance" | "shortcuts" | "execution"
-  >("monitor");
-  const [framesPerCost, setFramesPerCost] = useState(
-    String(snapshot.settings.framesPerCost),
-  );
-  const [gameUiScale, setGameUiScale] = useState(
-    String(snapshot.settings.gameUiScale),
-  );
-  const [pauseKey, setPauseKey] = useState(
-    snapshot.settings.pauseKey ?? "Escape",
-  );
-  const [skillKey, setSkillKey] = useState(snapshot.settings.skillKey ?? "D");
-  const [retreatKey, setRetreatKey] = useState(
-    snapshot.settings.retreatKey ?? "A",
-  );
-
-  function updateSettings(input: Partial<AppSettings>) {
-    return onRun(() =>
-      commands.updateSettings({
-        ...snapshot.settings,
-        pauseKey,
-        skillKey,
-        retreatKey,
-        ...input,
-      }),
-    );
-  }
-
-  return (
-    <section className="settings-page">
-      <div className="page-heading">
-        <div>
-          <strong>设置</strong>
-          <span>显示、监控与快捷键</span>
-        </div>
-        <button onClick={onBack} type="button">
-          ← 返回
-        </button>
-      </div>
-      <div className="settings-tabs" role="tablist">
-        {(
-          [
-            ["monitor", "监控"],
-            ["appearance", "外观"],
-            ["shortcuts", "快捷键"],
-            ["execution", "执行"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            aria-selected={tab === value}
-            key={value}
-            onClick={() => setTab(value)}
-            role="tab"
-            type="button"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="settings-content">
-        {tab === "monitor" && (
-          <>
-            <SettingRow
-              label="当前监控源"
-              note="进入关卡后自动计时，暂停与倍速跟随游戏"
-            >
-              <span>{snapshot.monitor.sourceName ?? "未选择"}</span>
-            </SettingRow>
-            <SettingRow label="游戏窗口">
-              <div className="inline-actions">
-                <button onClick={onScanWindows} type="button">
-                  扫描窗口
-                </button>
-                <button onClick={onSelectForeground} type="button">
-                  使用前台窗口
-                </button>
-                <button
-                  onClick={() => onRun(() => commands.stopMonitor())}
-                  type="button"
-                >
-                  停止监控
-                </button>
-              </div>
-            </SettingRow>
-            <SettingRow label="关卡确认">
-              <button onClick={onSelectStage} type="button">
-                手动选择关卡
-              </button>
-            </SettingRow>
-          </>
-        )}
-        {tab === "appearance" && (
-          <>
-            <SettingRow label="主题">
-              <select
-                onChange={(event) =>
-                  updateSettings({
-                    theme: event.target.value as AppSettings["theme"],
-                  })
-                }
-                value={snapshot.settings.theme}
-              >
-                <option value="dark">深色</option>
-                <option value="light">浅色</option>
-              </select>
-            </SettingRow>
-            <SettingRow label="窗口置顶">
-              <input
-                checked={snapshot.alwaysOnTop}
-                onChange={(event) =>
-                  onRun(() => commands.setAlwaysOnTop(event.target.checked))
-                }
-                type="checkbox"
-              />
-            </SettingRow>
-            <SettingRow label="费用帧分母" note="事件时间仍固定为 30 Hz">
-              <input
-                max="150"
-                min="15"
-                onBlur={() =>
-                  updateSettings({ framesPerCost: Number(framesPerCost) })
-                }
-                onChange={(event) => setFramesPerCost(event.target.value)}
-                type="number"
-                value={framesPerCost}
-              />
-            </SettingRow>
-            <SettingRow label="游戏 UI 比例">
-              <input
-                max="100"
-                min="0"
-                onBlur={() =>
-                  updateSettings({ gameUiScale: Number(gameUiScale) })
-                }
-                onChange={(event) => setGameUiScale(event.target.value)}
-                type="number"
-                value={gameUiScale}
-              />
-            </SettingRow>
-          </>
-        )}
-        {tab === "shortcuts" && (
-          <>
-            <SettingRow label="记录待分类操作" note="游戏窗口位于前台时">
-              <kbd>P</kbd>
-            </SettingRow>
-            <SettingRow label="整理操作" note="Console 位于前台时">
-              <kbd>H</kbd>
-            </SettingRow>
-            <SettingRow label="导出作战轴" note="Console 位于前台时">
-              <kbd>Ctrl S</kbd>
-            </SettingRow>
-            <SettingRow label="即时接管" note="代理运行且游戏窗口位于前台时">
-              <kbd>K</kbd>
-            </SettingRow>
-          </>
-        )}
-        {tab === "execution" && (
-          <>
-            <SettingRow label="操作提醒">
-              <button
-                onClick={() => onRun(() => commands.setStrategy("notify"))}
-                type="button"
-              >
-                {snapshot.strategy === "notify" ? "已启用" : "启用"}
-              </button>
-            </SettingRow>
-            <SettingRow
-              label="暂停键"
-              note="部署、技能和撤退均在暂停事务中执行"
-            >
-              <input
-                onBlur={() => updateSettings({ pauseKey })}
-                onChange={(event) => setPauseKey(event.target.value)}
-                value={pauseKey}
-              />
-            </SettingRow>
-            <SettingRow label="技能键">
-              <input
-                onBlur={() => updateSettings({ skillKey })}
-                onChange={(event) => setSkillKey(event.target.value)}
-                value={skillKey}
-              />
-            </SettingRow>
-            <SettingRow label="撤退键">
-              <input
-                onBlur={() => updateSettings({ retreatKey })}
-                onChange={(event) => setRetreatKey(event.target.value)}
-                value={retreatKey}
-              />
-            </SettingRow>
-            <SettingRow
-              label="确认游戏键位"
-              note="更改任一键位后必须重新确认；确认仅解锁下一次代理武装"
-            >
-              <input
-                checked={snapshot.settings.bindingsConfirmed ?? false}
-                onChange={(event) =>
-                  updateSettings({ bindingsConfirmed: event.target.checked })
-                }
-                type="checkbox"
-              />
-            </SettingRow>
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function SettingRow({
-  label,
-  note,
-  children,
-}: {
-  label: string;
-  note?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="setting-row">
-      <span>
-        <strong>{label}</strong>
-        {note && <small>{note}</small>}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-type AxisEditorProps = {
-  snapshot: RunnerSnapshot;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onBack: () => void;
-  onRun: (
-    operation: () => Promise<TypedResult<RunnerSnapshot>>,
-  ) => Promise<boolean>;
-  onSearchStages: (query: string) => Promise<StageCatalogEntry[]>;
-};
-
-function AxisEditor({
-  snapshot,
-  selectedId,
-  onSelect,
-  onBack,
-  onRun,
-  onSearchStages,
-}: AxisEditorProps) {
-  const editable =
-    snapshot.session.currentRevisionId ===
-    snapshot.session.activeRecordingRevisionId;
-  const selected =
-    snapshot.axis.events.find((event) => event.id === selectedId) ??
-    snapshot.axis.events[0] ??
-    null;
-  const [filter, setFilter] = useState<"all" | DraftKind>("all");
-  const [attemptFilter, setAttemptFilter] = useState("all");
-  const [query, setQuery] = useState("");
-  const visible = snapshot.axis.events.filter(
-    (event) =>
-      (filter === "all" || event.kind === filter) &&
-      (attemptFilter === "all" ||
-        (attemptFilter === "manual"
-          ? event.attemptId === null
-          : event.attemptId === attemptFilter)) &&
-      (!query ||
-        `${event.id} ${event.label ?? ""}`
-          .toLowerCase()
-          .includes(query.toLowerCase())),
-  );
-
-  return (
-    <section className="editor-page">
-      <div className="page-heading">
-        <div>
-          <strong>整理作战轴</strong>
-          <span>
-            {snapshot.axis.events.length} 个操作 · 草稿仅保存在本次会话
-          </span>
-        </div>
-        <button onClick={onBack} type="button">
-          ← 返回
-        </button>
-      </div>
-      {!editable && (
-        <div className="readonly-notice">
-          旧轴版本仅供查看和导出；切回续录版本后可编辑。
-        </div>
-      )}
-      <fieldset className="editor-fieldset" disabled={!editable}>
-        <AxisMetadata
-          snapshot={snapshot}
-          onRun={onRun}
-          onSearchStages={onSearchStages}
-        />
-      </fieldset>
-      <div className="editor-toolbar">
-        <input
-          aria-label="搜索操作"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="搜索名称或 ID"
-          value={query}
-        />
-        <select
-          aria-label="筛选操作类型"
-          onChange={(event) =>
-            setFilter(event.target.value as "all" | DraftKind)
-          }
-          value={filter}
-        >
-          <option value="all">全部类型</option>
-          {(["bookmark", "deploy", "skill", "retreat"] as DraftKind[]).map(
-            (kind) => (
-              <option key={kind} value={kind}>
-                {KIND_LABELS[kind]}
-              </option>
-            ),
-          )}
-        </select>
-        <select
-          aria-label="筛选录制场次"
-          onChange={(event) => setAttemptFilter(event.target.value)}
-          value={attemptFilter}
-        >
-          <option value="all">全部场次</option>
-          <option value="manual">人工编辑</option>
-          {snapshot.recordingAttempts.map((attempt) => (
-            <option key={attempt.id} value={attempt.id}>
-              {attemptLabel(attempt)}
-            </option>
-          ))}
-        </select>
-        <button
-          disabled={!editable}
-          onClick={() =>
-            onRun(() =>
-              commands.addEvent({ frame: snapshot.frame, kind: "bookmark" }),
-            )
-          }
-          type="button"
-        >
-          新增待分类操作
-        </button>
-      </div>
-      <div className="editor-layout">
-        <div className="editor-list" role="listbox">
-          {visible.map((event) => (
-            <button
-              aria-selected={event.id === selected?.id}
-              key={event.id}
-              onClick={() => onSelect(event.id)}
-              role="option"
-              type="button"
-            >
-              <span>{frameTime(event.frame)}</span>
-              <strong>{event.label || KIND_LABELS[event.kind]}</strong>
-              <em>
-                {!event.complete
-                  ? "待补全"
-                  : event.timeConfirmation === "unconfirmed"
-                    ? "时间待确认"
-                    : KIND_LABELS[event.kind]}
-              </em>
-            </button>
-          ))}
-          {!visible.length && <p>没有匹配的操作。</p>}
-        </div>
-        {selected ? (
-          <fieldset className="editor-fieldset" disabled={!editable}>
-            <EventForm
-              event={selected}
-              key={selected.id}
-              onDelete={() => onRun(() => commands.deleteEvent(selected.id))}
-              onSave={async (input, manualCorrectionConfirmed) => {
-                if (!(await onRun(() => commands.updateEvent(input)))) return;
-                await onRun(() =>
-                  commands.confirmEventTime({
-                    id: input.id,
-                    frame: input.frame,
-                    manualCorrectionConfirmed,
-                  }),
-                );
-              }}
-            />
-          </fieldset>
-        ) : (
-          <div className="editor-empty">选择一个操作以编辑参数和备注。</div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function AxisMetadata({
-  snapshot,
-  onRun,
-  onSearchStages,
-}: {
-  snapshot: RunnerSnapshot;
-  onRun: (
-    operation: () => Promise<TypedResult<RunnerSnapshot>>,
-  ) => Promise<boolean>;
-  onSearchStages: (query: string) => Promise<StageCatalogEntry[]>;
-}) {
-  const [title, setTitle] = useState(snapshot.axis.title);
-  const [stageId, setStageId] = useState(snapshot.axis.stageId ?? "");
-  const [stages, setStages] = useState<StageCatalogEntry[]>([]);
-  return (
-    <form
-      className="axis-metadata"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onRun(() =>
-          commands.setAxisMetadata({ title, stageId: stageId || null }),
-        );
-      }}
-    >
-      <label>
-        轴名称
-        <input
-          maxLength={128}
-          onChange={(event) => setTitle(event.target.value)}
-          required
-          value={title}
-        />
-      </label>
-      <label>
-        关卡
-        <input
-          onChange={(event) => setStageId(event.target.value)}
-          placeholder="关卡 ID"
-          value={stageId}
-        />
-      </label>
-      <button
-        onClick={async () => setStages(await onSearchStages(stageId))}
-        type="button"
-      >
-        查找关卡
-      </button>
-      {stages.length > 0 && (
-        <select
-          aria-label="关卡搜索结果"
-          onChange={(event) => setStageId(event.target.value)}
-          value={stages.some((stage) => stage.id === stageId) ? stageId : ""}
-        >
-          <option disabled value="">
-            选择关卡
-          </option>
-          {stages.map((stage) => (
-            <option key={stage.id} value={stage.id}>
-              {stage.code} · {stage.name}
-            </option>
-          ))}
-        </select>
-      )}
-      <button type="submit">保存轴信息</button>
-    </form>
-  );
-}
-
-function EventForm({
-  event,
-  onSave,
-  onDelete,
-}: {
-  event: DraftEvent;
-  onSave: (input: UpdateEventInput, manualCorrectionConfirmed: boolean) => void;
-  onDelete: () => void;
-}) {
-  const [frame, setFrame] = useState(String(event.frame));
-  const [kind, setKind] = useState<DraftKind>(event.kind);
-  const [operator, setOperator] = useState(event.operator ?? "");
-  const [tile, setTile] = useState(event.tile ?? "");
-  const [direction, setDirection] = useState<DraftDirection>(
-    event.direction ?? "right",
-  );
-  const [label, setLabel] = useState(event.label ?? "");
-  const [manualCorrectionConfirmed, setManualCorrectionConfirmed] =
-    useState(false);
-  const frameNumber = Number(frame);
-  const outsideObservedRange =
-    Number.isFinite(frameNumber) &&
-    (frameNumber < event.frameRange.start ||
-      frameNumber > event.frameRange.end);
-  return (
-    <form
-      className="event-form"
-      onSubmit={(submitEvent) => {
-        submitEvent.preventDefault();
-        onSave(
-          {
-            id: event.id,
-            frame: frameNumber,
-            kind,
-            operator: kind === "deploy" ? operator || null : null,
-            tile:
-              kind === "bookmark" ? null : tile.trim().toUpperCase() || null,
-            direction: kind === "deploy" ? direction : null,
-            label: label || null,
-          },
-          manualCorrectionConfirmed,
-        );
-      }}
-    >
-      <h2>操作参数</h2>
-      <div className="form-grid">
-        <label>
-          类型
-          <select
-            onChange={(event) => setKind(event.target.value as DraftKind)}
-            value={kind}
-          >
-            {(["bookmark", "deploy", "skill", "retreat"] as DraftKind[]).map(
-              (value) => (
-                <option key={value} value={value}>
-                  {KIND_LABELS[value]}
-                </option>
-              ),
-            )}
-          </select>
-        </label>
-        <div className="timing-evidence">
-          <strong>
-            时间{event.timeConfirmation === "unconfirmed" ? "待确认" : "已确认"}
-          </strong>
-          <span>
-            观测范围 F{event.frameRange.start}–F{event.frameRange.end} · 时钟
-            {CLOCK_QUALITY_LABELS[event.clockQuality]}
-          </span>
-          <span>
-            {event.sourceTimestampNs !== null &&
-            Number.isFinite(event.sourceTimestampNs)
-              ? `来源 ${event.sourceTimestampNs} ns`
-              : "人工输入或来源时间未知"}
-          </span>
-          {outsideObservedRange && (
-            <label>
-              <input
-                checked={manualCorrectionConfirmed}
-                onChange={(event) =>
-                  setManualCorrectionConfirmed(event.target.checked)
-                }
-                required
-                type="checkbox"
-              />
-              确认将时间人工校正到观测范围之外
-            </label>
-          )}
-        </div>
-        <label>
-          帧
-          <input
-            min="0"
-            onChange={(event) => setFrame(event.target.value)}
-            required
-            type="number"
-            value={frame}
-          />
-        </label>
-        {kind === "deploy" && (
-          <label>
-            干员 ID
-            <input
-              onChange={(event) => setOperator(event.target.value)}
-              placeholder="char_002_amiya"
-              required
-              value={operator}
-            />
-          </label>
-        )}
-        {kind !== "bookmark" && (
-          <label>
-            格子
-            <input
-              maxLength={3}
-              onChange={(event) => setTile(event.target.value.toUpperCase())}
-              pattern="[A-I](?:[1-9]|[12][0-9]|3[0-6])"
-              placeholder="C5"
-              required
-              value={tile}
-            />
-          </label>
-        )}
-        {kind === "deploy" && (
-          <label>
-            朝向
-            <select
-              onChange={(event) =>
-                setDirection(event.target.value as DraftDirection)
-              }
-              value={direction}
-            >
-              <option value="up">上</option>
-              <option value="right">右</option>
-              <option value="down">下</option>
-              <option value="left">左</option>
-            </select>
-          </label>
-        )}
-        <label className="note-field">
-          备注（可选）
-          <textarea
-            maxLength={120}
-            onChange={(event) => setLabel(event.target.value)}
-            placeholder="补充说明，不影响执行"
-            value={label}
-          />
-        </label>
-      </div>
-      <footer>
-        <button className="danger-button" onClick={onDelete} type="button">
-          删除
-        </button>
-        <span />
-        <button className="button--primary" type="submit">
-          保存更改
-        </button>
-      </footer>
-    </form>
-  );
-}
-
-function Picker({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="modal-backdrop">
-      <section className="compact-dialog">
-        <header>
-          <h2>{title}</h2>
-          <button aria-label="关闭" onClick={onClose} type="button">
-            ×
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
   );
 }
 
