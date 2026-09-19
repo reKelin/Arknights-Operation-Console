@@ -30,7 +30,7 @@ depends_on:
 - 录屏合并按完整来源身份去重；同帧不同来源保持稳定顺序，同格同类冲突必须人工保留或排除。
 - 停止代理不会创建 revision；只有 K 接管收尾或已确认录屏合并创建子版本。
 - 生成绑定来自 Rust 类型；PR Smoke Test 与发布验证分离，检查范围及本地验收边界见 [CI 规范](ci.md)。Tauri 绑定漂移、rustfmt、Clippy 和 Rust 测试属于 PR Smoke Test，Release Pipeline 复用这些门禁后再构建。
-- Console 更名保持旧 WiX UpgradeCode；NSIS 仅在默认当前用户安装路径和旧卸载信息一致时迁移 Runner，并在安装成功后清理旧项。
+- Console 使用统一的应用标识和包名，NSIS 使用标准安装流程。
 
 ## 未验收项
 
@@ -39,4 +39,4 @@ depends_on:
 - 三类暂停输入、同帧连续部署、目标帧跨越、失焦、过期画面、尺寸变化和取消释放。
 - 录屏多区段、不同帧率、缺片段、战斗中途开始、重复操作及接续对齐的真实素材对照准确率。
 - 原型重构的浏览器模拟快照已核对 1100/860 宽度、深浅主题、编辑页与视频结果视图；真实 Tauri 窗口缩放、系统 DPI、密集标点和长文本仍需 Windows 实机验收。
-- 旧 Runner 到 Console 的 MSI/NSIS 实际安装升级、配置继承、release 构建和启动验收。
+- Console 的 MSI/NSIS 实际安装升级、配置读写、release 构建和启动验收。

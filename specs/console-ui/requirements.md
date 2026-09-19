@@ -6,8 +6,8 @@ depends_on: []
 
 # Console 界面需求
 
-- REQ-CONSOLE-001：产品界面必须统一使用“Arknights Operation Console”名称，同时保留 bundle identifier、内部包名和既有配置目录。
-  - AC-CONSOLE-001：窗口标题、HTML 标题、界面品牌和 README 使用新名称；`io.github.kelin.arknights-operation-runner` 与 npm 包名不变。
+- REQ-CONSOLE-001：产品界面、内部包名、应用标识和构建产物必须统一使用 Arknights Operation Console 名称。
+  - AC-CONSOLE-001：窗口标题、HTML 标题、界面品牌和 README 使用 Arknights Operation Console；bundle identifier 为 `io.github.kelin.arknights-operation-console`，npm 与 Cargo 包名为 `arknights-operation-console`，配置目录使用 Console 应用标识。
 - REQ-CONSOLE-002：主窗口必须提供人工录轴、录屏分析和代理指挥三种紧凑模式。
   - AC-CONSOLE-002：1100 px 与 860 px 宽度下均可切换三种模式；工作页默认高度为 280 px，设置和编辑页允许随内容增高。
 - REQ-CONSOLE-003：界面必须只展示已有能力和真实快照状态。

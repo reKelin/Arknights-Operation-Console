@@ -1,4 +1,4 @@
-param([string]$Executable = "src-tauri/target/release/arknights-operation-runner.exe")
+param([string]$Executable = "src-tauri/target/release/arknights-operation-console.exe")
 $ErrorActionPreference = "Stop"
 $exe = (Resolve-Path -LiteralPath $Executable).Path
 $root = Join-Path (Get-Location) ".local/desktop-smoke"

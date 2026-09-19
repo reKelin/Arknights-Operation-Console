@@ -16,7 +16,7 @@ async function loadUrl(url, label) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const headers = { "User-Agent": "Arknights-Operation-Runner" };
+      const headers = { "User-Agent": "Arknights-Operation-Console" };
       if (
         process.env.GITHUB_TOKEN &&
         new URL(url).hostname === "api.github.com"

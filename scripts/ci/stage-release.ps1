@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 $destination = Join-Path (Get-Location) ".local/release"
 New-Item -ItemType Directory -Force -Path $destination | Out-Null
-$binary = Get-Item -LiteralPath "src-tauri/target/release/arknights-operation-runner.exe"
+$binary = Get-Item -LiteralPath "src-tauri/target/release/arknights-operation-console.exe"
 $nsis = @(Get-ChildItem -Path "src-tauri/target/release/bundle/nsis/*.exe" -File)
 $msi = @(Get-ChildItem -Path "src-tauri/target/release/bundle/msi/*.msi" -File)
 if ($nsis.Count -eq 0 -or $msi.Count -eq 0) { throw "缺少 NSIS 或 MSI 安装包" }
