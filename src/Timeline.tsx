@@ -1,7 +1,6 @@
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
   useEffect,
   useMemo,
   useRef,
@@ -16,9 +15,9 @@ import type {
 import {
   clampViewFrames,
   frameToX,
+  groupTimelineEvents,
   majorTickFrames,
   pointerToFrame,
-  stackPositions,
   TIMELINE_PADDING,
   timelineWidth,
   zoomedScrollLeft,
@@ -75,7 +74,7 @@ export default function Timeline({
     [currentFrame, events, traceDurationFrames, viewFrames],
   );
   const contentWidth = timelineWidth(maxFrame, viewFrames, viewportWidth);
-  const majorStep = majorTickFrames(viewFrames);
+  const majorStep = majorTickFrames(viewFrames, viewportWidth);
   const minorStep = majorStep / 5;
   const ticks = useMemo(
     () =>
@@ -85,7 +84,10 @@ export default function Timeline({
       ),
     [maxFrame, minorStep],
   );
-  const eventStacks = useMemo(() => stackPositions(events), [events]);
+  const eventGroups = useMemo(
+    () => groupTimelineEvents(events, viewFrames, viewportWidth),
+    [events, viewFrames, viewportWidth],
+  );
   const stateChanges = useMemo(
     () =>
       tracePoints.filter(
@@ -106,20 +108,20 @@ export default function Timeline({
     return () => observer.disconnect();
   }, []);
 
+  const selectedFrame = events.find((event) => event.id === selectedId)?.frame;
   useEffect(() => {
     const viewport = viewportRef.current;
-    const selected = events.find((event) => event.id === selectedId);
-    if (viewport && selected) {
+    if (viewport && selectedFrame !== undefined) {
       viewport.scrollTo({
         left: Math.max(
           0,
-          frameToX(selected.frame, viewFrames, viewportWidth) -
+          frameToX(selectedFrame, viewFrames, viewportWidth) -
             viewport.clientWidth / 2,
         ),
         behavior: "smooth",
       });
     }
-  }, [events, selectedId, viewFrames, viewportWidth]);
+  }, [selectedFrame, viewFrames, viewportWidth]);
 
   function frameFromPointer(clientX: number): number {
     const viewport = viewportRef.current;
@@ -153,36 +155,47 @@ export default function Timeline({
     setCreateFrame(frameFromPointer(event.clientX));
   }
 
-  function handleWheel(event: ReactWheelEvent<HTMLFieldSetElement>) {
+  useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    event.preventDefault();
-    if (!event.altKey) {
-      viewport.scrollLeft += event.deltaX || event.deltaY;
-      return;
-    }
-    const nextViewFrames = clampViewFrames(
-      viewFrames * (event.deltaY < 0 ? 0.8 : 1.25),
-    );
-    const rect = viewport.getBoundingClientRect();
-    const anchorFrame = frameFromPointer(event.clientX);
-    const anchorOffset = event.clientX - rect.left;
-    onViewFrames(nextViewFrames);
-    requestAnimationFrame(() => {
-      viewport.scrollLeft = zoomedScrollLeft(
-        anchorFrame,
-        anchorOffset,
-        nextViewFrames,
-        viewportWidth,
+    function handleWheel(event: WheelEvent) {
+      if (!viewport) return;
+      event.preventDefault();
+      if (!event.altKey) {
+        viewport.scrollLeft += event.deltaX || event.deltaY;
+        return;
+      }
+      const nextViewFrames = clampViewFrames(
+        viewFrames * (event.deltaY < 0 ? 0.8 : 1.25),
       );
-    });
-  }
+      const rect = viewport.getBoundingClientRect();
+      const anchorFrame = pointerToFrame(
+        event.clientX,
+        rect.left,
+        viewport.scrollLeft,
+        viewFrames,
+        viewportWidth,
+        maxFrame,
+      );
+      const anchorOffset = event.clientX - rect.left;
+      onViewFrames(nextViewFrames);
+      requestAnimationFrame(() => {
+        viewport.scrollLeft = zoomedScrollLeft(
+          anchorFrame,
+          anchorOffset,
+          nextViewFrames,
+          viewportWidth,
+        );
+      });
+    }
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [maxFrame, onViewFrames, viewFrames, viewportWidth]);
 
   return (
     <fieldset
       className="timeline-viewport"
       onDoubleClick={openCreate}
-      onWheel={handleWheel}
       ref={viewportRef}
     >
       <legend className="visually-hidden">作战轴时间线</legend>
@@ -210,7 +223,7 @@ export default function Timeline({
           const major = frame % majorStep === 0;
           return (
             <div
-              className={major ? "timeline-tick major" : "timeline-tick minor"}
+              className={`${major ? "timeline-tick major" : "timeline-tick minor"} ${frame === 0 ? "first" : frame + majorStep > maxFrame ? "last" : ""}`}
               key={frame}
               style={{ left: frameToX(frame, viewFrames, viewportWidth) }}
             >
@@ -230,15 +243,17 @@ export default function Timeline({
           />
         ))}
 
-        {events.map((event) => {
+        {eventGroups.map((group) => {
+          const event =
+            group.find((point) => point.id === selectedId) ?? group[0];
+          if (!event) return null;
           const frame = drag?.id === event.id ? drag.frame : event.frame;
-          const stack = eventStacks.get(event.id) ?? { index: 0, count: 1 };
-          const stackOffset = (stack.index - (stack.count - 1) / 2) * 10;
           return (
             <button
               aria-label={`${event.label || KIND_LABELS[event.kind]}，F${frame}`}
               className={[
                 "axis-point",
+                group.length > 1 ? "axis-point--grouped" : "",
                 `axis-point--${event.kind}`,
                 frame <= currentFrame ? "axis-point--passed" : "",
                 selectedId === event.id ? "axis-point--selected" : "",
@@ -248,12 +263,19 @@ export default function Timeline({
                 .join(" ")}
               data-axis-point
               key={event.id}
-              onClick={() => onSelect(event.id)}
+              onClick={() => {
+                const index = group.findIndex(
+                  (point) => point.id === selectedId,
+                );
+                onSelect(group[(index + 1) % group.length]?.id ?? event.id);
+              }}
               onContextMenu={(contextEvent) => {
                 contextEvent.preventDefault();
                 onEdit(event);
               }}
-              onPointerDown={(pointerEvent) => beginDrag(pointerEvent, event)}
+              onPointerDown={(pointerEvent) => {
+                if (group.length === 1) beginDrag(pointerEvent, event);
+              }}
               onPointerMove={(pointerEvent) => {
                 if (drag)
                   setDrag({
@@ -262,18 +284,57 @@ export default function Timeline({
                   });
               }}
               onPointerUp={() => {
-                if (drag) onMove(drag.id, drag.frame);
+                if (drag && drag.frame !== event.frame)
+                  onMove(drag.id, drag.frame);
                 setDrag(null);
               }}
+              onPointerCancel={() => setDrag(null)}
               style={{
                 left: frameToX(frame, viewFrames, viewportWidth),
-                transform: `translate(-50%, ${stackOffset}px)`,
-                zIndex: selectedId === event.id ? 10 : stack.index + 4,
+                transform: "translateX(-50%)",
+                zIndex: selectedId === event.id ? 10 : 4,
               }}
-              title={`${event.label || KIND_LABELS[event.kind]} · F${frame} · 右键编辑`}
+              title={`${event.label || KIND_LABELS[event.kind]} · F${frame}${!event.complete || event.timeConfirmation === "unconfirmed" ? " · 待校对" : ""}${group.length > 1 ? ` · ${group.length} 个操作，点击切换` : ""} · 右键编辑`}
               type="button"
             >
-              <span className="operation-shape" />
+              <svg
+                className="operation-mark"
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+              >
+                {(["mark-halo", "mark-shape"] as const).map((className) =>
+                  event.kind === "deploy" ? (
+                    <circle
+                      key={className}
+                      className={className}
+                      cx="10"
+                      cy="10"
+                      r="4.5"
+                    />
+                  ) : event.kind === "skill" ? (
+                    <path
+                      key={className}
+                      className={className}
+                      d="M10 4 16 10 10 16 4 10Z"
+                    />
+                  ) : event.kind === "retreat" ? (
+                    <path
+                      key={className}
+                      className={className}
+                      d="M4 2 10 8 16 2 18 4 12 10 18 16 16 18 10 12 4 18 2 16 8 10 2 4Z"
+                    />
+                  ) : (
+                    <rect
+                      key={className}
+                      className={className}
+                      x="6"
+                      y="6"
+                      width="8"
+                      height="8"
+                    />
+                  ),
+                )}
+              </svg>
             </button>
           );
         })}
@@ -309,7 +370,7 @@ export default function Timeline({
 }
 
 function formatTick(frame: number): string {
-  if (frame < 30 || frame % 30 !== 0) return `${frame}f`;
+  if (frame % 30 !== 0) return `${frame % 30}f`;
   const seconds = frame / 30;
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }

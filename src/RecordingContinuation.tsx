@@ -37,8 +37,12 @@ export default function RecordingContinuation({
 }: Props) {
   const firstEligibleRevisionId =
     revisions.find((revision) => revision.eligible)?.id ?? null;
-  const [mode, setMode] = useState<"newAxis" | "continuation">("newAxis");
-  const [revisionId, setRevisionId] = useState(revisions[0]?.id ?? "");
+  const [mode, setMode] = useState<"newAxis" | "continuation">(
+    firstEligibleRevisionId ? "continuation" : "newAxis",
+  );
+  const [revisionId, setRevisionId] = useState(
+    firstEligibleRevisionId ?? revisions[0]?.id ?? "",
+  );
   const [segmentIndex, setSegmentIndex] = useState(segments[0]?.index ?? 0);
   const [sourceAnchorFrame, setSourceAnchorFrame] = useState(0);
   const [newAxisTargetFrame, setNewAxisTargetFrame] = useState(0);

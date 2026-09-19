@@ -8,6 +8,7 @@
       "!src-tauri/gen",
       "!src-tauri/target",
       "!.local",
+      "!graft",
       "!dist",
       "!node_modules"
     ]

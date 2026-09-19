@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   clampViewFrames,
   frameToX,
+  groupTimelineEvents,
   MAX_VIEW_FRAMES,
   MIN_VIEW_FRAMES,
   majorTickFrames,
   pointerToFrame,
-  stackPositions,
   TIMELINE_PADDING,
   timelineWidth,
   zoomedScrollLeft,
@@ -30,6 +30,11 @@ describe("timelineMath", () => {
     }
   });
 
+  it("adapts ruler labels to the available width", () => {
+    expect(majorTickFrames(5_400, 1_100)).toBe(600);
+    expect(majorTickFrames(5_400, 860)).toBe(900);
+  });
+
   it("accounts for horizontal scrolling and clamps the result", () => {
     expect(pointerToFrame(100, 20, 200, 300, 900, 300)).toBe(90);
     expect(pointerToFrame(0, 100, 0, 300, 900, 300)).toBe(0);
@@ -42,15 +47,19 @@ describe("timelineMath", () => {
     );
   });
 
-  it("assigns a separate stack position to same-frame operations", () => {
-    const positions = stackPositions([
-      { id: "a", frame: 30 },
-      { id: "b", frame: 30 },
-      { id: "c", frame: 60 },
-    ]);
-    expect(positions.get("a")).toEqual({ index: 0, count: 2 });
-    expect(positions.get("b")).toEqual({ index: 1, count: 2 });
-    expect(positions.get("c")).toEqual({ index: 0, count: 1 });
+  it("groups nearby marks of one kind without changing their order", () => {
+    const points = [
+      { id: "a", frame: 30, kind: "deploy" },
+      { id: "b", frame: 31, kind: "deploy" },
+      { id: "c", frame: 31, kind: "skill" },
+      { id: "d", frame: 300, kind: "skill" },
+    ];
+    expect(
+      groupTimelineEvents(points, 5400, 1100).map((group) =>
+        group.map((point) => point.id),
+      ),
+    ).toEqual([["a", "b"], ["c"], ["d"]]);
+    expect(groupTimelineEvents(points, 40, 1100)).toHaveLength(4);
   });
 
   it("keeps the pointed frame under the cursor while zooming", () => {

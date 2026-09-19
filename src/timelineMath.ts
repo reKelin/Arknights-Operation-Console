@@ -3,7 +3,7 @@ export const MIN_VIEW_FRAMES = 40;
 export const MAX_VIEW_FRAMES = 18_000;
 
 const MAJOR_STEPS = [
-  5, 10, 25, 50, 100, 150, 300, 600, 900, 1_500, 3_000, 6_000,
+  5, 10, 15, 30, 60, 90, 150, 300, 450, 600, 900, 1_800, 3_600, 6_000,
 ];
 
 export function clampViewFrames(frames: number): number {
@@ -13,8 +13,12 @@ export function clampViewFrames(frames: number): number {
   );
 }
 
-export function majorTickFrames(viewFrames: number): number {
-  const minimumStep = clampViewFrames(viewFrames) / 8;
+export function majorTickFrames(
+  viewFrames: number,
+  viewportWidth = 900,
+): number {
+  const spacing = viewFrames <= 90 ? 50 : viewFrames <= 300 ? 70 : 100;
+  const minimumStep = spacing / pixelsPerFrame(viewFrames, viewportWidth);
   return MAJOR_STEPS.find((step) => step >= minimumStep) ?? 6_000;
 }
 
@@ -83,20 +87,23 @@ export function pointerToFrame(
   );
 }
 
-export function stackPositions(
-  events: ReadonlyArray<{ id: string; frame: number }>,
-): Map<string, { index: number; count: number }> {
-  const frames = new Map<number, Array<{ id: string }>>();
+export function groupTimelineEvents<T extends { frame: number; kind: string }>(
+  events: readonly T[],
+  viewFrames: number,
+  viewportWidth: number,
+): T[][] {
+  const groups: T[][] = [];
+  const scale = pixelsPerFrame(viewFrames, viewportWidth);
   for (const event of events) {
-    const frameEvents = frames.get(event.frame) ?? [];
-    frameEvents.push(event);
-    frames.set(event.frame, frameEvents);
+    const previous = groups.at(-1);
+    const first = previous?.[0];
+    if (
+      first &&
+      first.kind === event.kind &&
+      (event.frame - first.frame) * scale < 14
+    )
+      previous?.push(event);
+    else groups.push([event]);
   }
-  const positions = new Map<string, { index: number; count: number }>();
-  for (const frameEvents of frames.values()) {
-    frameEvents.forEach((event, index) => {
-      positions.set(event.id, { index, count: frameEvents.length });
-    });
-  }
-  return positions;
+  return groups;
 }
