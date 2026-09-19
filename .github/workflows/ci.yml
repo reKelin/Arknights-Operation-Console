@@ -5,10 +5,17 @@ on:
   push:
     branches:
       - main
+  merge_group:
+    types:
+      - checks_requested
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
@@ -17,6 +24,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:
@@ -30,6 +39,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Test CI contracts
+        run: npm run test:ci
+
       - name: Cache Rust dependencies and builds
         uses: actions/cache@v4
         with:
@@ -37,7 +49,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: windows-cargo-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}
+          restore-keys: |
+            windows-cargo-${{ runner.arch }}-
 
       - name: Regenerate stage catalog
         run: npm run stages:sync
@@ -69,5 +83,5 @@ jobs:
         working-directory: src-tauri
         run: |
           cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked

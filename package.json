@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "test:ci": "node --test scripts/ci/contracts.test.mjs",
     "check": "biome ci .",
     "format": "biome check --write .",
     "bindings": "npm run bindings:axis && npm run bindings:tauri",
