@@ -14,13 +14,13 @@ depends_on: []
 
 | 入口 | 内容 | 门禁 |
 |---|---|---|
-| `.github/workflows/ci.yml` / `Smoke` | PR、main push、merge queue、手动入口；格式、类型、AxisLink 生成漂移、Vitest 纯逻辑、CI 脚本检查、Chromium 功能冒烟 | PR 当前待合并版本的 `Smoke` 必须成功 |
-| `.github/workflows/release.yml` / `Release` | 仅 `v*` tag 或手动触发；先运行同一提交的 Smoke，再进行 Rust、Tauri 绑定、目录漂移、生产构建和原生启动检查 | tag 发布只有在所有必需检查成功后执行；手动执行只产出构建制品，不公开 Release |
+| `.github/workflows/smoke-tests.yml` / `Smoke Test` | PR、main push、merge queue、手动入口；按测试类型并行执行静态检查、单元测试、生成代码漂移、Rust 测试和 UI 冒烟 | PR 当前待合并版本的 5 个测试 job 及汇总 job 必须成功 |
+| `.github/workflows/release.yml` / `Release` | 仅 `v*` tag 或手动触发；复用同一提交的完整 Smoke Test，再进行生产构建和原生启动检查 | tag 发布只有在所有必需检查成功后执行；手动执行只产出构建制品，不公开 Release |
 | 本地 app | `npm run app:dev` 或 `npm run app:build:local` | 调试、人工验收，不替代 PR 门禁，也不要求每个 PR 都构建 |
 
-PR 不编译 Rust、不打安装包、不下载完整游戏目录，也不自动运行发布流水线。
-完整 Rust 单元测试和 Clippy 没有删除，而是移到发布流水线；需要提前定位后端问题时可本地针对性运行。
-Tauri 绑定的完整漂移检查需要编译 Rust，也在发布流水线执行；PR 只检查无需原生编译的 AxisLink 类型生成。
+PR 不打安装包、不运行原生进程启动检查，也不自动运行发布流水线。
+Rust 单元测试、rustfmt、Clippy、Tauri/AxisLink 绑定漂移和目录漂移都属于 Smoke Test，便于在合并前直接定位对应测试类型。
+生产安装包只在 Release Pipeline 构建，避免把发布副作用混入普通 PR。
 
 仓库为私有时，发布任务在分配 runner 前跳过；仓库已经公开时才允许 tag/手动执行。
 重新变成公开仓库不会自动补跑历史任务。普通 PR 或 main push 均不触发重型流程。
@@ -77,15 +77,15 @@ Windows 调试程序通常位于 `src-tauri/target/debug/arknights-operation-run
 
 ## 耗时与优化
 
-5 分钟（Smoke）和 30 分钟（发布重型验证）只是初始观察参考，不是测试断言或硬性时间目标。
-各步骤耗时和退出码写入 `.local/ci-timings.jsonl` 并显示在 Actions Summary 中。
-Actions 历史按同一 workflow、事件、来源仓库及可比较分支筛选；tag 发布使用该发布 workflow 的历史版本任务。
+各 Smoke Test job 和发布验证的参考时长只用于观察，不是测试断言或硬性时间目标。
+各步骤耗时和退出码写入 `.local/ci-timings.jsonl` 并显示在命令日志中；Release validation 另在 Actions Summary 中报告趋势。
+Release 历史按同一 workflow、事件、来源仓库及可比较分支筛选；tag 发布使用该发布 workflow 的历史版本任务。
 同一任务最近最多五次成功运行用于观察中位数，最近连续三次超过参考值时给出优化提示。
 单次偏慢、样本不足、API 暂不可用或 fork 权限不足，都不会改变功能测试结果。
 
 参考时长使用 job 开始执行到结束的耗时，覆盖依赖准备，不包含该 job 首次分配 runner 前的排队。
 本次运行的报告生成于 job 完成前，因此本次值是截至报告步骤的近似值；历史值使用完成后的完整耗时。
-发布工作流还包含前置 Smoke 和最后的发布任务，应同时在 Actions 的整条运行时间中观察串行等待。
+发布工作流还包含前置 Smoke Test 和最后的发布任务，应同时在 Actions 的整条运行时间中观察串行等待。
 
 发现持续偏慢时先区分冷缓存、依赖安装、生成步骤、编译和具体慢用例，再优化。
 不为缩短耗时移除必要测试，不用重试把偶发功能失败改成通过。PR 新提交会取消同一 PR 的旧运行。
@@ -94,11 +94,12 @@ workflow 的 45/120 分钟及用例的短超时只是防卡死保护，与性能
 ## 合并门禁配置
 
 在 GitHub main 分支 ruleset / branch protection 中启用 Require status checks，
-将新的 `Smoke` 检查设为 required。旧配置如要求 `windows` 或旧 `CI` 检查，需要替换，
-否则它们不再产生结果会阻止合并。不要把 `Release validation` 设置成 PR required check。
-不添加路径过滤，不用跳过整个 Smoke job 来制造通过结果；生成漂移或任一功能用例失败必须阻止合并。
+将 `Static checks`、`Unit tests`、`Generated code drift`、`Rust tests`、`UI smoke tests` 和汇总检查 `Smoke Test` 设为 required。
+旧配置如要求 `windows`、旧 `CI` 或旧 `Smoke` 检查，需要替换，否则它们不再产生结果会阻止合并。
+不要把 `Release validation` 设置成 PR required check。不添加路径过滤，不用跳过整个测试 job 来制造通过结果；
+生成漂移或任一功能用例失败必须阻止合并。
 
-**提交 workflow 文件不会自动修改 GitHub 的分支保护。** 应在第一条 Smoke 运行出现后确认 required check 名称；
+**提交 workflow 文件不会自动修改 GitHub 的分支保护。** 应在第一条 Smoke Test 运行出现后确认 required check 名称；
 未完成远端规则设置前，代码本身不能阻止维护者手动合并。
 创建 PR 不等于获得自动合并授权；未获授权不合入 main。
 

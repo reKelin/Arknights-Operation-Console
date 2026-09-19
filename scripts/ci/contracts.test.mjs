@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (path) => readFileSync(path, "utf8");
@@ -26,26 +26,39 @@ test("Vitest 与浏览器冒烟使用独立入口", () => {
   );
 });
 
-test("PR 流程不执行原生构建、远程目录下载或发布", () => {
-  const smoke = read(".github/workflows/ci.yml");
+test("PR Smoke Test 按测试类型拆分 job，不保留笼统 ci.yml", () => {
+  const smoke = read(".github/workflows/smoke-tests.yml");
+  assert.equal(existsSync(".github/workflows/ci.yml"), false);
   assert.match(smoke, /pull_request:/);
-  assert.match(smoke, /name: Smoke/);
+  assert.match(smoke, /workflow_call:/);
+  for (const name of [
+    "Static checks",
+    "Unit tests",
+    "Generated code drift",
+    "Rust tests",
+    "UI smoke tests",
+  ]) {
+    assert.match(smoke, new RegExp(`name: ${name}`));
+  }
+  assert.match(smoke, /npm run check/);
+  assert.match(smoke, /npm test/);
+  assert.match(smoke, /npm run bindings/);
+  assert.match(smoke, /npm run stages:sync/);
+  assert.match(smoke, /cargo clippy --locked/);
+  assert.match(smoke, /cargo test --locked/);
   assert.match(smoke, /npm run test:smoke/);
-  assert.doesNotMatch(
-    smoke,
-    /cargo (?:test|clippy|build)|npm run tauri|stages:sync|gh release/,
-  );
-  assert.doesNotMatch(smoke, /timeout-minutes: 5\b/);
+  assert.doesNotMatch(smoke, /npm run tauri|gh release/);
 });
 
-test("重型流程只接受 tag 与手动触发，私有仓库有保护", () => {
+test("Release Pipeline 只接受 tag 与手动触发，并复用 Smoke Test", () => {
   const release = read(".github/workflows/release.yml");
   const triggers = release.split("permissions:")[0];
   assert.match(triggers, /tags: \['v\*'\]/);
   assert.match(triggers, /workflow_dispatch:/);
   assert.doesNotMatch(triggers, /pull_request|release:|branches:|schedule:/);
   assert.match(release, /!github\.event\.repository\.private/);
-  assert.match(release, /needs: \[smoke, validate-build\]/);
+  assert.match(release, /uses: \.\/\.github\/workflows\/smoke-tests\.yml/);
+  assert.match(release, /needs: \[smoke-test, validate-build\]/);
   assert.match(release, /sha256sum --check SHA256SUMS/);
   assert.ok(
     release.indexOf("gh release create") < release.indexOf("gh release edit"),
@@ -54,15 +67,13 @@ test("重型流程只接受 tag 与手动触发，私有仓库有保护", () => 
   assert.doesNotMatch(release, /timeout-minutes: 30\b/);
 });
 
-test("只允许耗时报告不阻塞，不忽略功能检查失败", () => {
-  for (const file of ["ci.yml", "release.yml"]) {
-    const text = read(`.github/workflows/${file}`);
-    assert.equal((text.match(/continue-on-error: true/g) ?? []).length, 1);
-    assert.match(
-      text,
-      /name: Report duration trend\n\s+if:.*\n\s+continue-on-error: true/,
-    );
-  }
+test("Release 仅允许耗时报告不阻塞，不忽略功能检查失败", () => {
+  const release = read(".github/workflows/release.yml");
+  assert.equal((release.match(/continue-on-error: true/g) ?? []).length, 1);
+  assert.match(
+    release,
+    /name: Report duration trend\n\s+if:.*\n\s+continue-on-error: true/,
+  );
 });
 
 test("发布版本必须与 tag 一致，不在校验失败时构建", () => {

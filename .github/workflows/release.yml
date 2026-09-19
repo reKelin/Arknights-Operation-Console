@@ -14,14 +14,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  smoke:
-    # 私有仓库不分配 runner；重新开源后也只由 tag / 显式手动操作触发。
+  smoke-test:
+    # 私有仓库不分配 release runner；重新开源后也只由 tag / 显式手动操作触发。
     if: ${{ !github.event.repository.private }}
-    uses: ./.github/workflows/ci.yml
+    uses: ./.github/workflows/smoke-tests.yml
 
   validate-build:
     name: Release validation
-    needs: smoke
+    needs: smoke-test
     if: ${{ !github.event.repository.private }}
     runs-on: windows-latest
     # 防卡死保护，不把原 30 分钟参考值当作硬性发布门槛。
@@ -50,24 +50,6 @@ jobs:
           key: release-windows-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
             release-windows-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-
-      - name: Check generated stage catalog
-        run: |
-          node scripts/ci/run-timed.mjs stage-catalog -- npm run stages:sync
-          git diff --exit-code -- src-tauri/data/stages.json src-tauri/data/operators.json
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Check generated bindings
-        run: |
-          node scripts/ci/run-timed.mjs bindings -- npm run bindings
-          git diff --exit-code -- src/generated
-      - name: Build frontend for Rust context
-        run: node scripts/ci/run-timed.mjs frontend-build -- npm run build
-      - name: Check Rust formatting
-        run: node scripts/ci/run-timed.mjs rustfmt -- cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      - name: Check Rust lint
-        run: node scripts/ci/run-timed.mjs clippy -- cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - name: Test Rust
-        run: node scripts/ci/run-timed.mjs rust-tests -- cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
       - name: Remove cached installers
         shell: pwsh
         run: |
@@ -114,7 +96,7 @@ jobs:
 
   publish:
     name: Publish verified release
-    needs: [smoke, validate-build]
+    needs: [smoke-test, validate-build]
     if: ${{ !github.event.repository.private && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
