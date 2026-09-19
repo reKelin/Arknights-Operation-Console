@@ -464,26 +464,14 @@ kbd {
   height: 24px;
 }
 .zoom-tools input[type="range"] {
-  appearance: none;
   width: 132px;
   height: 18px;
   min-height: 18px;
   padding: 0;
   border: 0;
   background: transparent;
+  accent-color: var(--accent);
   cursor: pointer;
-}
-.zoom-tools input[type="range"]::-webkit-slider-runnable-track {
-  height: 2px;
-  background: var(--line);
-}
-.zoom-tools input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 5px;
-  height: 13px;
-  margin-top: -5.5px;
-  background: var(--accent);
-  border-radius: 2px;
 }
 .timeline-viewport {
   position: relative;
