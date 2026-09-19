@@ -17,7 +17,7 @@ depends_on:
 
 ## 观测传输
 
-`MonitorEventQueue` 使用容量 64 的 `VecDeque`。发布时创建 `MonitorEventEnvelope { sequence, source_timestamp_ns, dropped_before, event }`。容量满时移除最旧项并累积丢失数；该数字附到下一次实际取出的 envelope。这样捕获回调不会等待 UI／Runner，也不会静默覆盖 latest slot。
+`MonitorEventQueue` 使用容量 64 的 `VecDeque`。发布时创建 `MonitorEventEnvelope { sequence, source_timestamp_ns, dropped_before, event }`。容量满时移除最旧项并累积丢失数；该数字附到下一次实际取出的 envelope。这样捕获回调不会等待 UI／Console，也不会静默覆盖 latest slot。
 
 源时间戳是源媒体时间：实时 WGC 使用会话起点后的单调时间，录屏使用视频 PTS。它不是主机收到事件的时间，也不跨监控会话比较。事件序号同样只在一个 `MonitorManager` 生命周期内单调递增。
 

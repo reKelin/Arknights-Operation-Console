@@ -13,13 +13,13 @@ Rust 持有一个只存在于内存的 `OperationSession`。它包含稳定会�
 
 `AxisRevision` 包含稳定 ID、递增序号、可空父版本 ID、来源、关联录制场次、创建时逻辑帧和一份 `DraftAxis`。来源使用 `imported | manual | takeover | recordingMerge`；接管来源额外保存 runId、回执序号和时间可信标志，时间未可信的版本不能导出或武装。`recordingMerge` 预留给 G，E 不实现录屏合并。运行期间编辑只改变活动版本；创建接管版本后旧版本保持不可变。AxisLink v2 导出只读取所选版本内的 `DraftAxis`，不会增加版本字段。
 
-每次下一局可信 F0 真正激活代理时，Runner 分配会话内唯一 `runId`。回执固定携带该 ID，接管状态保存被取消的 runId。相同 eventId 可以在不同版本和不同局重复执行；构造器只接受与本次 runId 相同的回执，历史运行的 confirmed 不能进入新版本。
+每次下一局可信 F0 真正激活代理时，Console 分配会话内唯一 `runId`。回执固定携带该 ID，接管状态保存被取消的 runId。相同 eventId 可以在不同版本和不同局重复执行；构造器只接受与本次 runId 相同的回执，历史运行的 confirmed 不能进入新版本。
 
-当前 C 的单一 `RunnerState.axis` 在接入时迁入首个版本，但命令仍通过 Runner 取得活动轴，避免在 UI 或执行器建立第二套权威状态。事件 ID 在版本复制、回执确认和人工续录中保持稳定；新录制事件继续使用全会话唯一 ID 分配器。
+当前 C 的单一 `RunnerState.axis` 在接入时迁入首个版本，但命令仍通过 Console 取得活动轴，避免在 UI 或执行器建立第二套权威状态。事件 ID 在版本复制、回执确认和人工续录中保持稳定；新录制事件继续使用全会话唯一 ID 分配器。
 
 ## 接管事务
 
-`TakeoverState` 使用 `idle | cancelling | awaitingPauseProof | recording | unknown`。有效 K 先在 Runner 锁内冻结本次 runId、父版本、录制场次和请求代次并关闭调度，再调用 D 的原子取消入口。若执行 worker 仍在收尾，状态保持 `cancelling`；最终回执归并并完成暂停确认后才一次性创建版本。Runner runtime 和 K 命令遵循相同的 Runner → worker 锁序，避免 runtime 已取走结果而 K 抢先创建空前缀。只有同一代次的取消完成结果可以推进状态，避免重复 K 或迟到回调创建多个版本。
+`TakeoverState` 使用 `idle | cancelling | awaitingPauseProof | recording | unknown`。有效 K 先在 Console 锁内冻结本次 runId、父版本、录制场次和请求代次并关闭调度，再调用 D 的原子取消入口。若执行 worker 仍在收尾，状态保持 `cancelling`；最终回执归并并完成暂停确认后才一次性创建版本。Console runtime 和 K 命令遵循相同的 Console → worker 锁序，避免 runtime 已取走结果而 K 抢先创建空前缀。只有同一代次的取消完成结果可以推进状态，避免重复 K 或迟到回调创建多个版本。
 
 接管新版本依据 D 的 `ExecutionReceipt` 构造。先按本次 `runId` 限定回执，再按 `receiptSequence` 排序，并要求 `eventId` 能唯一映射旧版本事件。构造器逐条处理回执：
 

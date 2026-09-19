@@ -9,7 +9,7 @@ depends_on:
 
 ## 权威边界
 
-录屏接续不持有版本列表。纯合并器读取 E 的父 `AxisRevision` 和 F 已人工确认的录屏候选，生成一份新的 `DraftAxis` 与来源清单；Runner 随后调用 E 的 `OperationSession::create_recording_merge_revision` 创建 `source=recordingMerge` 的子版本。新建录屏轴以空轴作为合并基线，仅把当前版本作为不可变父链；接续模式以接管/接续版本的已执行前缀作为基线。React 只提交模式、选择、对齐和冲突决议。
+录屏接续不持有版本列表。纯合并器读取 E 的父 `AxisRevision` 和 F 已人工确认的录屏候选，生成一份新的 `DraftAxis` 与来源清单；Console 随后调用 E 的 `OperationSession::create_recording_merge_revision` 创建 `source=recordingMerge` 的子版本。新建录屏轴以空轴作为合并基线，仅把当前版本作为不可变父链；接续模式以接管/接续版本的已执行前缀作为基线。React 只提交模式、选择、对齐和冲突决议。
 
 F 的候选确认结果在创建合并版本前属于会话内暂存数据，不能直接修改父版本。每个暂存事件保留稳定 `candidateId`、`segmentIndex`、原始 PTS、游戏帧范围和时间确认状态。AxisLink v2 导出继续忽略这些内部来源字段。
 
@@ -27,4 +27,4 @@ F 的候选确认结果在创建合并版本前属于会话内暂存数据，不
 
 ## 创建版本
 
-冲突全部解决后，Runner 把新轴交给 E 的版本入口，并记录父版本、实机 `attemptId`、录屏 `segmentIndex`、帧偏移和实际合入的候选 ID。父版本保持不可变。版本的导出、选择和下一局武装继续复用 E 的命令和完整性门禁。
+冲突全部解决后，Console 把新轴交给 E 的版本入口，并记录父版本、实机 `attemptId`、录屏 `segmentIndex`、帧偏移和实际合入的候选 ID。父版本保持不可变。版本的导出、选择和下一局武装继续复用 E 的命令和完整性门禁。
