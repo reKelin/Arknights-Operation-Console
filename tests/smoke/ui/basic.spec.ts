@@ -287,3 +287,20 @@ test("录屏区段、生成方式、父版本和冲突下拉进入对应请求",
       ],
     });
 });
+
+test("诊断日志可开启、关闭并导出", async ({ page }) => {
+  await openSettings(page, "诊断");
+  const toggle = page.getByRole("checkbox", { name: "开启日志模式" });
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+  await page.getByRole("button", { name: "导出日志", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("日志已导出");
+  await toggle.uncheck();
+  await expect(toggle).not.toBeChecked();
+  const calls = await page.evaluate(() =>
+    window.__smoke.calls.filter((call) => call.command === "export_logs"),
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.args.path).toBe("smoke-output.axis.json");
+});

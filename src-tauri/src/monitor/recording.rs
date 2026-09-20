@@ -2,12 +2,13 @@ use std::{
     fs::File,
     io::{ErrorKind, Read},
     path::Path,
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread,
+    time::{Duration, Instant},
 };
 
 use crate::stage::{StageCatalog, StageMatchStatus, StageRecognition};
@@ -39,8 +40,6 @@ impl RecordingSession {
         events: Arc<Mutex<MonitorEventQueue>>,
     ) -> Result<(Self, String, u16), String> {
         let path = Path::new(path);
-        validate_recording_path(path)?;
-        let metadata = probe(path)?;
         let name = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -52,11 +51,40 @@ impl RecordingSession {
         thread::Builder::new()
             .name("recording-analysis".to_string())
             .spawn(move || {
-                if let Err(message) =
-                    analyze_file(&path, metadata, config, catalog, &task_cancelled, &events)
+                let started = Instant::now();
+                crate::diagnostics::info("recording", "开始读取视频信息和原始 PTS");
+                let result = validate_recording_path(&path)
+                    .and_then(|_| probe(&path, &task_cancelled))
+                    .and_then(|metadata| {
+                        crate::diagnostics::info(
+                            "recording",
+                            &format!(
+                                "probe_ms={} width={} height={} frames={}",
+                                started.elapsed().as_millis(),
+                                metadata.width,
+                                metadata.height,
+                                metadata.source_timeline.timestamps.len()
+                            ),
+                        );
+                        if task_cancelled.load(Ordering::Acquire) {
+                            return Ok(());
+                        }
+                        analyze_file(&path, metadata, config, catalog, &task_cancelled, &events)
+                    });
+                if let Err(message) = result
+                    && !task_cancelled.load(Ordering::Acquire)
                 {
+                    crate::diagnostics::info("recording", "分析失败；详细错误见界面");
                     publish(&events, MonitorEvent::Error(message));
                 }
+                crate::diagnostics::info(
+                    "recording",
+                    &format!(
+                        "total_ms={} cancelled={}",
+                        started.elapsed().as_millis(),
+                        task_cancelled.load(Ordering::Acquire)
+                    ),
+                );
             })
             .map_err(|error| format!("启动录屏分析线程失败：{error}"))?;
         Ok((Self { cancelled }, name, config.frames_per_cost))
@@ -108,8 +136,34 @@ fn validate_recording_path(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn probe(path: &Path) -> Result<RecordingMetadata, String> {
-    let output = Command::new("ffprobe")
+// 管道必须并行读取，避免子进程错误输出填满后解码互相等待。
+fn drain_pipe(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<Result<Vec<u8>, String>> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        pipe.read_to_end(&mut bytes)
+            .map_err(|error| error.to_string())?;
+        Ok(bytes)
+    })
+}
+struct VideoProcess(Child);
+impl Drop for VideoProcess {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+fn video_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command
+}
+
+fn probe(path: &Path, cancelled: &AtomicBool) -> Result<RecordingMetadata, String> {
+    let mut child = video_command("ffprobe")
         .args([
             "-v",
             "error",
@@ -123,15 +177,37 @@ fn probe(path: &Path) -> Result<RecordingMetadata, String> {
         ])
         .arg(path)
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|error| format!("未找到 ffprobe，无法分析录屏：{error}"))?;
-    if !output.status.success() {
+    let stdout = drain_pipe(child.stdout.take().unwrap());
+    let stderr = drain_pipe(child.stderr.take().unwrap());
+    let mut child = VideoProcess(child);
+    loop {
+        if cancelled.load(Ordering::Acquire) {
+            return Err("录屏分析已取消".to_string());
+        }
+        if child
+            .0
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let status = child.0.wait().map_err(|error| error.to_string())?;
+    let stdout = stdout.join().map_err(|_| "读取视频信息失败")??;
+    let stderr = stderr.join().map_err(|_| "读取视频错误信息失败")??;
+    if !status.success() {
         return Err(format!(
             "ffprobe 无法读取录屏：{}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            String::from_utf8_lossy(&stderr).trim()
         ));
     }
-    parse_probe_output(&output.stdout)
+    parse_probe_output(&stdout)
 }
 
 fn parse_probe_output(bytes: &[u8]) -> Result<RecordingMetadata, String> {
@@ -194,6 +270,19 @@ fn analyze_file(
     cancelled: &AtomicBool,
     events: &Mutex<MonitorEventQueue>,
 ) -> Result<(), String> {
+    let started = Instant::now();
+    let config = VisionConfig {
+        recording_analysis: true,
+        ..config
+    };
+    let mut metadata = metadata;
+    if metadata.width > 960 && metadata.height > 540 {
+        let scale = (960.0 / f64::from(metadata.width)).max(540.0 / f64::from(metadata.height));
+        metadata.width = (f64::from(metadata.width) * scale).round() as u32;
+        metadata.height = (f64::from(metadata.height) * scale).round() as u32;
+    }
+    let mut state_counts = std::collections::BTreeMap::<String, usize>::new();
+    let mut trusted_frames = 0usize;
     let frame_size = usize::try_from(metadata.width)
         .ok()
         .and_then(|width| {
@@ -204,9 +293,13 @@ fn analyze_file(
         .and_then(|pixels| pixels.checked_mul(4))
         .filter(|size| *size <= 256 * 1024 * 1024)
         .ok_or_else(|| "录屏画面尺寸过大".to_string())?;
-    let mut child = Command::new("ffmpeg")
+    let mut child = video_command("ffmpeg")
         .args(["-loglevel", "error", "-i"])
         .arg(path)
+        .args([
+            "-vf",
+            &format!("scale={}:{}", metadata.width, metadata.height),
+        ])
         .args([
             "-map",
             "0:v:0",
@@ -230,6 +323,8 @@ fn analyze_file(
         .stdout
         .take()
         .ok_or_else(|| "ffmpeg 没有提供视频输出".to_string())?;
+    let stderr = drain_pipe(child.stderr.take().unwrap());
+    let mut child = VideoProcess(child);
     let expected_frames = metadata.source_timeline.timestamps.len() as u64;
     let mut buffer = vec![0_u8; frame_size];
     let mut source_frame = 0_usize;
@@ -252,16 +347,16 @@ fn analyze_file(
 
     loop {
         if cancelled.load(Ordering::Acquire) {
-            let _ = child.kill();
-            let _ = child.wait();
+            let _ = child.0.kill();
+            let _ = child.0.wait();
             return Ok(());
         }
         match stdout.read_exact(&mut buffer) {
             Ok(()) => {}
             Err(error) if error.kind() == ErrorKind::UnexpectedEof => break,
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                let _ = child.0.kill();
+                let _ = child.0.wait();
                 return Err(format!("读取 ffmpeg 解码帧失败：{error}"));
             }
         }
@@ -289,7 +384,8 @@ fn analyze_file(
             config,
         )?;
         if observation.title_candidate
-            && source_frame.is_multiple_of(6)
+            && stage_recognition.status != StageMatchStatus::Matched
+            && source_frame.is_multiple_of(30)
             && let (Ok(recognizer), Ok(image)) = (
                 recognizer.as_ref(),
                 crop_title(&buffer, metadata.width, metadata.height, metadata.width * 4),
@@ -311,7 +407,11 @@ fn analyze_file(
         {
             observation.stage_recognition = Some(stage_recognition.clone());
         }
+        *state_counts
+            .entry(format!("{:?}", observation.battle_state))
+            .or_default() += 1;
         let update = clock.observe(&observation);
+        trusted_frames += usize::from(update.quality == super::ClockQuality::Trusted);
         match update.transition {
             ClockTransition::Started => {
                 let source = source_frame.min(u32::MAX as usize) as u32;
@@ -340,9 +440,7 @@ fn analyze_file(
                 }
             }
         }
-        if let Some((segment_index, ..)) = active_segment.as_ref()
-            && observation.battle_state.is_in_battle()
-        {
+        if let Some((segment_index, ..)) = active_segment.as_ref() {
             candidate_observations.push(CandidateObservation {
                 source_timestamp,
                 segment_index: *segment_index,
@@ -380,6 +478,15 @@ fn analyze_file(
             (((source_frame as u64).saturating_mul(100) / expected_frames).min(99)) as u8;
         if progress != last_progress {
             last_progress = progress;
+            crate::diagnostics::debug(
+                "recording",
+                &format!(
+                    "progress={progress} frame={source_frame} elapsed_ms={} state={:?} clock={:?} trusted_frames={trusted_frames}",
+                    started.elapsed().as_millis(),
+                    observation.battle_state,
+                    update.quality
+                ),
+            );
             publish(
                 events,
                 MonitorEvent::RecordingProgress {
@@ -392,13 +499,15 @@ fn analyze_file(
     }
 
     drop(stdout);
-    let output = child
-        .wait_with_output()
+    let status = child
+        .0
+        .wait()
         .map_err(|error| format!("等待 ffmpeg 结束失败：{error}"))?;
-    if !output.status.success() {
+    let stderr = stderr.join().map_err(|_| "读取解码错误信息失败")??;
+    if !status.success() {
         return Err(format!(
             "ffmpeg 解码失败：{}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            String::from_utf8_lossy(&stderr).trim()
         ));
     }
     metadata
@@ -409,6 +518,15 @@ fn analyze_file(
         push_segment(&mut segments, start, last_inside, duration, recognition);
     }
     let candidates = extract_operation_candidates(&candidate_observations);
+    crate::diagnostics::info(
+        "recording",
+        &format!(
+            "analysis_ms={} frames={source_frame} trusted_frames={trusted_frames} segments={} candidates={} states={state_counts:?}",
+            started.elapsed().as_millis(),
+            segments.len(),
+            candidates.len()
+        ),
+    );
     let duration_frames = trace
         .iter()
         .map(|point| point.game_frame)
@@ -460,6 +578,59 @@ fn publish(events: &Mutex<MonitorEventQueue>, event: MonitorEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "需要本地录屏，设置 CONSOLE_RECORDING_PATH 与 CONSOLE_RECORDING_REPORT"]
+    fn analyze_local_recording() {
+        let path = std::env::var("CONSOLE_RECORDING_PATH").expect("CONSOLE_RECORDING_PATH");
+        let report = std::env::var("CONSOLE_RECORDING_REPORT").expect("CONSOLE_RECORDING_REPORT");
+        crate::diagnostics::set_enabled(true);
+        let events = Mutex::new(MonitorEventQueue::default());
+        let catalog = Arc::new(StageCatalog::embedded().unwrap());
+        let start = Instant::now();
+        let (session, _, _) = RecordingSession::start(
+            &path,
+            VisionConfig::default(),
+            Arc::clone(&catalog),
+            Arc::new(Mutex::new(MonitorEventQueue::default())),
+        )
+        .unwrap();
+        let start_ms = start.elapsed().as_millis();
+        session.stop();
+        assert!(start_ms < 1000, "启动不应同步扫描录屏：{start_ms}ms");
+        crate::diagnostics::info("recording", &format!("start_return_ms={start_ms}"));
+        let probe_start = Instant::now();
+        let metadata = probe(Path::new(&path), &AtomicBool::new(false)).unwrap();
+        crate::diagnostics::info(
+            "recording",
+            &format!("probe_ms={}", probe_start.elapsed().as_millis()),
+        );
+        analyze_file(
+            Path::new(&path),
+            metadata,
+            VisionConfig::default(),
+            Arc::new(StageCatalog::embedded().unwrap()),
+            &AtomicBool::new(false),
+            &events,
+        )
+        .unwrap();
+        let mut queue = events.lock().unwrap();
+        let mut ready = false;
+        while let Some(envelope) = queue.pop() {
+            if let MonitorEvent::RecordingReady {
+                trace,
+                segments,
+                candidates,
+                duration_frames,
+            } = envelope.event
+            {
+                std::fs::write(&report, serde_json::to_vec_pretty(&serde_json::json!({"trace": trace, "segments": segments, "candidates": candidates, "durationFrames": duration_frames})).unwrap()).unwrap();
+                ready = true;
+            }
+        }
+        assert!(ready);
+        crate::diagnostics::export(&format!("{report}.log")).unwrap();
+    }
 
     #[test]
     fn parses_fractional_frame_rate() {

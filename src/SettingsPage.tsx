@@ -1,5 +1,7 @@
+import { save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useState } from "react";
 import type { TypedResult } from "./console";
+import { messageOf, unwrap } from "./console";
 import {
   type AppSettings,
   commands,
@@ -27,8 +29,30 @@ export default function SettingsPage({
   onSelectStage,
 }: SettingsPageProps) {
   const [tab, setTab] = useState<
-    "monitor" | "appearance" | "shortcuts" | "execution"
+    "monitor" | "appearance" | "shortcuts" | "execution" | "diagnostics"
   >("monitor");
+  const [logEnabled, setLogEnabled] = useState(false);
+  const [logMessage, setLogMessage] = useState("");
+  async function openDiagnostics() {
+    try {
+      setLogEnabled((await commands.getLogStatus()).enabled);
+    } catch (error) {
+      setLogMessage(messageOf(error));
+    }
+  }
+  async function exportLogs() {
+    try {
+      const path = await save({
+        defaultPath: "console-diagnostics.log",
+        filters: [{ name: "诊断日志", extensions: ["log"] }],
+      });
+      if (!path) return;
+      unwrap(await commands.exportLogs(path));
+      setLogMessage("日志已导出");
+    } catch (error) {
+      setLogMessage(messageOf(error));
+    }
+  }
   const [framesPerCost, setFramesPerCost] = useState(
     String(snapshot.settings.framesPerCost),
   );
@@ -74,12 +98,16 @@ export default function SettingsPage({
             ["appearance", "外观"],
             ["shortcuts", "快捷键"],
             ["execution", "执行"],
+            ["diagnostics", "诊断"],
           ] as const
         ).map(([value, label]) => (
           <button
             aria-selected={tab === value}
             key={value}
-            onClick={() => setTab(value)}
+            onClick={() => {
+              setTab(value);
+              if (value === "diagnostics") void openDiagnostics();
+            }}
             role="tab"
             type="button"
           >
@@ -88,6 +116,37 @@ export default function SettingsPage({
         ))}
       </div>
       <div className="settings-content">
+        {tab === "diagnostics" && (
+          <>
+            <SettingRow
+              label="开启日志模式"
+              note="记录当前会话的 INFO / DEBUG 信息；最多保留 4000 条，关闭后保留已有日志；不记录视频路径或画面"
+            >
+              <input
+                aria-label="开启日志模式"
+                type="checkbox"
+                checked={logEnabled}
+                onChange={async (event) => {
+                  try {
+                    setLogEnabled(
+                      (await commands.setLogEnabled(event.target.checked))
+                        .enabled,
+                    );
+                  } catch (error) {
+                    setLogMessage(messageOf(error));
+                  }
+                }}
+              />
+            </SettingRow>
+            <SettingRow label="导出日志" note="复现问题前开启日志，复现后导出">
+              <button type="button" onClick={() => void exportLogs()}>
+                导出日志
+              </button>
+            </SettingRow>
+            {logMessage && <p role="status">{logMessage}</p>}
+          </>
+        )}
+
         {tab === "monitor" && (
           <>
             <SettingRow

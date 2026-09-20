@@ -1495,10 +1495,18 @@ impl RunnerState {
         if analysis_completed
             && let Some(segment_index) = self
                 .monitor
-                .recording_candidates
+                .recording_segments
                 .iter()
-                .map(|candidate| candidate.segment_index)
-                .min()
+                .max_by_key(|segment| {
+                    (
+                        segment.stage_recognition.status == crate::stage::StageMatchStatus::Matched,
+                        segment
+                            .source_end_frame
+                            .saturating_sub(segment.source_start_frame),
+                        std::cmp::Reverse(segment.index),
+                    )
+                })
+                .map(|segment| segment.index)
             && let Err(error) = self.select_recording_segment(segment_index)
         {
             self.last_message = Some(error.message);
@@ -2222,6 +2230,43 @@ mod tests {
         let runner = RunnerState::new(Instant::now());
 
         assert!(runner.axis.events.is_empty());
+    }
+
+    #[test]
+    fn recording_ready_prefers_matched_battle_over_intro() {
+        let mut runner = RunnerState::new(Instant::now());
+        let segments = serde_json::from_value(serde_json::json!([
+            { "index": 0, "sourceStartFrame": 0, "sourceEndFrame": 126, "gameDurationFrames": 2, "stageRecognition": { "status": "unavailable", "rawText": "", "stage": null, "candidates": [], "warning": null } },
+            { "index": 1, "sourceStartFrame": 459, "sourceEndFrame": 11458, "gameDurationFrames": 9000, "stageRecognition": { "status": "matched", "rawText": "SR-8", "stage": { "id": "test", "code": "SR-8", "name": "测试", "levelPath": "test.json" }, "candidates": [], "warning": null } }
+        ])).unwrap();
+        runner.set_monitor_snapshot(MonitorSnapshot {
+            source_kind: MonitorSourceKind::Recording,
+            connection_state: MonitorConnectionState::Ready,
+            recording_analysis_id: Some("intro-regression".to_string()),
+            recording_candidates: [0,1].into_iter().map(|index| serde_json::from_value(serde_json::json!({
+                "id": format!("candidate-{index}"), "segmentIndex": index,
+                "sourceStart": { "rawPts": "100", "timeBase": { "numerator": 1, "denominator": 1000 } },
+                "sourceEnd": { "rawPts": "200", "timeBase": { "numerator": 1, "denominator": 1000 } },
+                "gameFrameRange": { "start": 30, "end": 34 }, "clockQuality": "uncertain",
+                "kind": null, "operator": null, "tile": null, "direction": null,
+                "evidence": "interruptedInteraction", "confidence": 49, "unconfirmedFields": ["actionKind", "gameFrame", "tile"]
+            })).unwrap()).collect(),
+            recording_segments: segments,
+            ..MonitorSnapshot::default()
+        });
+        assert_eq!(runner.axis.stage_id.as_deref(), Some("test"));
+        assert_eq!(
+            runner
+                .session
+                .revisions
+                .last()
+                .unwrap()
+                .recording_merge
+                .as_ref()
+                .unwrap()
+                .segment_index,
+            1
+        );
     }
 
     #[test]

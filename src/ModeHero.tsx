@@ -154,9 +154,13 @@ export default function ModeHero({
           <div className="operation-detail">
             {failed
               ? (snapshot.monitor.error ?? "无法读取录屏，请重试")
-              : takeover.newRevisionId
-                ? `打完后选择录屏 · 从 ${frameTime(snapshot.session.revisions.find((revision) => revision.id === takeover.newRevisionId)?.createdFrame ?? displayedFrame)} 接续`
-                : "选择 MP4 或 MKV 录屏"}
+              : analyzing
+                ? snapshot.monitor.recordingProgress === 0
+                  ? "正在读取视频信息与原始时间戳，可随时取消"
+                  : "正在识别画面与操作，可随时取消"
+                : takeover.newRevisionId
+                  ? `打完后选择录屏 · 从 ${frameTime(snapshot.session.revisions.find((revision) => revision.id === takeover.newRevisionId)?.createdFrame ?? displayedFrame)} 接续`
+                  : "选择 MP4 或 MKV 录屏"}
           </div>
         </div>
         <div className="hero-actions">

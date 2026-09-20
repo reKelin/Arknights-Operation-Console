@@ -440,6 +440,7 @@ struct StableRun {
     game_frame_range: GameFrameRange,
     confidence: u8,
     observations: usize,
+    mapping_trusted: bool,
 }
 
 fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun>> {
@@ -451,8 +452,6 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
     for observation in observations {
         let source_ns = observation.source_timestamp.nanoseconds().ok();
         let broken = observation.discontinuity_before
-            || !observation.mapping_trusted
-            || observation.observation_confidence < MIN_OBSERVATION_CONFIDENCE
             || !observation.game_frame_range.is_valid()
             || source_ns.is_none()
             || previous_source_ns.is_some_and(|previous| source_ns <= Some(previous));
@@ -463,6 +462,20 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
             continue;
         }
         previous_source_ns = source_ns;
+        if observation.observation_confidence < MIN_OBSERVATION_CONFIDENCE {
+            // 面板收起时控件会有短暂过渡；保留手势，但失去时间可信度。
+            if let Some(run) = &mut current
+                && source_ns
+                    .zip(run.source_end.nanoseconds().ok())
+                    .is_some_and(|(now, last)| now.saturating_sub(last) <= 100_000_000)
+            {
+                run.mapping_trusted = false;
+                continue;
+            }
+            push_run(&mut runs, current.take());
+            push_group(&mut groups, &mut runs);
+            continue;
+        }
         if let Some(run) = &mut current
             && run.segment_index == observation.segment_index
             && run.state == observation.battle_state
@@ -471,6 +484,7 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
             run.game_frame_range.end = observation.game_frame_range.end;
             run.confidence = run.confidence.min(observation.observation_confidence);
             run.observations += 1;
+            run.mapping_trusted &= observation.mapping_trusted;
             continue;
         }
         if current
@@ -490,6 +504,7 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
             game_frame_range: observation.game_frame_range,
             confidence: observation.observation_confidence,
             observations: 1,
+            mapping_trusted: observation.mapping_trusted,
         });
     }
     push_run(&mut runs, current);
@@ -512,111 +527,82 @@ fn push_group(groups: &mut Vec<Vec<StableRun>>, runs: &mut Vec<StableRun>) {
 fn extract_group_candidates(runs: &[StableRun], candidates: &mut Vec<AnalysisCandidate>) {
     let mut index = 0;
     while index < runs.len() {
-        if let Some(candidate) = deployment_candidate(&runs[index..]) {
-            candidates.push(candidate);
-            index += 3;
+        let first = &runs[index];
+        if !matches!(
+            first.state,
+            ObservedBattleState::DeployingOperator
+                | ObservedBattleState::PointTwoXRunning
+                | ObservedBattleState::AdjustingOperatorFacing
+        ) {
+            index += 1;
             continue;
         }
-        if let Some(candidate) = selected_unit_candidate(&runs[index..]) {
-            candidates.push(candidate);
-            index += 3;
+        let start = index;
+        while index < runs.len() && !is_running_state(runs[index].state) {
+            index += 1;
+        }
+        let interaction = &runs[start..index];
+        let last = interaction.last().unwrap();
+        let finished = index < runs.len();
+        let deploying = interaction
+            .iter()
+            .any(|run| run.state == ObservedBattleState::DeployingOperator);
+        let facing = interaction
+            .iter()
+            .any(|run| run.state == ObservedBattleState::AdjustingOperatorFacing);
+        let selected = interaction
+            .iter()
+            .any(|run| run.state == ObservedBattleState::PointTwoXRunning);
+        let (kind, evidence, confidence, fields) = if deploying && facing && finished {
+            (
+                Some(CandidateActionKind::Deploy),
+                CandidateEvidence::DeploymentGesture,
+                78,
+                vec![
+                    UnconfirmedField::GameFrame,
+                    UnconfirmedField::Operator,
+                    UnconfirmedField::Tile,
+                    UnconfirmedField::Direction,
+                ],
+            )
+        } else if selected && !deploying && finished {
+            (
+                None,
+                CandidateEvidence::SelectedUnitInteraction,
+                75,
+                vec![
+                    UnconfirmedField::ActionKind,
+                    UnconfirmedField::GameFrame,
+                    UnconfirmedField::Tile,
+                ],
+            )
+        } else if deploying {
+            (
+                None,
+                CandidateEvidence::InterruptedInteraction,
+                49,
+                vec![
+                    UnconfirmedField::ActionKind,
+                    UnconfirmedField::GameFrame,
+                    UnconfirmedField::Tile,
+                ],
+            )
+        } else {
             continue;
-        }
-        if let Some(candidate) = interrupted_candidate(&runs[index..]) {
-            candidates.push(candidate);
-        }
-        index += 1;
-    }
-}
-
-fn deployment_candidate(runs: &[StableRun]) -> Option<AnalysisCandidate> {
-    let [deploying, facing, finished, ..] = runs else {
-        return None;
-    };
-    if deploying.state != ObservedBattleState::DeployingOperator
-        || facing.state != ObservedBattleState::AdjustingOperatorFacing
-        || !is_finished_state(finished.state)
-    {
-        return None;
-    }
-    Some(candidate_from_runs(
-        deploying,
-        facing,
-        Some(CandidateActionKind::Deploy),
-        CandidateEvidence::DeploymentGesture,
-        deploying.confidence.min(facing.confidence),
-        vec![
-            UnconfirmedField::GameFrame,
-            UnconfirmedField::Operator,
-            UnconfirmedField::Tile,
-            UnconfirmedField::Direction,
-        ],
-    ))
-}
-
-fn selected_unit_candidate(runs: &[StableRun]) -> Option<AnalysisCandidate> {
-    let [selecting, acting, finished, ..] = runs else {
-        return None;
-    };
-    if selecting.state != ObservedBattleState::PointTwoXRunning
-        || acting.state != ObservedBattleState::Paused
-        || !is_running_state(finished.state)
-    {
-        return None;
-    }
-    Some(candidate_from_runs(
-        selecting,
-        acting,
-        None,
-        CandidateEvidence::SelectedUnitInteraction,
-        selecting.confidence.min(acting.confidence).min(75),
-        vec![
-            UnconfirmedField::ActionKind,
-            UnconfirmedField::GameFrame,
-            UnconfirmedField::Tile,
-        ],
-    ))
-}
-
-fn interrupted_candidate(runs: &[StableRun]) -> Option<AnalysisCandidate> {
-    let first = runs.first()?;
-    if first.state == ObservedBattleState::DeployingOperator {
-        let last = runs
-            .get(1)
-            .filter(|run| run.state == ObservedBattleState::AdjustingOperatorFacing)
-            .unwrap_or(first);
-        return Some(candidate_from_runs(
+        };
+        let mut candidate = candidate_from_runs(
             first,
             last,
-            None,
-            CandidateEvidence::InterruptedInteraction,
-            first.confidence.min(last.confidence).min(49),
-            vec![
-                UnconfirmedField::ActionKind,
-                UnconfirmedField::GameFrame,
-                UnconfirmedField::Tile,
-            ],
-        ));
+            kind,
+            evidence,
+            confidence.min(first.confidence).min(last.confidence),
+            fields,
+        );
+        if interaction.iter().any(|run| !run.mapping_trusted) {
+            candidate.clock_quality = ClockQuality::Uncertain;
+        }
+        candidates.push(candidate);
     }
-    if first.state == ObservedBattleState::PointTwoXRunning
-        && runs
-            .get(1)
-            .is_some_and(|run| run.state == ObservedBattleState::Paused)
-    {
-        return Some(candidate_from_runs(
-            first,
-            &runs[1],
-            None,
-            CandidateEvidence::InterruptedInteraction,
-            first.confidence.min(runs[1].confidence).min(49),
-            vec![
-                UnconfirmedField::ActionKind,
-                UnconfirmedField::GameFrame,
-                UnconfirmedField::Tile,
-            ],
-        ));
-    }
-    None
 }
 
 fn candidate_from_runs(
@@ -636,7 +622,10 @@ fn candidate_from_runs(
             start: first.game_frame_range.start,
             end: last.game_frame_range.end,
         },
-        clock_quality: if evidence == CandidateEvidence::InterruptedInteraction {
+        clock_quality: if evidence == CandidateEvidence::InterruptedInteraction
+            || !first.mapping_trusted
+            || !last.mapping_trusted
+        {
             ClockQuality::Uncertain
         } else {
             ClockQuality::Trusted
@@ -649,10 +638,6 @@ fn candidate_from_runs(
         confidence,
         unconfirmed_fields,
     }
-}
-
-fn is_finished_state(state: ObservedBattleState) -> bool {
-    is_running_state(state) || state == ObservedBattleState::Paused
 }
 
 fn is_running_state(state: ObservedBattleState) -> bool {
@@ -809,6 +794,64 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(actual, case.expected_evidence, "fixture {}", case.name);
         }
+    }
+
+    #[test]
+    fn uncertain_time_preserves_visual_candidate_without_authorizing_export() {
+        let states = [
+            ObservedBattleState::DeployingOperator,
+            ObservedBattleState::AdjustingOperatorFacing,
+            ObservedBattleState::TwoXRunning,
+        ];
+        let mut observations: Vec<_> = states
+            .into_iter()
+            .flat_map(|state| [state, state])
+            .enumerate()
+            .map(|(index, state)| CandidateObservation {
+                source_timestamp: SourceTimestamp::from_raw_pts(
+                    index as i64 * 33,
+                    SourceTimeBase {
+                        numerator: 1,
+                        denominator: 1000,
+                    },
+                ),
+                segment_index: 0,
+                game_frame_range: GameFrameRange {
+                    start: index as u32,
+                    end: index as u32 + 4,
+                },
+                battle_state: state,
+                observation_confidence: 90,
+                mapping_trusted: false,
+                discontinuity_before: false,
+            })
+            .collect();
+        let candidates = extract_operation_candidates(&observations);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].clock_quality, ClockQuality::Uncertain);
+        assert!(
+            candidates[0]
+                .unconfirmed_fields
+                .contains(&UnconfirmedField::GameFrame)
+        );
+        for observation in &mut observations {
+            observation.mapping_trusted = true;
+        }
+        let mut transition = observations[3].clone();
+        transition.source_timestamp = SourceTimestamp::from_raw_pts(
+            116,
+            SourceTimeBase {
+                numerator: 1,
+                denominator: 1000,
+            },
+        );
+        transition.battle_state = ObservedBattleState::Unknown;
+        transition.observation_confidence = 40;
+        observations.insert(4, transition);
+        let candidates = extract_operation_candidates(&observations);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].kind, Some(CandidateActionKind::Deploy));
+        assert_eq!(candidates[0].clock_quality, ClockQuality::Uncertain);
     }
 
     #[test]

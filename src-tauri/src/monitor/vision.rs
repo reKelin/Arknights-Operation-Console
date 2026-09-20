@@ -6,6 +6,7 @@ use crate::stage::StageRecognition;
 pub struct VisionConfig {
     pub frames_per_cost: u16,
     pub game_ui_scale: u8,
+    pub recording_analysis: bool,
 }
 
 impl Default for VisionConfig {
@@ -13,6 +14,7 @@ impl Default for VisionConfig {
         Self {
             frames_per_cost: 30,
             game_ui_scale: 100,
+            recording_analysis: false,
         }
     }
 }
@@ -22,6 +24,7 @@ impl From<&AppSettings> for VisionConfig {
         Self {
             frames_per_cost: settings.frames_per_cost,
             game_ui_scale: settings.game_ui_scale,
+            recording_analysis: false,
         }
     }
 }
@@ -65,6 +68,9 @@ struct VisualFeatures {
     green_ratio: f64,
     sampled_luma: f64,
     title_bright: f64,
+    selected_panel: bool,
+    deployment_tiles: bool,
+    recording: bool,
 }
 
 pub fn analyze_bgra(
@@ -101,6 +107,11 @@ pub fn analyze_bgra(
     let speed_bright = frame.threshold_ratio(speed_rect, 180);
     let pause_bright = frame.threshold_ratio(pause_rect, 180);
     let features = VisualFeatures {
+        recording: config.recording_analysis,
+        selected_panel: config.recording_analysis
+            && frame.color_ratio(frame.reference_rect(0, 490, 450, 510), false) > 0.12,
+        deployment_tiles: config.recording_analysis
+            && frame.color_ratio(frame.reference_rect(600, 200, 1650, 800), true) > 0.04,
         gear_ratio,
         speed_bright,
         pause_bright,
@@ -138,6 +149,18 @@ pub fn analyze_bgra(
 fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
     let has_battle_anchor = features.gear_ratio >= 0.04;
     let controls_visible = features.pause_bright >= 0.12;
+    if has_battle_anchor && features.selected_panel {
+        if !controls_visible {
+            return (ObservedBattleState::AdjustingOperatorFacing, 78);
+        }
+        if features.deployment_tiles {
+            return (ObservedBattleState::DeployingOperator, 84);
+        }
+        if features.pause_bright < 0.265 {
+            return (ObservedBattleState::Paused, 92);
+        }
+        return (ObservedBattleState::PointTwoXRunning, 84);
+    }
     if has_battle_anchor && controls_visible {
         if features.pause_bright < 0.265 {
             (ObservedBattleState::Paused, 92)
@@ -149,6 +172,9 @@ fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
             (ObservedBattleState::PointTwoXRunning, 78)
         }
     } else if has_battle_anchor {
+        if features.recording {
+            return (ObservedBattleState::Unknown, 40);
+        }
         if features.green_ratio >= 0.02 {
             (ObservedBattleState::DeployingOperator, 84)
         } else {
@@ -201,8 +227,13 @@ impl FrameView<'_> {
         }
         let mut matching = 0_u64;
         let mut total = 0_u64;
-        for y in rect.top..rect.bottom {
-            for x in rect.left..rect.right {
+        let step = if (rect.right - rect.left) * (rect.bottom - rect.top) > 10_000 {
+            (4.0 * self.scale).round().max(1.0) as usize
+        } else {
+            1
+        };
+        for y in (rect.top..rect.bottom).step_by(step) {
+            for x in (rect.left..rect.right).step_by(step) {
                 if let Some((r, g, b)) = self.pixel(x, y) {
                     total += 1;
                     if r.max(g).max(b) >= threshold {
@@ -258,6 +289,31 @@ impl FrameView<'_> {
             0.0
         } else {
             matching as f64 / total as f64
+        }
+    }
+
+    fn color_ratio(&self, rect: Rect, yellow: bool) -> f64 {
+        let step = (4.0 * self.scale).round().max(1.0) as usize;
+        let mut matching = 0;
+        let mut total = 0;
+        for y in (rect.top..rect.bottom).step_by(step) {
+            for x in (rect.left..rect.right).step_by(step) {
+                if let Some((r, g, b)) = self.pixel(x, y) {
+                    total += 1;
+                    if if yellow {
+                        r > 140 && g > 160 && b < 90
+                    } else {
+                        b > 150 && g > 90 && r < 70
+                    } {
+                        matching += 1;
+                    }
+                }
+            }
+        }
+        if total == 0 {
+            0.0
+        } else {
+            f64::from(matching) / f64::from(total)
         }
     }
 
@@ -319,6 +375,37 @@ mod tests {
     }
 
     #[test]
+    fn recording_panel_distinguishes_selection_from_green_background() {
+        let mut features = VisualFeatures {
+            recording: true,
+            gear_ratio: 0.2,
+            speed_bright: 0.082,
+            pause_bright: 0.274,
+            pause_overlay: 0.02,
+            green_ratio: 0.3,
+            sampled_luma: 100.0,
+            title_bright: 0.02,
+            selected_panel: false,
+            deployment_tiles: false,
+        };
+        assert_eq!(
+            classify_battle(features).0,
+            ObservedBattleState::TwoXRunning
+        );
+        features.selected_panel = true;
+        features.speed_bright = 0.0;
+        assert_eq!(
+            classify_battle(features).0,
+            ObservedBattleState::PointTwoXRunning
+        );
+        features.deployment_tiles = true;
+        assert_eq!(
+            classify_battle(features).0,
+            ObservedBattleState::DeployingOperator
+        );
+    }
+
+    #[test]
     fn rejects_invalid_frame_buffer() {
         let error =
             analyze_bgra(&[], 1920, 1080, 1920 * 4, 0, VisionConfig::default()).unwrap_err();
@@ -376,6 +463,9 @@ mod tests {
                 green_ratio: fixture.green_ratio,
                 sampled_luma: fixture.sampled_luma,
                 title_bright: fixture.title_bright,
+                selected_panel: false,
+                deployment_tiles: false,
+                recording: false,
             });
             assert_eq!(actual, fixture.expected, "sample {}", fixture.source);
         }

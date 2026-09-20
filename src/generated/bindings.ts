@@ -41,6 +41,9 @@ export const commands = {
 	selectGameWindow: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_game_window", { id })),
 	analyzeRecording: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("analyze_recording", { path })),
 	stopMonitor: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("stop_monitor")),
+	getLogStatus: () => __TAURI_INVOKE<LogStatus>("get_log_status"),
+	setLogEnabled: (enabled: boolean) => __TAURI_INVOKE<LogStatus>("set_log_enabled", { enabled }),
+	exportLogs: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("export_logs", { path })),
 	minimizeWindow: () => typedError<null, CommandError>(__TAURI_INVOKE("minimize_window")),
 	closeApp: () => __TAURI_INVOKE<void>("close_app"),
 };
@@ -217,6 +220,12 @@ export type GameWindowCandidate = {
 	width: number,
 	height: number,
 	warning: string | null,
+};
+
+export type LogStatus = {
+	enabled: boolean,
+	lines: number,
+	dropped: number,
 };
 
 export type MonitorConnectionState = "idle" | "connecting" | "watching" | "analyzing" | "ready" | "error";

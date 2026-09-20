@@ -35,6 +35,7 @@ export async function installDesktopMock(page: Page) {
       window.__smoke = { snapshot: state, calls, sizes, errors };
       const callbacks = new Map<number, (payload: unknown) => void>();
       let callbackId = 0;
+      let logEnabled = false;
 
       function snapshot() {
         const current = state.session.revisions.find(
@@ -55,6 +56,13 @@ export async function installDesktopMock(page: Page) {
         >;
         calls.push({ command, args: structuredClone(inputArgs) });
         switch (command) {
+          case "get_log_status":
+            return { enabled: logEnabled, lines: 0, dropped: 0 };
+          case "set_log_enabled":
+            logEnabled = Boolean(inputArgs.enabled);
+            return { enabled: logEnabled, lines: 1, dropped: 0 };
+          case "export_logs":
+            return null;
           case "get_snapshot":
             return snapshot();
           case "plugin:event|listen":

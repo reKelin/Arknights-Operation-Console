@@ -222,11 +222,6 @@ impl MonitorEventQueue {
         envelope.dropped_before = std::mem::take(&mut self.dropped_since_poll);
         Some(envelope)
     }
-
-    fn clear(&mut self) {
-        self.events.clear();
-        self.dropped_since_poll = 0;
-    }
 }
 
 pub struct MonitorManager {
@@ -345,8 +340,13 @@ impl MonitorManager {
                 candidates,
                 duration_frames,
             } if self.snapshot.source_kind == MonitorSourceKind::Recording => {
-                if segments.is_empty() {
-                    let message = "录屏中未识别到可信关卡区段".to_string();
+                if segments.is_empty() || candidates.is_empty() {
+                    let message = if segments.is_empty() {
+                        "录屏中未识别到可信关卡区段"
+                    } else {
+                        "已识别关卡，但未提取到操作候选；请开启日志后重试并导出诊断日志"
+                    }
+                    .to_string();
                     self.snapshot.connection_state = MonitorConnectionState::Error;
                     self.snapshot.recording_progress = Some(100);
                     self.snapshot.trace_points = trace;
@@ -450,9 +450,8 @@ impl MonitorManager {
         if let Some(session) = self.recording.take() {
             session.stop();
         }
-        if let Ok(mut events) = self.events.lock() {
-            events.clear();
-        }
+        // 旧工作线程只能写旧队列，避免取消后结果污染新会话。
+        self.events = Arc::new(Mutex::new(MonitorEventQueue::default()));
         self.snapshot = MonitorSnapshot::default();
         self.connection_deadline = None;
     }
