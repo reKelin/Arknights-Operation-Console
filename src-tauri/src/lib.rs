@@ -650,12 +650,12 @@ fn stop_monitor(
 
 #[tauri::command]
 #[specta::specta]
-fn hide_to_tray(app: AppHandle) -> Result<(), CommandError> {
+fn minimize_window(app: AppHandle) -> Result<(), CommandError> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| CommandError::new("window_error", "主窗口不存在"))?;
     window
-        .hide()
+        .minimize()
         .map_err(|error| CommandError::new("window_error", error.to_string()))
 }
 
@@ -704,7 +704,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             select_game_window,
             analyze_recording,
             stop_monitor,
-            hide_to_tray,
+            minimize_window,
             close_app,
         ])
         .events(tauri_specta::collect_events![RunnerSnapshotEvent])
