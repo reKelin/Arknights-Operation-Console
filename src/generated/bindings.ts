@@ -16,6 +16,7 @@ export const commands = {
 	updateEvent: (input: UpdateEventInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_event", { input })),
 	moveEvent: (id: string, frame: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("move_event", { id, frame })),
 	confirmEventTime: (input: ConfirmEventTimeInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_event_time", { input })),
+	confirmEventTimes: (inputs: ConfirmEventTimeInput[]) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_event_times", { inputs })),
 	confirmRecordingCandidate: (input: CandidateConfirmation) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_recording_candidate", { input })),
 	previewRecordingMerge: (input: RecordingMergeInput) => typedError<RecordingMergePreview, CommandError>(__TAURI_INVOKE("preview_recording_merge", { input })),
 	selectRecordingSegment: (segmentIndex: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_recording_segment", { segmentIndex })),

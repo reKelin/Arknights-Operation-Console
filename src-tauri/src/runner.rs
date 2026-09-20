@@ -693,32 +693,52 @@ impl RunnerState {
     }
 
     pub fn confirm_event_time(&mut self, input: ConfirmEventTimeInput) -> Result<(), CommandError> {
+        self.confirm_event_times(vec![input])
+    }
+
+    pub fn confirm_event_times(
+        &mut self,
+        inputs: Vec<ConfirmEventTimeInput>,
+    ) -> Result<(), CommandError> {
         self.ensure_revision_editable()?;
-        validate_frame(input.frame)?;
-        let event = self
-            .axis
-            .events
-            .iter_mut()
-            .find(|event| event.id == input.id)
-            .ok_or_else(|| CommandError::new("event_not_found", "未找到操作点"))?;
-        let inside_observed_range =
-            (event.frame_range.start..=event.frame_range.end).contains(&input.frame);
-        if !inside_observed_range && !input.manual_correction_confirmed {
-            return Err(CommandError::field(
-                "manual_time_confirmation_required",
-                "目标帧超出观测范围，必须明确确认人工校正",
-                "manualCorrectionConfirmed",
+        let mut updates = Vec::new();
+        for input in inputs {
+            validate_frame(input.frame)?;
+            let index = self
+                .axis
+                .events
+                .iter()
+                .position(|event| event.id == input.id)
+                .ok_or_else(|| CommandError::new("event_not_found", "未找到操作点"))?;
+            let event = &self.axis.events[index];
+            let inside_observed_range =
+                (event.frame_range.start..=event.frame_range.end).contains(&input.frame);
+            if !inside_observed_range && !input.manual_correction_confirmed {
+                return Err(CommandError::field(
+                    "manual_time_confirmation_required",
+                    "目标帧超出观测范围，必须明确确认人工校正",
+                    "manualCorrectionConfirmed",
+                ));
+            }
+            updates.push((
+                index,
+                input.frame,
+                if inside_observed_range {
+                    TimeConfirmation::Observed
+                } else {
+                    TimeConfirmation::ManuallyCorrected
+                },
             ));
         }
-        event.frame = input.frame;
-        event.time_confirmation = if inside_observed_range {
-            TimeConfirmation::Observed
-        } else {
-            TimeConfirmation::ManuallyCorrected
-        };
+        let count = updates.len();
+        for (index, frame, confirmation) in updates {
+            let event = &mut self.axis.events[index];
+            event.frame = frame;
+            event.time_confirmation = confirmation;
+        }
         self.axis.sort_events();
         self.rebuild_triggered();
-        self.last_message = Some(format!("已确认操作点 {} 的时间", input.id));
+        self.last_message = Some(format!("已确认 {count} 个操作的时间"));
         self.sync_active_revision()?;
         Ok(())
     }
@@ -2626,6 +2646,63 @@ mod tests {
         assert_eq!(
             runner.axis.events[0].time_confirmation,
             TimeConfirmation::ManuallyCorrected
+        );
+    }
+
+    #[test]
+    fn batch_time_confirmation_validates_all_before_changing_selected_events() {
+        let mut runner = RunnerState::new(Instant::now());
+        for frame in [30, 60, 90] {
+            runner.add_event(frame, DraftKind::Skill).unwrap();
+        }
+        for event in &mut runner.axis.events {
+            event.time_confirmation = TimeConfirmation::Unconfirmed;
+        }
+        let first = runner.axis.events[0].id.clone();
+        let second = runner.axis.events[1].id.clone();
+        let inputs = |manual| {
+            vec![
+                ConfirmEventTimeInput {
+                    id: first.clone(),
+                    frame: 30,
+                    manual_correction_confirmed: false,
+                },
+                ConfirmEventTimeInput {
+                    id: second.clone(),
+                    frame: 65,
+                    manual_correction_confirmed: manual,
+                },
+            ]
+        };
+        assert!(runner.confirm_event_times(inputs(false)).is_err());
+        assert!(
+            runner
+                .axis
+                .events
+                .iter()
+                .all(|event| event.time_confirmation == TimeConfirmation::Unconfirmed)
+        );
+        runner.confirm_event_times(inputs(true)).unwrap();
+        assert_eq!(
+            runner.axis.events[0].time_confirmation,
+            TimeConfirmation::Observed
+        );
+        assert_eq!(
+            runner.axis.events[1].time_confirmation,
+            TimeConfirmation::ManuallyCorrected
+        );
+        assert_eq!(
+            runner.axis.events[2].time_confirmation,
+            TimeConfirmation::Unconfirmed
+        );
+        assert_eq!(
+            runner
+                .axis
+                .events
+                .iter()
+                .map(|event| event.frame)
+                .collect::<Vec<_>>(),
+            [30, 65, 90]
         );
     }
 

@@ -183,6 +183,17 @@ fn confirm_event_time(
 
 #[tauri::command]
 #[specta::specta]
+fn confirm_event_times(
+    inputs: Vec<ConfirmEventTimeInput>,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.confirm_event_times(inputs)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
 fn confirm_recording_candidate(
     input: CandidateConfirmation,
     runner_state: tauri::State<'_, SharedRunner>,
@@ -707,6 +718,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             update_event,
             move_event,
             confirm_event_time,
+            confirm_event_times,
             confirm_recording_candidate,
             preview_recording_merge,
             select_recording_segment,

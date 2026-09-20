@@ -34,6 +34,90 @@ async function openSettings(page: Page, tab: string) {
   await page.getByRole("tab", { name: tab, exact: true }).click();
 }
 
+test("多选确认提交当前输入帧且清除全部已确认提示", async ({ page }) => {
+  await page.evaluate(() => {
+    const events = window.__smoke.snapshot.axis.events;
+    for (const event of events) {
+      event.timeConfirmation = "unconfirmed";
+      event.frameRange = { start: event.frame - 10, end: event.frame + 10 };
+    }
+    const extra = events[1];
+    if (extra)
+      events.push({ ...structuredClone(extra), id: "unselected", frame: 150 });
+  });
+  await page.getByRole("tab", { name: "视频分析", exact: true }).click();
+  await page.keyboard.press("h");
+  const rows = page.locator(".editor-table tbody tr");
+  await expect(rows).toHaveCount(3);
+  await page.getByLabel("选择 技能 F90", { exact: true }).check();
+  const input = page.locator('[name="edit-frame"]');
+  await input.fill("95");
+  const confirm = page.getByRole("button", { name: "确认时间", exact: true });
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(rows.nth(0)).not.toContainText("时间待确认");
+  await expect(rows.nth(1)).not.toContainText("时间待确认");
+  await expect(rows.nth(2)).toContainText("时间待确认");
+  await expect(confirm).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      window.__smoke.snapshot.axis.events.map((event) => event.frame),
+    ),
+  ).toEqual([30, 95, 150]);
+  expect(
+    await page.evaluate(() =>
+      window.__smoke.calls
+        .filter((call) => call.command === "confirm_event_times")
+        .map((call) => call.args.inputs),
+    ),
+  ).toEqual([
+    [
+      { id: "event-deploy", frame: 30, manualCorrectionConfirmed: false },
+      { id: "event-skill", frame: 95, manualCorrectionConfirmed: false },
+    ],
+  ]);
+});
+
+test("当前行已确认时仍能确认其他勾选项，范围外需人工校正", async ({ page }) => {
+  await page.evaluate(() => {
+    const first = window.__smoke.snapshot.axis.events[0];
+    if (first) {
+      first.timeConfirmation = "unconfirmed";
+      first.frame = 35;
+    }
+  });
+  await page.getByRole("tab", { name: "视频分析", exact: true }).click();
+  await page.keyboard.press("h");
+  await page.getByLabel("选择 技能 F90", { exact: true }).check();
+  const confirm = page.getByRole("button", { name: "确认时间", exact: true });
+  await expect(confirm).toBeDisabled();
+  await page.getByLabel("确认所选操作中超出观测范围的人工校正").check();
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(
+    page.locator(".editor-table tbody tr").first(),
+  ).not.toContainText("时间待确认");
+  await expect(confirm).toHaveCount(0);
+});
+
+test("已确认操作重新编辑时间可直接提交当前输入", async ({ page }) => {
+  await page.evaluate(() => {
+    const first = window.__smoke.snapshot.axis.events[0];
+    if (first) first.frameRange = { start: 20, end: 50 };
+  });
+  await page.getByRole("tab", { name: "视频分析", exact: true }).click();
+  await page.keyboard.press("h");
+  const confirm = page.getByRole("button", { name: "确认时间", exact: true });
+  await expect(confirm).toHaveCount(0);
+  await page.locator('[name="edit-frame"]').fill("40");
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(page.locator(".editor-table tbody tr").first()).toContainText(
+    "40f",
+  );
+  await expect(confirm).toHaveCount(0);
+});
+
 test("工作台加载及三种模式切换", async ({ page }) => {
   for (const name of ["代理指挥", "视频分析", "实时录轴"]) {
     const tab = page.getByRole("tab", { name, exact: true });

@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import type {
   AppSettings,
+  ConfirmEventTimeInput,
   RunnerSnapshot,
   UpdateEventInput,
 } from "../../src/generated/bindings";
@@ -126,7 +127,36 @@ export async function installDesktopMock(page: Page) {
               (item) => item.id === input.id,
             );
             if (!event) throw new Error("未知冒烟操作");
+            if (event.frame !== input.frame)
+              event.timeConfirmation = "unconfirmed";
             Object.assign(event, input);
+            return snapshot();
+          }
+          case "confirm_event_times": {
+            const inputs = inputArgs.inputs as ConfirmEventTimeInput[];
+            for (const input of inputs) {
+              const event = state.axis.events.find(
+                (item) => item.id === input.id,
+              );
+              if (!event) throw new Error("未知冒烟操作");
+              const inside =
+                input.frame >= event.frameRange.start &&
+                input.frame <= event.frameRange.end;
+              if (!inside && !input.manualCorrectionConfirmed)
+                throw new Error("缺少范围外人工确认");
+            }
+            for (const input of inputs) {
+              const event = state.axis.events.find(
+                (item) => item.id === input.id,
+              );
+              if (!event) throw new Error("未知冒烟操作");
+              event.frame = input.frame;
+              event.timeConfirmation =
+                input.frame >= event.frameRange.start &&
+                input.frame <= event.frameRange.end
+                  ? "observed"
+                  : "manuallyCorrected";
+            }
             return snapshot();
           }
           case "add_event": {

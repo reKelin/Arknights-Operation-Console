@@ -8,6 +8,7 @@ import {
 } from "./console";
 import Picker from "./Dialog";
 import {
+  type ConfirmEventTimeInput,
   commands,
   type DraftDirection,
   type DraftEvent,
@@ -69,6 +70,9 @@ export default function AxisEditor({
       `${event.operator ?? ""} ${event.tile ?? ""} ${event.label ?? ""} ${frameTime(event.frame)} ${event.frame}f ${KIND_LABELS[event.kind]}`
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
+  );
+  const confirmationEvents = snapshot.axis.events.filter((event) =>
+    ids.length ? ids.includes(event.id) : event.id === selected?.id,
   );
   const selectedIndex = snapshot.axis.events.findIndex(
     (event) => event.id === selected?.id,
@@ -337,16 +341,16 @@ export default function AxisEditor({
           <EventForm
             key={selected.id}
             event={selected}
+            confirmationEvents={confirmationEvents}
             onSave={(input) => onRun(() => commands.updateEvent(input))}
-            onConfirmTime={(manualCorrectionConfirmed) =>
-              onRun(() =>
-                commands.confirmEventTime({
-                  id: selected.id,
-                  frame: selected.frame,
-                  manualCorrectionConfirmed,
-                }),
-              )
-            }
+            onConfirmTime={async (inputs) => {
+              setBusy(true);
+              try {
+                return await onRun(() => commands.confirmEventTimes(inputs));
+              } finally {
+                setBusy(false);
+              }
+            }}
           />
         ) : (
           <div className="editor-empty">
@@ -520,12 +524,14 @@ function AxisMetadata({
 
 function EventForm({
   event,
+  confirmationEvents,
   onSave,
   onConfirmTime,
 }: {
   event: DraftEvent;
+  confirmationEvents: DraftEvent[];
   onSave: (input: UpdateEventInput) => Promise<boolean>;
-  onConfirmTime: (manualCorrectionConfirmed: boolean) => Promise<boolean>;
+  onConfirmTime: (inputs: ConfirmEventTimeInput[]) => Promise<boolean>;
 }) {
   const [frame, setFrame] = useState(String(event.frame));
   const [kind, setKind] = useState<DraftKind>(event.kind);
@@ -535,17 +541,32 @@ function EventForm({
     event.direction ?? "",
   );
   const [label, setLabel] = useState(event.label ?? "");
-  const [manualCorrectionConfirmed, setManualCorrectionConfirmed] =
-    useState(false);
+  const [manualCorrectionKey, setManualCorrectionKey] = useState<string | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     if (document.activeElement?.getAttribute("name") !== "edit-frame")
       setFrame(String(event.frame));
   }, [event.frame]);
-  const outsideObservedRange =
-    Number(frame) < event.frameRange.start ||
-    Number(frame) > event.frameRange.end;
+  const pendingEvents = confirmationEvents.filter(
+    (item) =>
+      item.timeConfirmation === "unconfirmed" ||
+      (item.id === event.id && Number(frame) !== item.frame),
+  );
+  const outsideObservedRange = pendingEvents.some((item) => {
+    const target = item.id === event.id ? Number(frame) : item.frame;
+    return target < item.frameRange.start || target > item.frameRange.end;
+  });
+  const confirmationKey = confirmationEvents
+    .map(
+      (item) =>
+        `${item.id}:${item.id === event.id ? frame : item.frame}:${item.frameRange.start}:${item.frameRange.end}`,
+    )
+    .join(",");
+  const manualCorrectionConfirmed = manualCorrectionKey === confirmationKey;
+  const confirmationEvent = pendingEvents[0] ?? event;
 
   async function saveFields() {
     if (
@@ -599,6 +620,13 @@ function EventForm({
         saveFields();
       }}
       onBlur={(blur) => {
+        if (
+          (blur.target as HTMLElement).getAttribute("name") === "edit-frame" &&
+          (blur.relatedTarget as HTMLElement | null)?.closest(
+            "[data-confirm-time]",
+          )
+        )
+          return;
         if ((blur.target as HTMLElement).matches("input, select")) saveFields();
       }}
     >
@@ -678,11 +706,18 @@ function EventForm({
           onChange={(change) => setLabel(change.target.value)}
         />
       </label>
-      {event.timeConfirmation === "unconfirmed" && (
+      {pendingEvents.length > 0 && (
         <div className="timing-evidence">
           <span>
-            时间待确认 · 观测 F{event.frameRange.start}–F{event.frameRange.end}{" "}
-            · 时钟{CLOCK_QUALITY_LABELS[event.clockQuality]}
+            {pendingEvents.length > 1 ? (
+              `已选 ${pendingEvents.length} 项时间待确认，当前项使用输入帧，其余保持原帧`
+            ) : (
+              <>
+                时间待确认 · 观测 F{confirmationEvent.frameRange.start}–F
+                {confirmationEvent.frameRange.end} · 时钟
+                {CLOCK_QUALITY_LABELS[confirmationEvent.clockQuality]}
+              </>
+            )}
           </span>
           {outsideObservedRange && (
             <label>
@@ -690,19 +725,38 @@ function EventForm({
                 type="checkbox"
                 checked={manualCorrectionConfirmed}
                 onChange={(change) =>
-                  setManualCorrectionConfirmed(change.target.checked)
+                  setManualCorrectionKey(
+                    change.target.checked ? confirmationKey : null,
+                  )
                 }
               />
-              确认人工校正到观测范围之外
+              确认所选操作中超出观测范围的人工校正
             </label>
           )}
           <button
+            data-confirm-time
             disabled={
               saving ||
-              Number(frame) !== event.frame ||
+              !frame ||
+              !Number.isInteger(Number(frame)) ||
+              Number(frame) < 0 ||
+              Number(frame) > 2_147_483_647 ||
               (outsideObservedRange && !manualCorrectionConfirmed)
             }
-            onClick={() => onConfirmTime(manualCorrectionConfirmed)}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await onConfirmTime(
+                  pendingEvents.map((item) => ({
+                    id: item.id,
+                    frame: item.id === event.id ? Number(frame) : item.frame,
+                    manualCorrectionConfirmed,
+                  })),
+                );
+              } finally {
+                setSaving(false);
+              }
+            }}
             type="button"
           >
             确认时间
