@@ -108,7 +108,7 @@ const avatarPaths = (avatarPackage.tree ?? [])
 const operators = Object.entries(characterTable)
   .filter(
     ([id, value]) =>
-      id.startsWith("char_") &&
+      (id.startsWith("char_") || id.startsWith("token_")) &&
       typeof value?.name === "string" &&
       value.name.trim(),
   )

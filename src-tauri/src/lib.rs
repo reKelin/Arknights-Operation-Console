@@ -1,7 +1,9 @@
 mod axis;
 mod bindings;
+mod diagnostics;
 mod executor;
 mod monitor;
+mod operators;
 mod recording_continuation;
 mod runner;
 mod session;
@@ -177,6 +179,17 @@ fn confirm_event_time(
 ) -> Result<RunnerSnapshot, CommandError> {
     let mut runner = locked(&state)?;
     runner.confirm_event_time(input)?;
+    Ok(runner.snapshot())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn confirm_event_times(
+    inputs: Vec<ConfirmEventTimeInput>,
+    state: tauri::State<'_, SharedRunner>,
+) -> Result<RunnerSnapshot, CommandError> {
+    let mut runner = locked(&state)?;
+    runner.confirm_event_times(inputs)?;
     Ok(runner.snapshot())
 }
 
@@ -650,6 +663,33 @@ fn stop_monitor(
 
 #[tauri::command]
 #[specta::specta]
+fn get_log_status() -> diagnostics::LogStatus {
+    diagnostics::status()
+}
+#[tauri::command]
+#[specta::specta]
+fn set_log_enabled(enabled: bool) -> diagnostics::LogStatus {
+    diagnostics::set_enabled(enabled)
+}
+#[tauri::command]
+#[specta::specta]
+async fn export_logs(path: String) -> Result<(), CommandError> {
+    tauri::async_runtime::spawn_blocking(move || diagnostics::export_zip(&path))
+        .await
+        .map_err(|error| CommandError::new("log_export", error.to_string()))?
+        .map_err(|error| CommandError::new("log_export", error.to_string()))
+}
+#[tauri::command]
+#[specta::specta]
+async fn read_logs(errors_only: bool) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || diagnostics::read(errors_only))
+        .await
+        .map_err(|error| CommandError::new("log_read", error.to_string()))?
+        .map_err(|error| CommandError::new("log_read", error.to_string()))
+}
+
+#[tauri::command]
+#[specta::specta]
 fn minimize_window(app: AppHandle) -> Result<(), CommandError> {
     let window = app
         .get_webview_window("main")
@@ -679,6 +719,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             update_event,
             move_event,
             confirm_event_time,
+            confirm_event_times,
             confirm_recording_candidate,
             preview_recording_merge,
             select_recording_segment,
@@ -704,6 +745,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             select_game_window,
             analyze_recording,
             stop_monitor,
+            get_log_status,
+            set_log_enabled,
+            export_logs,
+            read_logs,
             minimize_window,
             close_app,
         ])
@@ -727,6 +772,7 @@ fn start_runtime(app: AppHandle) {
         let mut record_shortcut_registered = false;
         let mut takeover_shortcut_registered = false;
         let mut executor_active = false;
+        let mut last_recording_emit = None;
         let mut shortcut_check = Instant::now() - Duration::from_secs(1);
         loop {
             thread::sleep(Duration::from_millis(16));
@@ -859,6 +905,22 @@ fn start_runtime(app: AppHandle) {
                     takeover_shortcut_registered = should_takeover && result.is_ok();
                 }
             }
+            // 录屏没有实时权威时钟；结果只在监控事件变化时推送，避免每秒重复序列化整条轨迹。
+            if snapshot.monitor.source_kind == MonitorSourceKind::Recording
+                && !snapshot.proxy.enabled
+                && !takeover_settling
+            {
+                let revision = (
+                    snapshot.monitor.recording_analysis_id.clone(),
+                    snapshot.monitor.last_event_sequence,
+                );
+                if last_recording_emit.as_ref() == Some(&revision) {
+                    continue;
+                }
+                last_recording_emit = Some(revision);
+            } else {
+                last_recording_emit = None;
+            }
             if RunnerSnapshotEvent(snapshot).emit(&app).is_err() {
                 break;
             }
@@ -934,6 +996,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            diagnostics::initialize(app.path().app_log_dir()?)?;
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let stage_cache = app.path().app_cache_dir()?.join("stage-maps");
             let execution_cache = app.path().app_cache_dir()?.join("execution");

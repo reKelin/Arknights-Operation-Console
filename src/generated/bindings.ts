@@ -16,6 +16,7 @@ export const commands = {
 	updateEvent: (input: UpdateEventInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("update_event", { input })),
 	moveEvent: (id: string, frame: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("move_event", { id, frame })),
 	confirmEventTime: (input: ConfirmEventTimeInput) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_event_time", { input })),
+	confirmEventTimes: (inputs: ConfirmEventTimeInput[]) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_event_times", { inputs })),
 	confirmRecordingCandidate: (input: CandidateConfirmation) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("confirm_recording_candidate", { input })),
 	previewRecordingMerge: (input: RecordingMergeInput) => typedError<RecordingMergePreview, CommandError>(__TAURI_INVOKE("preview_recording_merge", { input })),
 	selectRecordingSegment: (segmentIndex: number) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_recording_segment", { segmentIndex })),
@@ -41,6 +42,10 @@ export const commands = {
 	selectGameWindow: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_game_window", { id })),
 	analyzeRecording: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("analyze_recording", { path })),
 	stopMonitor: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("stop_monitor")),
+	getLogStatus: () => __TAURI_INVOKE<LogStatus>("get_log_status"),
+	setLogEnabled: (enabled: boolean) => __TAURI_INVOKE<LogStatus>("set_log_enabled", { enabled }),
+	exportLogs: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("export_logs", { path })),
+	readLogs: (errorsOnly: boolean) => typedError<string, CommandError>(__TAURI_INVOKE("read_logs", { errorsOnly })),
 	minimizeWindow: () => typedError<null, CommandError>(__TAURI_INVOKE("minimize_window")),
 	closeApp: () => __TAURI_INVOKE<void>("close_app"),
 };
@@ -217,6 +222,12 @@ export type GameWindowCandidate = {
 	width: number,
 	height: number,
 	warning: string | null,
+};
+
+export type LogStatus = {
+	enabled: boolean,
+	lines: number,
+	dropped: number,
 };
 
 export type MonitorConnectionState = "idle" | "connecting" | "watching" | "analyzing" | "ready" | "error";

@@ -6,6 +6,7 @@ use crate::stage::StageRecognition;
 pub struct VisionConfig {
     pub frames_per_cost: u16,
     pub game_ui_scale: u8,
+    pub recording_analysis: bool,
 }
 
 impl Default for VisionConfig {
@@ -13,6 +14,7 @@ impl Default for VisionConfig {
         Self {
             frames_per_cost: 30,
             game_ui_scale: 100,
+            recording_analysis: false,
         }
     }
 }
@@ -22,6 +24,7 @@ impl From<&AppSettings> for VisionConfig {
         Self {
             frames_per_cost: settings.frames_per_cost,
             game_ui_scale: settings.game_ui_scale,
+            recording_analysis: false,
         }
     }
 }
@@ -65,6 +68,10 @@ struct VisualFeatures {
     green_ratio: f64,
     sampled_luma: f64,
     title_bright: f64,
+    selected_panel: bool,
+    deployment_tiles: bool,
+    recording: bool,
+    pause_shape: Option<f64>,
 }
 
 pub fn analyze_bgra(
@@ -101,6 +108,14 @@ pub fn analyze_bgra(
     let speed_bright = frame.threshold_ratio(speed_rect, 180);
     let pause_bright = frame.threshold_ratio(pause_rect, 180);
     let features = VisualFeatures {
+        pause_shape: config
+            .recording_analysis
+            .then(|| frame.normalized_shape(pause_rect)),
+        recording: config.recording_analysis,
+        selected_panel: config.recording_analysis
+            && frame.color_ratio(frame.reference_rect(0, 490, 450, 510), false) > 0.12,
+        deployment_tiles: config.recording_analysis
+            && frame.color_ratio(frame.reference_rect(600, 200, 1650, 800), true) > 0.04,
         gear_ratio,
         speed_bright,
         pause_bright,
@@ -138,6 +153,21 @@ pub fn analyze_bgra(
 fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
     let has_battle_anchor = features.gear_ratio >= 0.04;
     let controls_visible = features.pause_bright >= 0.12;
+    if has_battle_anchor && features.selected_panel {
+        if features.pause_shape.is_some_and(|shape| shape < 0.265) {
+            return (ObservedBattleState::Paused, 92);
+        }
+        if features.deployment_tiles {
+            return (ObservedBattleState::DeployingOperator, 84);
+        }
+        if !controls_visible {
+            return (ObservedBattleState::AdjustingOperatorFacing, 78);
+        }
+        if features.pause_bright < 0.265 {
+            return (ObservedBattleState::Paused, 92);
+        }
+        return (ObservedBattleState::PointTwoXRunning, 84);
+    }
     if has_battle_anchor && controls_visible {
         if features.pause_bright < 0.265 {
             (ObservedBattleState::Paused, 92)
@@ -149,6 +179,9 @@ fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
             (ObservedBattleState::PointTwoXRunning, 78)
         }
     } else if has_battle_anchor {
+        if features.recording {
+            return (ObservedBattleState::Unknown, 40);
+        }
         if features.green_ratio >= 0.02 {
             (ObservedBattleState::DeployingOperator, 84)
         } else {
@@ -169,6 +202,25 @@ fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
 }
 
 impl FrameView<'_> {
+    // 按图标自身对比度判断三角/双竖线；拖动时图标会变暗，绝对亮度不能判暂停。
+    fn normalized_shape(&self, rect: Rect) -> f64 {
+        let mut values = Vec::new();
+        for y in rect.top..rect.bottom {
+            for x in rect.left..rect.right {
+                if let Some((r, g, b)) = self.pixel(x, y) {
+                    values.push(r.max(g).max(b));
+                }
+            }
+        }
+        if values.is_empty() {
+            return 0.0;
+        }
+        values.sort_unstable();
+        let low = f64::from(values[values.len() * 15 / 100]);
+        let high = f64::from(values[values.len() * 90 / 100]);
+        let threshold = low + (high - low) * 0.65;
+        values.iter().filter(|&&v| f64::from(v) > threshold).count() as f64 / values.len() as f64
+    }
     fn reference_rect(&self, left: u32, top: u32, right: u32, bottom: u32) -> Rect {
         Rect {
             left: self.reference_x(left).min(self.width),
@@ -201,8 +253,13 @@ impl FrameView<'_> {
         }
         let mut matching = 0_u64;
         let mut total = 0_u64;
-        for y in rect.top..rect.bottom {
-            for x in rect.left..rect.right {
+        let step = if (rect.right - rect.left) * (rect.bottom - rect.top) > 10_000 {
+            (4.0 * self.scale).round().max(1.0) as usize
+        } else {
+            1
+        };
+        for y in (rect.top..rect.bottom).step_by(step) {
+            for x in (rect.left..rect.right).step_by(step) {
                 if let Some((r, g, b)) = self.pixel(x, y) {
                     total += 1;
                     if r.max(g).max(b) >= threshold {
@@ -258,6 +315,31 @@ impl FrameView<'_> {
             0.0
         } else {
             matching as f64 / total as f64
+        }
+    }
+
+    fn color_ratio(&self, rect: Rect, yellow: bool) -> f64 {
+        let step = (4.0 * self.scale).round().max(1.0) as usize;
+        let mut matching = 0;
+        let mut total = 0;
+        for y in (rect.top..rect.bottom).step_by(step) {
+            for x in (rect.left..rect.right).step_by(step) {
+                if let Some((r, g, b)) = self.pixel(x, y) {
+                    total += 1;
+                    if if yellow {
+                        r > 140 && g > 160 && b < 90
+                    } else {
+                        b > 150 && g > 90 && r < 70
+                    } {
+                        matching += 1;
+                    }
+                }
+            }
+        }
+        if total == 0 {
+            0.0
+        } else {
+            f64::from(matching) / f64::from(total)
         }
     }
 
@@ -319,6 +401,45 @@ mod tests {
     }
 
     #[test]
+    fn recording_panel_distinguishes_selection_from_green_background() {
+        let mut features = VisualFeatures {
+            pause_shape: None,
+            recording: true,
+            gear_ratio: 0.2,
+            speed_bright: 0.082,
+            pause_bright: 0.274,
+            pause_overlay: 0.02,
+            green_ratio: 0.3,
+            sampled_luma: 100.0,
+            title_bright: 0.02,
+            selected_panel: false,
+            deployment_tiles: false,
+        };
+        assert_eq!(
+            classify_battle(features).0,
+            ObservedBattleState::TwoXRunning
+        );
+        features.selected_panel = true;
+        features.speed_bright = 0.0;
+        assert_eq!(
+            classify_battle(features).0,
+            ObservedBattleState::PointTwoXRunning
+        );
+        features.deployment_tiles = true;
+        assert_eq!(
+            classify_battle(features).0,
+            ObservedBattleState::DeployingOperator
+        );
+        features.pause_shape = Some(0.23);
+        assert_eq!(classify_battle(features).0, ObservedBattleState::Paused);
+        features.pause_shape = Some(0.29);
+        assert_eq!(
+            classify_battle(features).0,
+            ObservedBattleState::DeployingOperator
+        );
+    }
+
+    #[test]
     fn rejects_invalid_frame_buffer() {
         let error =
             analyze_bgra(&[], 1920, 1080, 1920 * 4, 0, VisionConfig::default()).unwrap_err();
@@ -369,6 +490,7 @@ mod tests {
 
         for fixture in fixtures {
             let (actual, _) = classify_battle(VisualFeatures {
+                pause_shape: None,
                 gear_ratio: fixture.gear_ratio,
                 speed_bright: fixture.speed_bright,
                 pause_bright: fixture.pause_bright,
@@ -376,6 +498,9 @@ mod tests {
                 green_ratio: fixture.green_ratio,
                 sampled_luma: fixture.sampled_luma,
                 title_bright: fixture.title_bright,
+                selected_panel: false,
+                deployment_tiles: false,
+                recording: false,
             });
             assert_eq!(actual, fixture.expected, "sample {}", fixture.source);
         }

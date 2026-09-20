@@ -1,5 +1,7 @@
+import { save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useState } from "react";
 import type { TypedResult } from "./console";
+import { messageOf, unwrap } from "./console";
 import {
   type AppSettings,
   commands,
@@ -27,8 +29,44 @@ export default function SettingsPage({
   onSelectStage,
 }: SettingsPageProps) {
   const [tab, setTab] = useState<
-    "monitor" | "appearance" | "shortcuts" | "execution"
+    "monitor" | "appearance" | "shortcuts" | "execution" | "diagnostics"
   >("monitor");
+  const [logEnabled, setLogEnabled] = useState(false);
+  const [logMessage, setLogMessage] = useState("");
+  const [logView, setLogView] = useState<{
+    title: string;
+    text: string;
+  } | null>(null);
+  async function viewLogs(errorsOnly: boolean) {
+    try {
+      setLogView({
+        title: errorsOnly ? "错误日志" : "历史日志",
+        text: unwrap(await commands.readLogs(errorsOnly)),
+      });
+    } catch (error) {
+      setLogMessage(messageOf(error));
+    }
+  }
+  async function openDiagnostics() {
+    try {
+      setLogEnabled((await commands.getLogStatus()).enabled);
+    } catch (error) {
+      setLogMessage(messageOf(error));
+    }
+  }
+  async function exportLogs() {
+    try {
+      const path = await save({
+        defaultPath: "console-logs.zip",
+        filters: [{ name: "日志压缩包", extensions: ["zip"] }],
+      });
+      if (!path) return;
+      unwrap(await commands.exportLogs(path));
+      setLogMessage("日志已导出");
+    } catch (error) {
+      setLogMessage(messageOf(error));
+    }
+  }
   const [framesPerCost, setFramesPerCost] = useState(
     String(snapshot.settings.framesPerCost),
   );
@@ -74,12 +112,16 @@ export default function SettingsPage({
             ["appearance", "外观"],
             ["shortcuts", "快捷键"],
             ["execution", "执行"],
+            ["diagnostics", "日志"],
           ] as const
         ).map(([value, label]) => (
           <button
             aria-selected={tab === value}
             key={value}
-            onClick={() => setTab(value)}
+            onClick={() => {
+              setTab(value);
+              if (value === "diagnostics") void openDiagnostics();
+            }}
             role="tab"
             type="button"
           >
@@ -88,6 +130,76 @@ export default function SettingsPage({
         ))}
       </div>
       <div className="settings-content">
+        {tab === "diagnostics" && (
+          <div className="log-settings">
+            <details open>
+              <summary>日志</summary>
+              <div className="log-card">
+                <button
+                  type="button"
+                  className="log-row"
+                  onClick={() => void viewLogs(false)}
+                >
+                  <strong>历史日志</strong>
+                  <span>查看任务执行日志</span>
+                </button>
+                <button
+                  type="button"
+                  className="log-row"
+                  onClick={() => void viewLogs(true)}
+                >
+                  <strong>错误日志</strong>
+                  <span>查看应用异常和错误记录</span>
+                </button>
+                <button
+                  type="button"
+                  className="log-row"
+                  onClick={() => void exportLogs()}
+                >
+                  <strong>导出日志压缩包</strong>
+                  <span>打包所有日志为 ZIP 文件分享</span>
+                </button>
+                <label className="log-row log-debug">
+                  <span>
+                    <strong>调试模式</strong>
+                    <span>启用后记录详细日志信息</span>
+                  </span>
+                  <input
+                    aria-label="调试模式"
+                    className="log-toggle"
+                    type="checkbox"
+                    role="switch"
+                    aria-checked={logEnabled}
+                    checked={logEnabled}
+                    onChange={async (event) => {
+                      try {
+                        setLogEnabled(
+                          (await commands.setLogEnabled(event.target.checked))
+                            .enabled,
+                        );
+                      } catch (error) {
+                        setLogMessage(messageOf(error));
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            </details>
+            {logMessage && <p role="status">{logMessage}</p>}
+            {logView && (
+              <section className="log-view" aria-label={logView.title}>
+                <div>
+                  <strong>{logView.title}</strong>
+                  <button type="button" onClick={() => setLogView(null)}>
+                    关闭日志
+                  </button>
+                </div>
+                <pre>{logView.text || "暂无日志"}</pre>
+              </section>
+            )}
+          </div>
+        )}
+
         {tab === "monitor" && (
           <>
             <SettingRow

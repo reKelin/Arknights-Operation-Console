@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::fmt;
 
 use super::super::{ClockQuality, ObservedBattleState};
 
@@ -83,159 +82,6 @@ pub enum SourceTimestampError {
     InvalidPts,
     NegativePts,
     Overflow,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SourceFrameTimeline {
-    pub time_base: SourceTimeBase,
-    pub timestamps: Vec<SourceTimestamp>,
-}
-
-impl SourceFrameTimeline {
-    pub fn parse_ffprobe_json(bytes: &[u8]) -> Result<Self, SourceTimelineError> {
-        let probe: FrameProbeOutput = serde_json::from_slice(bytes)
-            .map_err(|error| SourceTimelineError::InvalidJson(error.to_string()))?;
-        let stream = probe
-            .streams
-            .first()
-            .ok_or(SourceTimelineError::MissingVideoStream)?;
-        let time_base = SourceTimeBase::parse(&stream.time_base)
-            .map_err(|_| SourceTimelineError::InvalidTimeBase(stream.time_base.clone()))?;
-        let mut timestamps = Vec::with_capacity(probe.frames.len());
-        let mut previous_raw_pts = None;
-        for (ordinal, frame) in probe.frames.into_iter().enumerate() {
-            let raw_pts = frame
-                .best_effort_timestamp
-                .ok_or(SourceTimelineError::MissingPts { ordinal })?
-                .parse()
-                .map_err(|_| SourceTimelineError::InvalidPts { ordinal })?;
-            if previous_raw_pts.is_some_and(|previous| previous >= raw_pts) {
-                return Err(SourceTimelineError::NonIncreasingPts { ordinal });
-            }
-            previous_raw_pts = Some(raw_pts);
-            timestamps.push(
-                SourceTimestamp::parse(&raw_pts.to_string(), time_base)
-                    .map_err(|_| SourceTimelineError::InvalidPts { ordinal })?,
-            );
-        }
-        if timestamps.is_empty() {
-            return Err(SourceTimelineError::NoVideoFrames);
-        }
-        Ok(Self {
-            time_base,
-            timestamps,
-        })
-    }
-
-    pub fn timestamp_for_decoded_frame(
-        &self,
-        decoded_ordinal: usize,
-    ) -> Result<&SourceTimestamp, SourceTimelineError> {
-        self.timestamps
-            .get(decoded_ordinal)
-            .ok_or(SourceTimelineError::DecodedFrameWithoutPts {
-                ordinal: decoded_ordinal,
-            })
-    }
-
-    pub fn verify_decoded_frame_count(
-        &self,
-        decoded_frames: usize,
-    ) -> Result<(), SourceTimelineError> {
-        if decoded_frames == self.timestamps.len() {
-            return Ok(());
-        }
-        Err(SourceTimelineError::FrameCountMismatch {
-            decoded_frames,
-            timestamp_frames: self.timestamps.len(),
-        })
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SourceTimelineError {
-    InvalidJson(String),
-    MissingVideoStream,
-    InvalidTimeBase(String),
-    NoVideoFrames,
-    MissingPts {
-        ordinal: usize,
-    },
-    InvalidPts {
-        ordinal: usize,
-    },
-    NonIncreasingPts {
-        ordinal: usize,
-    },
-    DecodedFrameWithoutPts {
-        ordinal: usize,
-    },
-    FrameCountMismatch {
-        decoded_frames: usize,
-        timestamp_frames: usize,
-    },
-}
-
-impl fmt::Display for SourceTimelineError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidJson(error) => write!(formatter, "解析逐帧时间戳失败：{error}"),
-            Self::MissingVideoStream => formatter.write_str("录屏中没有视频流时间基"),
-            Self::InvalidTimeBase(value) => write!(formatter, "录屏视频时间基无效：{value}"),
-            Self::NoVideoFrames => formatter.write_str("录屏中没有可分析的视频帧"),
-            Self::MissingPts { ordinal } => {
-                write!(formatter, "录屏第 {ordinal} 帧缺少原始展示时间戳")
-            }
-            Self::InvalidPts { ordinal } => {
-                write!(formatter, "录屏第 {ordinal} 帧的原始展示时间戳无效")
-            }
-            Self::NonIncreasingPts { ordinal } => {
-                write!(formatter, "录屏第 {ordinal} 帧的原始展示时间戳未递增")
-            }
-            Self::DecodedFrameWithoutPts { ordinal } => {
-                write!(formatter, "解码第 {ordinal} 帧没有对应的原始展示时间戳")
-            }
-            Self::FrameCountMismatch {
-                decoded_frames,
-                timestamp_frames,
-            } => write!(
-                formatter,
-                "解码帧数 {decoded_frames} 与时间戳帧数 {timestamp_frames} 不一致"
-            ),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct FrameProbeOutput {
-    streams: Vec<FrameProbeStream>,
-    frames: Vec<FrameProbeFrame>,
-}
-
-#[derive(Deserialize)]
-struct FrameProbeStream {
-    time_base: String,
-}
-
-#[derive(Deserialize)]
-struct FrameProbeFrame {
-    best_effort_timestamp: Option<ProbeTimestamp>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum ProbeTimestamp {
-    String(String),
-    Integer(i64),
-}
-
-impl ProbeTimestamp {
-    fn parse(self) -> Result<i64, std::num::ParseIntError> {
-        match self {
-            Self::String(value) => value.parse(),
-            Self::Integer(value) => Ok(value),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
@@ -440,6 +286,7 @@ struct StableRun {
     game_frame_range: GameFrameRange,
     confidence: u8,
     observations: usize,
+    mapping_trusted: bool,
 }
 
 fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun>> {
@@ -451,8 +298,6 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
     for observation in observations {
         let source_ns = observation.source_timestamp.nanoseconds().ok();
         let broken = observation.discontinuity_before
-            || !observation.mapping_trusted
-            || observation.observation_confidence < MIN_OBSERVATION_CONFIDENCE
             || !observation.game_frame_range.is_valid()
             || source_ns.is_none()
             || previous_source_ns.is_some_and(|previous| source_ns <= Some(previous));
@@ -463,6 +308,20 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
             continue;
         }
         previous_source_ns = source_ns;
+        if observation.observation_confidence < MIN_OBSERVATION_CONFIDENCE {
+            // 面板收起时控件会有短暂过渡；保留手势，但失去时间可信度。
+            if let Some(run) = &mut current
+                && source_ns
+                    .zip(run.source_end.nanoseconds().ok())
+                    .is_some_and(|(now, last)| now.saturating_sub(last) <= 100_000_000)
+            {
+                run.mapping_trusted = false;
+                continue;
+            }
+            push_run(&mut runs, current.take());
+            push_group(&mut groups, &mut runs);
+            continue;
+        }
         if let Some(run) = &mut current
             && run.segment_index == observation.segment_index
             && run.state == observation.battle_state
@@ -471,6 +330,7 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
             run.game_frame_range.end = observation.game_frame_range.end;
             run.confidence = run.confidence.min(observation.observation_confidence);
             run.observations += 1;
+            run.mapping_trusted &= observation.mapping_trusted;
             continue;
         }
         if current
@@ -490,6 +350,7 @@ fn stable_run_groups(observations: &[CandidateObservation]) -> Vec<Vec<StableRun
             game_frame_range: observation.game_frame_range,
             confidence: observation.observation_confidence,
             observations: 1,
+            mapping_trusted: observation.mapping_trusted,
         });
     }
     push_run(&mut runs, current);
@@ -512,111 +373,82 @@ fn push_group(groups: &mut Vec<Vec<StableRun>>, runs: &mut Vec<StableRun>) {
 fn extract_group_candidates(runs: &[StableRun], candidates: &mut Vec<AnalysisCandidate>) {
     let mut index = 0;
     while index < runs.len() {
-        if let Some(candidate) = deployment_candidate(&runs[index..]) {
-            candidates.push(candidate);
-            index += 3;
+        let first = &runs[index];
+        if !matches!(
+            first.state,
+            ObservedBattleState::DeployingOperator
+                | ObservedBattleState::PointTwoXRunning
+                | ObservedBattleState::AdjustingOperatorFacing
+        ) {
+            index += 1;
             continue;
         }
-        if let Some(candidate) = selected_unit_candidate(&runs[index..]) {
-            candidates.push(candidate);
-            index += 3;
+        let start = index;
+        while index < runs.len() && !is_running_state(runs[index].state) {
+            index += 1;
+        }
+        let interaction = &runs[start..index];
+        let last = interaction.last().unwrap();
+        let finished = index < runs.len();
+        let deploying = interaction
+            .iter()
+            .any(|run| run.state == ObservedBattleState::DeployingOperator);
+        let facing = interaction
+            .iter()
+            .any(|run| run.state == ObservedBattleState::AdjustingOperatorFacing);
+        let selected = interaction
+            .iter()
+            .any(|run| run.state == ObservedBattleState::PointTwoXRunning);
+        let (kind, evidence, confidence, fields) = if deploying && facing && finished {
+            (
+                Some(CandidateActionKind::Deploy),
+                CandidateEvidence::DeploymentGesture,
+                78,
+                vec![
+                    UnconfirmedField::GameFrame,
+                    UnconfirmedField::Operator,
+                    UnconfirmedField::Tile,
+                    UnconfirmedField::Direction,
+                ],
+            )
+        } else if selected && !deploying && finished {
+            (
+                None,
+                CandidateEvidence::SelectedUnitInteraction,
+                75,
+                vec![
+                    UnconfirmedField::ActionKind,
+                    UnconfirmedField::GameFrame,
+                    UnconfirmedField::Tile,
+                ],
+            )
+        } else if deploying || facing {
+            (
+                None,
+                CandidateEvidence::InterruptedInteraction,
+                49,
+                vec![
+                    UnconfirmedField::ActionKind,
+                    UnconfirmedField::GameFrame,
+                    UnconfirmedField::Tile,
+                ],
+            )
+        } else {
             continue;
-        }
-        if let Some(candidate) = interrupted_candidate(&runs[index..]) {
-            candidates.push(candidate);
-        }
-        index += 1;
-    }
-}
-
-fn deployment_candidate(runs: &[StableRun]) -> Option<AnalysisCandidate> {
-    let [deploying, facing, finished, ..] = runs else {
-        return None;
-    };
-    if deploying.state != ObservedBattleState::DeployingOperator
-        || facing.state != ObservedBattleState::AdjustingOperatorFacing
-        || !is_finished_state(finished.state)
-    {
-        return None;
-    }
-    Some(candidate_from_runs(
-        deploying,
-        facing,
-        Some(CandidateActionKind::Deploy),
-        CandidateEvidence::DeploymentGesture,
-        deploying.confidence.min(facing.confidence),
-        vec![
-            UnconfirmedField::GameFrame,
-            UnconfirmedField::Operator,
-            UnconfirmedField::Tile,
-            UnconfirmedField::Direction,
-        ],
-    ))
-}
-
-fn selected_unit_candidate(runs: &[StableRun]) -> Option<AnalysisCandidate> {
-    let [selecting, acting, finished, ..] = runs else {
-        return None;
-    };
-    if selecting.state != ObservedBattleState::PointTwoXRunning
-        || acting.state != ObservedBattleState::Paused
-        || !is_running_state(finished.state)
-    {
-        return None;
-    }
-    Some(candidate_from_runs(
-        selecting,
-        acting,
-        None,
-        CandidateEvidence::SelectedUnitInteraction,
-        selecting.confidence.min(acting.confidence).min(75),
-        vec![
-            UnconfirmedField::ActionKind,
-            UnconfirmedField::GameFrame,
-            UnconfirmedField::Tile,
-        ],
-    ))
-}
-
-fn interrupted_candidate(runs: &[StableRun]) -> Option<AnalysisCandidate> {
-    let first = runs.first()?;
-    if first.state == ObservedBattleState::DeployingOperator {
-        let last = runs
-            .get(1)
-            .filter(|run| run.state == ObservedBattleState::AdjustingOperatorFacing)
-            .unwrap_or(first);
-        return Some(candidate_from_runs(
+        };
+        let mut candidate = candidate_from_runs(
             first,
             last,
-            None,
-            CandidateEvidence::InterruptedInteraction,
-            first.confidence.min(last.confidence).min(49),
-            vec![
-                UnconfirmedField::ActionKind,
-                UnconfirmedField::GameFrame,
-                UnconfirmedField::Tile,
-            ],
-        ));
+            kind,
+            evidence,
+            confidence.min(first.confidence).min(last.confidence),
+            fields,
+        );
+        if interaction.iter().any(|run| !run.mapping_trusted) {
+            candidate.clock_quality = ClockQuality::Uncertain;
+        }
+        candidates.push(candidate);
     }
-    if first.state == ObservedBattleState::PointTwoXRunning
-        && runs
-            .get(1)
-            .is_some_and(|run| run.state == ObservedBattleState::Paused)
-    {
-        return Some(candidate_from_runs(
-            first,
-            &runs[1],
-            None,
-            CandidateEvidence::InterruptedInteraction,
-            first.confidence.min(runs[1].confidence).min(49),
-            vec![
-                UnconfirmedField::ActionKind,
-                UnconfirmedField::GameFrame,
-                UnconfirmedField::Tile,
-            ],
-        ));
-    }
-    None
 }
 
 fn candidate_from_runs(
@@ -636,7 +468,10 @@ fn candidate_from_runs(
             start: first.game_frame_range.start,
             end: last.game_frame_range.end,
         },
-        clock_quality: if evidence == CandidateEvidence::InterruptedInteraction {
+        clock_quality: if evidence == CandidateEvidence::InterruptedInteraction
+            || !first.mapping_trusted
+            || !last.mapping_trusted
+        {
             ClockQuality::Uncertain
         } else {
             ClockQuality::Trusted
@@ -651,10 +486,6 @@ fn candidate_from_runs(
     }
 }
 
-fn is_finished_state(state: ObservedBattleState) -> bool {
-    is_running_state(state) || state == ObservedBattleState::Paused
-}
-
 fn is_running_state(state: ObservedBattleState) -> bool {
     matches!(
         state,
@@ -663,13 +494,7 @@ fn is_running_state(state: ObservedBattleState) -> bool {
 }
 
 fn valid_operator_id(value: &str) -> bool {
-    value.len() <= 128
-        && value.strip_prefix("char_").is_some_and(|rest| {
-            !rest.is_empty()
-                && rest
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric() || character == '_')
-        })
+    crate::axis::valid_operator_id(value)
 }
 
 fn valid_tile_code(value: &str) -> bool {
@@ -722,56 +547,6 @@ mod tests {
     }
 
     #[test]
-    fn pairs_variable_rate_source_pts_with_decoded_frames() {
-        let timeline = SourceFrameTimeline::parse_ffprobe_json(include_bytes!(
-            "../../../tests/fixtures/monitor/recording-source-pts.json"
-        ))
-        .unwrap();
-
-        assert_eq!(
-            timeline.time_base,
-            SourceTimeBase::parse("1/90000").unwrap()
-        );
-        assert_eq!(timeline.timestamps[1].raw_pts, "3003");
-        assert_eq!(
-            timeline.timestamp_for_decoded_frame(2).unwrap().raw_pts,
-            "7507"
-        );
-        assert!(timeline.verify_decoded_frame_count(4).is_ok());
-        assert_eq!(
-            timeline.verify_decoded_frame_count(3).unwrap_err(),
-            SourceTimelineError::FrameCountMismatch {
-                decoded_frames: 3,
-                timestamp_frames: 4,
-            }
-        );
-    }
-
-    #[test]
-    fn rejects_missing_or_non_increasing_source_pts() {
-        let missing = br#"{
-            "streams": [{ "time_base": "1/1000" }],
-            "frames": [{ "best_effort_timestamp": "0" }, {}]
-        }"#;
-        assert_eq!(
-            SourceFrameTimeline::parse_ffprobe_json(missing).unwrap_err(),
-            SourceTimelineError::MissingPts { ordinal: 1 }
-        );
-
-        let repeated = br#"{
-            "streams": [{ "time_base": "1/1000" }],
-            "frames": [
-                { "best_effort_timestamp": 20 },
-                { "best_effort_timestamp": "20" }
-            ]
-        }"#;
-        assert_eq!(
-            SourceFrameTimeline::parse_ffprobe_json(repeated).unwrap_err(),
-            SourceTimelineError::NonIncreasingPts { ordinal: 1 }
-        );
-    }
-
-    #[test]
     fn extracts_candidates_from_temporal_fixtures() {
         let fixture: CandidateFixture = serde_json::from_str(include_str!(
             "../../../tests/fixtures/monitor/recording-candidates.json"
@@ -809,6 +584,64 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(actual, case.expected_evidence, "fixture {}", case.name);
         }
+    }
+
+    #[test]
+    fn uncertain_time_preserves_visual_candidate_without_authorizing_export() {
+        let states = [
+            ObservedBattleState::DeployingOperator,
+            ObservedBattleState::AdjustingOperatorFacing,
+            ObservedBattleState::TwoXRunning,
+        ];
+        let mut observations: Vec<_> = states
+            .into_iter()
+            .flat_map(|state| [state, state])
+            .enumerate()
+            .map(|(index, state)| CandidateObservation {
+                source_timestamp: SourceTimestamp::from_raw_pts(
+                    index as i64 * 33,
+                    SourceTimeBase {
+                        numerator: 1,
+                        denominator: 1000,
+                    },
+                ),
+                segment_index: 0,
+                game_frame_range: GameFrameRange {
+                    start: index as u32,
+                    end: index as u32 + 4,
+                },
+                battle_state: state,
+                observation_confidence: 90,
+                mapping_trusted: false,
+                discontinuity_before: false,
+            })
+            .collect();
+        let candidates = extract_operation_candidates(&observations);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].clock_quality, ClockQuality::Uncertain);
+        assert!(
+            candidates[0]
+                .unconfirmed_fields
+                .contains(&UnconfirmedField::GameFrame)
+        );
+        for observation in &mut observations {
+            observation.mapping_trusted = true;
+        }
+        let mut transition = observations[3].clone();
+        transition.source_timestamp = SourceTimestamp::from_raw_pts(
+            116,
+            SourceTimeBase {
+                numerator: 1,
+                denominator: 1000,
+            },
+        );
+        transition.battle_state = ObservedBattleState::Unknown;
+        transition.observation_confidence = 40;
+        observations.insert(4, transition);
+        let candidates = extract_operation_candidates(&observations);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].kind, Some(CandidateActionKind::Deploy));
+        assert_eq!(candidates[0].clock_quality, ClockQuality::Uncertain);
     }
 
     #[test]

@@ -51,6 +51,16 @@ pub fn crop_title(
     height: u32,
     row_pitch: u32,
 ) -> Result<OcrImage, String> {
+    crop_region(data, width, height, row_pitch, [0, 0, 1920, 1080])
+}
+
+pub fn crop_region(
+    data: &[u8],
+    width: u32,
+    height: u32,
+    row_pitch: u32,
+    region: [u32; 4],
+) -> Result<OcrImage, String> {
     if width < 640
         || height < 360
         || row_pitch < width.saturating_mul(4)
@@ -63,10 +73,10 @@ pub fn crop_title(
     let offset_y = (height as f64 - 1080.0 * scale) / 2.0;
     let reference =
         |value: u32, offset: f64| (offset + value as f64 * scale).round().max(0.0) as u32;
-    let left = reference(0, offset_x).min(width);
-    let right = reference(1920, offset_x).min(width);
-    let top = reference(0, offset_y).min(height);
-    let bottom = reference(1080, offset_y).min(height);
+    let left = reference(region[0], offset_x).min(width);
+    let right = reference(region[2], offset_x).min(width);
+    let top = reference(region[1], offset_y).min(height);
+    let bottom = reference(region[3], offset_y).min(height);
     if left >= right || top >= bottom {
         return Err("OCR 标题区域无效".to_string());
     }
@@ -120,6 +130,21 @@ impl StageOcrRecognizer {
             Storage::Streams::DataWriter,
         };
 
+        if image.height < 96 {
+            let input = image::RgbaImage::from_raw(image.width, image.height, image.pixels)
+                .ok_or("OCR 裁剪缓冲区无效")?;
+            let output = image::imageops::resize(
+                &input,
+                image.width * 3,
+                image.height * 3,
+                image::imageops::FilterType::CatmullRom,
+            );
+            image = OcrImage {
+                width: output.width(),
+                height: output.height(),
+                pixels: output.into_raw(),
+            };
+        }
         let max = windows::Media::Ocr::OcrEngine::MaxImageDimension().unwrap_or(2600);
         if image.width.max(image.height) > max {
             image = resize_bgra(image, max);

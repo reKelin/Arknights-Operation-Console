@@ -383,7 +383,7 @@ impl RunnerState {
             ));
         }
         let source_timestamp_ns =
-            candidate.source_start.nanoseconds().map_err(|_| {
+            candidate.source_end.nanoseconds().map_err(|_| {
                 CommandError::new("invalid_source_timestamp", "候选来源时间无法换算")
             })? as f64;
         if !source_timestamp_ns.is_finite() {
@@ -647,7 +647,9 @@ impl RunnerState {
             event.frame = input.frame;
             event.kind = input.kind;
             event.operator = if matches!(event.kind, DraftKind::Deploy) {
-                normalized_optional(input.operator)
+                normalized_optional(input.operator).map(|value| {
+                    crate::operators::resolve_name(&value).map_or(value.clone(), str::to_string)
+                })
             } else {
                 None
             };
@@ -693,32 +695,52 @@ impl RunnerState {
     }
 
     pub fn confirm_event_time(&mut self, input: ConfirmEventTimeInput) -> Result<(), CommandError> {
+        self.confirm_event_times(vec![input])
+    }
+
+    pub fn confirm_event_times(
+        &mut self,
+        inputs: Vec<ConfirmEventTimeInput>,
+    ) -> Result<(), CommandError> {
         self.ensure_revision_editable()?;
-        validate_frame(input.frame)?;
-        let event = self
-            .axis
-            .events
-            .iter_mut()
-            .find(|event| event.id == input.id)
-            .ok_or_else(|| CommandError::new("event_not_found", "未找到操作点"))?;
-        let inside_observed_range =
-            (event.frame_range.start..=event.frame_range.end).contains(&input.frame);
-        if !inside_observed_range && !input.manual_correction_confirmed {
-            return Err(CommandError::field(
-                "manual_time_confirmation_required",
-                "目标帧超出观测范围，必须明确确认人工校正",
-                "manualCorrectionConfirmed",
+        let mut updates = Vec::new();
+        for input in inputs {
+            validate_frame(input.frame)?;
+            let index = self
+                .axis
+                .events
+                .iter()
+                .position(|event| event.id == input.id)
+                .ok_or_else(|| CommandError::new("event_not_found", "未找到操作点"))?;
+            let event = &self.axis.events[index];
+            let inside_observed_range =
+                (event.frame_range.start..=event.frame_range.end).contains(&input.frame);
+            if !inside_observed_range && !input.manual_correction_confirmed {
+                return Err(CommandError::field(
+                    "manual_time_confirmation_required",
+                    "目标帧超出观测范围，必须明确确认人工校正",
+                    "manualCorrectionConfirmed",
+                ));
+            }
+            updates.push((
+                index,
+                input.frame,
+                if inside_observed_range {
+                    TimeConfirmation::Observed
+                } else {
+                    TimeConfirmation::ManuallyCorrected
+                },
             ));
         }
-        event.frame = input.frame;
-        event.time_confirmation = if inside_observed_range {
-            TimeConfirmation::Observed
-        } else {
-            TimeConfirmation::ManuallyCorrected
-        };
+        let count = updates.len();
+        for (index, frame, confirmation) in updates {
+            let event = &mut self.axis.events[index];
+            event.frame = frame;
+            event.time_confirmation = confirmation;
+        }
         self.axis.sort_events();
         self.rebuild_triggered();
-        self.last_message = Some(format!("已确认操作点 {} 的时间", input.id));
+        self.last_message = Some(format!("已确认 {count} 个操作的时间"));
         self.sync_active_revision()?;
         Ok(())
     }
@@ -1495,10 +1517,18 @@ impl RunnerState {
         if analysis_completed
             && let Some(segment_index) = self
                 .monitor
-                .recording_candidates
+                .recording_segments
                 .iter()
-                .map(|candidate| candidate.segment_index)
-                .min()
+                .max_by_key(|segment| {
+                    (
+                        segment.stage_recognition.status == crate::stage::StageMatchStatus::Matched,
+                        segment
+                            .source_end_frame
+                            .saturating_sub(segment.source_start_frame),
+                        std::cmp::Reverse(segment.index),
+                    )
+                })
+                .map(|segment| segment.index)
             && let Err(error) = self.select_recording_segment(segment_index)
         {
             self.last_message = Some(error.message);
@@ -1549,6 +1579,8 @@ impl RunnerState {
             .find(|segment| segment.index == segment_index)
             .ok_or_else(|| CommandError::new("recording_segment_not_found", "未找到录屏区段"))?;
         let stage = segment.stage_recognition.stage.clone();
+        let segment_source_start = segment.source_start_frame;
+        let segment_source_end = segment.source_end_frame;
         let candidates = self
             .monitor
             .recording_candidates
@@ -1593,12 +1625,27 @@ impl RunnerState {
             } else {
                 DraftKind::Bookmark
             };
-            let mut event = self.allocate_draft(candidate.game_frame_range.start, kind);
+            let source_end_ns = candidate.source_end.nanoseconds().ok();
+            let estimated_frame = source_end_ns
+                .and_then(|timestamp| {
+                    self.monitor
+                        .trace_points
+                        .iter()
+                        .rev()
+                        .find(|point| {
+                            point.source_timestamp_ns <= timestamp as f64
+                                && point.source_frame >= segment_source_start
+                                && point.source_frame <= segment_source_end
+                        })
+                        .map(|point| point.game_frame)
+                })
+                .unwrap_or(candidate.game_frame_range.start);
+            let mut event = self.allocate_draft(estimated_frame, kind);
             event.source_recording_id = Some(analysis_id.clone());
             event.source_candidate_id = Some(candidate.id.clone());
             event.source_segment_index = Some(segment_index);
             event.source_timestamp_ns = candidate
-                .source_start
+                .source_end
                 .nanoseconds()
                 .ok()
                 .map(|value| value as f64);
@@ -2225,6 +2272,43 @@ mod tests {
     }
 
     #[test]
+    fn recording_ready_prefers_matched_battle_over_intro() {
+        let mut runner = RunnerState::new(Instant::now());
+        let segments = serde_json::from_value(serde_json::json!([
+            { "index": 0, "sourceStartFrame": 0, "sourceEndFrame": 126, "gameDurationFrames": 2, "stageRecognition": { "status": "unavailable", "rawText": "", "stage": null, "candidates": [], "warning": null } },
+            { "index": 1, "sourceStartFrame": 459, "sourceEndFrame": 11458, "gameDurationFrames": 9000, "stageRecognition": { "status": "matched", "rawText": "SR-8", "stage": { "id": "test", "code": "SR-8", "name": "测试", "levelPath": "test.json" }, "candidates": [], "warning": null } }
+        ])).unwrap();
+        runner.set_monitor_snapshot(MonitorSnapshot {
+            source_kind: MonitorSourceKind::Recording,
+            connection_state: MonitorConnectionState::Ready,
+            recording_analysis_id: Some("intro-regression".to_string()),
+            recording_candidates: [0,1].into_iter().map(|index| serde_json::from_value(serde_json::json!({
+                "id": format!("candidate-{index}"), "segmentIndex": index,
+                "sourceStart": { "rawPts": "100", "timeBase": { "numerator": 1, "denominator": 1000 } },
+                "sourceEnd": { "rawPts": "200", "timeBase": { "numerator": 1, "denominator": 1000 } },
+                "gameFrameRange": { "start": 30, "end": 34 }, "clockQuality": "uncertain",
+                "kind": null, "operator": null, "tile": null, "direction": null,
+                "evidence": "interruptedInteraction", "confidence": 49, "unconfirmedFields": ["actionKind", "gameFrame", "tile"]
+            })).unwrap()).collect(),
+            recording_segments: segments,
+            ..MonitorSnapshot::default()
+        });
+        assert_eq!(runner.axis.stage_id.as_deref(), Some("test"));
+        assert_eq!(
+            runner
+                .session
+                .revisions
+                .last()
+                .unwrap()
+                .recording_merge
+                .as_ref()
+                .unwrap()
+                .segment_index,
+            1
+        );
+    }
+
+    #[test]
     fn recording_ready_fills_known_fields_once_and_preserves_uncertainty() {
         let mut runner = RunnerState::new(Instant::now());
         let candidate: AnalysisCandidate = serde_json::from_value(serde_json::json!({
@@ -2238,7 +2322,9 @@ mod tests {
         .unwrap();
         let mut uncertain = candidate.clone();
         uncertain.id = "candidate-2".to_string();
-        uncertain.game_frame_range.end = 34;
+        uncertain.game_frame_range.start = 0;
+        uncertain.game_frame_range.end = 1200;
+        uncertain.source_end.raw_pts = "400".into();
         uncertain.unconfirmed_fields = vec![UnconfirmedField::Tile];
         let mut second_segment = candidate.clone();
         second_segment.id = "candidate-3".to_string();
@@ -2251,6 +2337,10 @@ mod tests {
             source_kind: MonitorSourceKind::Recording,
             connection_state: MonitorConnectionState::Ready,
             recording_analysis_id: Some("analysis-1".to_string()),
+            trace_points: serde_json::from_value(serde_json::json!([
+                { "sourceFrame": 12, "sourceTimestampNs": 200000000.0, "gameFrame": 30, "gameFrameMin": 30, "gameFrameMax": 30, "clockQuality": "trusted", "battleState": "oneXRunning", "costPhase": null },
+                { "sourceFrame": 24, "sourceTimestampNs": 400000000.0, "gameFrame": 396, "gameFrameMin": 0, "gameFrameMax": 1200, "clockQuality": "uncertain", "battleState": "twoXRunning", "costPhase": null }
+            ])).unwrap(),
             recording_candidates: vec![candidate, uncertain, second_segment],
             recording_segments: segments,
             ..MonitorSnapshot::default()
@@ -2261,6 +2351,10 @@ mod tests {
         assert_eq!(
             runner.axis.events[0].time_confirmation,
             TimeConfirmation::Observed
+        );
+        assert_eq!(
+            runner.axis.events[1].frame, 396,
+            "应使用估计帧，不能把误差下界 0 当作落点"
         );
         assert_eq!(runner.axis.events[1].tile, None);
         assert!(!runner.axis.events[1].complete);
@@ -2555,6 +2649,101 @@ mod tests {
             runner.axis.events[0].time_confirmation,
             TimeConfirmation::ManuallyCorrected
         );
+    }
+
+    #[test]
+    fn batch_time_confirmation_validates_all_before_changing_selected_events() {
+        let mut runner = RunnerState::new(Instant::now());
+        for frame in [30, 60, 90] {
+            runner.add_event(frame, DraftKind::Skill).unwrap();
+        }
+        for event in &mut runner.axis.events {
+            event.time_confirmation = TimeConfirmation::Unconfirmed;
+        }
+        let first = runner.axis.events[0].id.clone();
+        let second = runner.axis.events[1].id.clone();
+        let inputs = |manual| {
+            vec![
+                ConfirmEventTimeInput {
+                    id: first.clone(),
+                    frame: 30,
+                    manual_correction_confirmed: false,
+                },
+                ConfirmEventTimeInput {
+                    id: second.clone(),
+                    frame: 65,
+                    manual_correction_confirmed: manual,
+                },
+            ]
+        };
+        assert!(runner.confirm_event_times(inputs(false)).is_err());
+        assert!(
+            runner
+                .axis
+                .events
+                .iter()
+                .all(|event| event.time_confirmation == TimeConfirmation::Unconfirmed)
+        );
+        runner.confirm_event_times(inputs(true)).unwrap();
+        assert_eq!(
+            runner.axis.events[0].time_confirmation,
+            TimeConfirmation::Observed
+        );
+        assert_eq!(
+            runner.axis.events[1].time_confirmation,
+            TimeConfirmation::ManuallyCorrected
+        );
+        assert_eq!(
+            runner.axis.events[2].time_confirmation,
+            TimeConfirmation::Unconfirmed
+        );
+        assert_eq!(
+            runner
+                .axis
+                .events
+                .iter()
+                .map(|event| event.frame)
+                .collect::<Vec<_>>(),
+            [30, 65, 90]
+        );
+    }
+
+    #[test]
+    fn chinese_deployment_names_become_exportable_unit_keys() {
+        let mut runner = RunnerState::new(Instant::now());
+        runner.axis.stage_id = Some("main_00-01".into());
+        for (index, (name, expected)) in [
+            ("望", "char_2027_wang"),
+            ("赤刃明霄陈", "char_1050_chen3"),
+            ("棋子", "token_10064_wang_stone1"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let frame = index as u32 * 30;
+            runner.add_event(frame, DraftKind::Deploy).unwrap();
+            let id = runner.axis.events[index].id.clone();
+            runner
+                .update_event(UpdateEventInput {
+                    id,
+                    frame,
+                    kind: DraftKind::Deploy,
+                    operator: Some((*name).into()),
+                    tile: Some("C4".into()),
+                    direction: Some(crate::axis::DraftDirection::Up),
+                    label: None,
+                })
+                .unwrap();
+            assert_eq!(
+                runner.axis.events[index].operator.as_deref(),
+                Some(*expected)
+            );
+            assert!(runner.axis.events[index].complete);
+        }
+        let exported = runner.axis.to_axis_json().unwrap();
+        assert_eq!(exported["events"][2]["operator"], "token_10064_wang_stone1");
+        let imported = crate::axis::DraftAxis::from_axis_json(exported).unwrap();
+        assert!(imported.events.iter().all(|event| event.complete));
     }
 
     #[test]

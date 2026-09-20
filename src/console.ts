@@ -1,3 +1,4 @@
+import unitCatalog from "../src-tauri/data/operators.json";
 import type {
   ClockQuality,
   CommandError,
@@ -5,6 +6,11 @@ import type {
   DraftKind,
   ObservedBattleState,
 } from "./generated/bindings";
+
+const unitNames = new Map(
+  unitCatalog.operators.map((unit) => [unit.id, unit.name]),
+);
+export const unitNameChoices = [...new Set(unitNames.values())].sort();
 
 export type TypedResult<T> =
   | { status: "ok"; data: T }
@@ -54,6 +60,35 @@ export const REVISION_SOURCE_LABELS = {
 export function unwrap<T>(result: TypedResult<T>): T {
   if (result.status === "error") throw result.error;
   return result.data;
+}
+
+export function operatorName(value: string | null): string {
+  return unitNames.get(value ?? "") ?? value ?? "";
+}
+
+export function eventReviewStatus(
+  event: Pick<
+    import("./generated/bindings").DraftEvent,
+    "kind" | "operator" | "tile" | "direction" | "complete" | "timeConfirmation"
+  >,
+): string {
+  const missing =
+    event.kind === "bookmark" ||
+    !event.tile ||
+    (event.kind === "deploy" && (!event.operator?.trim() || !event.direction));
+  return [
+    missing
+      ? "待补全参数"
+      : !event.complete
+        ? event.kind === "deploy" &&
+          !/^(char|token)_[A-Za-z0-9_]+$/.test(event.operator ?? "")
+          ? "部署单位未识别"
+          : "参数待校对"
+        : "",
+    event.timeConfirmation === "unconfirmed" ? "时间待确认" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function messageOf(error: unknown): string {

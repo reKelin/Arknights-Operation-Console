@@ -25,7 +25,7 @@ export function createSnapshot(): RunnerSnapshot {
     frame: 30,
     order: 0,
     kind: "deploy",
-    operator: "smoke-operator",
+    operator: "char_002_amiya",
     tile: "C5",
     direction: "right",
     label: "部署样本",

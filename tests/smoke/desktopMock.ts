@@ -1,9 +1,13 @@
 import type { Page } from "@playwright/test";
 import type {
   AppSettings,
+  ConfirmEventTimeInput,
   RunnerSnapshot,
   UpdateEventInput,
 } from "../../src/generated/bindings";
+import unitCatalog from "../../src-tauri/data/operators.json" with {
+  type: "json",
+};
 import { createSnapshot, stages } from "./fixtures";
 
 type Size = { width: number; height: number };
@@ -27,7 +31,7 @@ export async function installDesktopMock(page: Page) {
     page.setViewportSize(size),
   );
   await page.addInitScript(
-    ({ initial, catalog }) => {
+    ({ initial, catalog, units }) => {
       const state = structuredClone(initial);
       const calls: InvokeCall[] = [];
       const sizes: Size[] = [];
@@ -35,6 +39,7 @@ export async function installDesktopMock(page: Page) {
       window.__smoke = { snapshot: state, calls, sizes, errors };
       const callbacks = new Map<number, (payload: unknown) => void>();
       let callbackId = 0;
+      let logEnabled = false;
 
       function snapshot() {
         const current = state.session.revisions.find(
@@ -55,6 +60,17 @@ export async function installDesktopMock(page: Page) {
         >;
         calls.push({ command, args: structuredClone(inputArgs) });
         switch (command) {
+          case "get_log_status":
+            return { enabled: logEnabled, lines: 0, dropped: 0 };
+          case "set_log_enabled":
+            logEnabled = Boolean(inputArgs.enabled);
+            return { enabled: logEnabled, lines: 1, dropped: 0 };
+          case "read_logs":
+            return args.errorsOnly
+              ? "ERROR test: 测试错误"
+              : "INFO test: 测试历史";
+          case "export_logs":
+            return null;
           case "get_snapshot":
             return snapshot();
           case "plugin:event|listen":
@@ -114,7 +130,48 @@ export async function installDesktopMock(page: Page) {
               (item) => item.id === input.id,
             );
             if (!event) throw new Error("未知冒烟操作");
+            if (event.frame !== input.frame)
+              event.timeConfirmation = "unconfirmed";
             Object.assign(event, input);
+            if (event.kind === "deploy" && event.operator) {
+              const matches = units.filter(
+                (unit) => unit.name === event.operator,
+              );
+              if (matches.length === 1 && matches[0])
+                event.operator = matches[0].id;
+              event.complete = Boolean(
+                event.tile &&
+                  event.direction &&
+                  /^(char|token)_[A-Za-z0-9_]+$/.test(event.operator),
+              );
+            }
+            return snapshot();
+          }
+          case "confirm_event_times": {
+            const inputs = inputArgs.inputs as ConfirmEventTimeInput[];
+            for (const input of inputs) {
+              const event = state.axis.events.find(
+                (item) => item.id === input.id,
+              );
+              if (!event) throw new Error("未知冒烟操作");
+              const inside =
+                input.frame >= event.frameRange.start &&
+                input.frame <= event.frameRange.end;
+              if (!inside && !input.manualCorrectionConfirmed)
+                throw new Error("缺少范围外人工确认");
+            }
+            for (const input of inputs) {
+              const event = state.axis.events.find(
+                (item) => item.id === input.id,
+              );
+              if (!event) throw new Error("未知冒烟操作");
+              event.frame = input.frame;
+              event.timeConfirmation =
+                input.frame >= event.frameRange.start &&
+                input.frame <= event.frameRange.end
+                  ? "observed"
+                  : "manuallyCorrected";
+            }
             return snapshot();
           }
           case "add_event": {
@@ -217,6 +274,10 @@ export async function installDesktopMock(page: Page) {
         },
       });
     },
-    { initial: createSnapshot(), catalog: stages },
+    {
+      initial: createSnapshot(),
+      catalog: stages,
+      units: unitCatalog.operators.map(({ id, name }) => ({ id, name })),
+    },
   );
 }
