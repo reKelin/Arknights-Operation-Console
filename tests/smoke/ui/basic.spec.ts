@@ -65,6 +65,13 @@ test("主题和轴版本下拉选择后实际更新页面", async ({ page }) => 
 
 test("整理页筛选、操作类型和朝向下拉会改变结果", async ({ page }) => {
   await page.keyboard.press("h");
+  await expect(page.locator('[name="edit-direction"] option')).toHaveText([
+    "待确认",
+    "朝上",
+    "朝右",
+    "朝下",
+    "朝左",
+  ]);
   const rows = page.locator(".editor-table tbody tr");
   await page.getByLabel("筛选操作类型").selectOption("skill");
   await expect(rows).toHaveCount(1);

@@ -661,10 +661,10 @@ function EventForm({
             }
           >
             <option value="">待确认</option>
+            <option value="up">朝上</option>
             <option value="right">朝右</option>
             <option value="down">朝下</option>
             <option value="left">朝左</option>
-            <option value="up">朝上</option>
           </select>
         </label>
       )}
