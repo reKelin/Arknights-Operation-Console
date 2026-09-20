@@ -1,0 +1,759 @@
+{
+  "description": "人工书签 1–24；按操作前后画面核验种类，独立检查暂停控件、倍速与选中/朝向区间并积分。不是识别器 trace 生成的答案。格子和朝向未标注，本回归只验数量、种类和时间。",
+  "sourceDurationSeconds": 195.071,
+  "f0SourceSeconds": 8.917,
+  "gameHz": 30,
+  "toleranceFrames": 15,
+  "events": [
+    {
+      "bookmark": 1,
+      "sourceSeconds": 10.416,
+      "kind": "deploy",
+      "actor": "望",
+      "gameFrame": 14
+    },
+    {
+      "bookmark": 2,
+      "sourceSeconds": 20.683,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 390
+    },
+    {
+      "bookmark": 3,
+      "sourceSeconds": 25.882,
+      "kind": "deploy",
+      "actor": "赤刃明霄陈",
+      "gameFrame": 591
+    },
+    {
+      "bookmark": 4,
+      "sourceSeconds": 27.883,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 651
+    },
+    {
+      "bookmark": 5,
+      "sourceSeconds": 29.099,
+      "kind": "retreat",
+      "actor": "望",
+      "gameFrame": 698
+    },
+    {
+      "bookmark": 6,
+      "sourceSeconds": 41.332,
+      "kind": "skill",
+      "actor": "赤刃明霄陈",
+      "gameFrame": 1005
+    },
+    {
+      "bookmark": 7,
+      "sourceSeconds": 70.5,
+      "kind": "skill",
+      "actor": "赤刃明霄陈",
+      "gameFrame": 2376
+    },
+    {
+      "bookmark": 8,
+      "sourceSeconds": 82.116,
+      "kind": "retreat",
+      "actor": "赤刃明霄陈",
+      "gameFrame": 2960
+    },
+    {
+      "bookmark": 9,
+      "sourceSeconds": 86.081,
+      "kind": "deploy",
+      "actor": "望",
+      "gameFrame": 3133
+    },
+    {
+      "bookmark": 10,
+      "sourceSeconds": 98.366,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 3560
+    },
+    {
+      "bookmark": 11,
+      "sourceSeconds": 106.548,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 3995
+    },
+    {
+      "bookmark": 12,
+      "sourceSeconds": 113.682,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 4371
+    },
+    {
+      "bookmark": 13,
+      "sourceSeconds": 124.166,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 4699
+    },
+    {
+      "bookmark": 14,
+      "sourceSeconds": 128.215,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 4881
+    },
+    {
+      "bookmark": 15,
+      "sourceSeconds": 133.149,
+      "kind": "deploy",
+      "actor": "赤刃明霄陈",
+      "gameFrame": 5037
+    },
+    {
+      "bookmark": 16,
+      "sourceSeconds": 137.416,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 5208
+    },
+    {
+      "bookmark": 17,
+      "sourceSeconds": 140.316,
+      "kind": "skill",
+      "actor": "赤刃明霄陈",
+      "gameFrame": 5260
+    },
+    {
+      "bookmark": 18,
+      "sourceSeconds": 144.598,
+      "kind": "skill",
+      "actor": "望",
+      "gameFrame": 5387
+    },
+    {
+      "bookmark": 19,
+      "sourceSeconds": 154.132,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 5463
+    },
+    {
+      "bookmark": 20,
+      "sourceSeconds": 160.266,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 5552
+    },
+    {
+      "bookmark": 21,
+      "sourceSeconds": 163.682,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 5693
+    },
+    {
+      "bookmark": 22,
+      "sourceSeconds": 171.632,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 5952
+    },
+    {
+      "bookmark": 23,
+      "sourceSeconds": 177.966,
+      "kind": "deploy",
+      "actor": "棋子",
+      "gameFrame": 6171
+    },
+    {
+      "bookmark": 24,
+      "sourceSeconds": 187.698,
+      "kind": "skill",
+      "actor": "赤刃明霄陈",
+      "gameFrame": 6609
+    }
+  ],
+  "clockIntervals": [
+    {
+      "start": 8.917,
+      "speed": 1,
+      "end": 9.317
+    },
+    {
+      "start": 9.317,
+      "speed": 0.2,
+      "end": 9.683
+    },
+    {
+      "start": 9.683,
+      "speed": 0,
+      "end": 10.417
+    },
+    {
+      "start": 10.417,
+      "speed": 0.2,
+      "end": 10.467
+    },
+    {
+      "start": 10.467,
+      "speed": 1,
+      "end": 10.633
+    },
+    {
+      "start": 10.633,
+      "speed": 2,
+      "end": 11.95
+    },
+    {
+      "start": 11.95,
+      "speed": 1,
+      "end": 11.967
+    },
+    {
+      "start": 11.967,
+      "speed": 0.2,
+      "end": 15.65
+    },
+    {
+      "start": 15.65,
+      "speed": 1,
+      "end": 15.667
+    },
+    {
+      "start": 15.667,
+      "speed": 2,
+      "end": 20.083
+    },
+    {
+      "start": 20.083,
+      "speed": 0.2,
+      "end": 20.75
+    },
+    {
+      "start": 20.75,
+      "speed": 2,
+      "end": 23.983
+    },
+    {
+      "start": 23.983,
+      "speed": 1,
+      "end": 24.0
+    },
+    {
+      "start": 24.0,
+      "speed": 0.2,
+      "end": 25.05
+    },
+    {
+      "start": 25.05,
+      "speed": 0,
+      "end": 26.1
+    },
+    {
+      "start": 26.1,
+      "speed": 2,
+      "end": 27.05
+    },
+    {
+      "start": 27.05,
+      "speed": 0.2,
+      "end": 27.567
+    },
+    {
+      "start": 27.567,
+      "speed": 0,
+      "end": 28.05
+    },
+    {
+      "start": 28.05,
+      "speed": 0.2,
+      "end": 28.117
+    },
+    {
+      "start": 28.117,
+      "speed": 2,
+      "end": 28.833
+    },
+    {
+      "start": 28.833,
+      "speed": 1,
+      "end": 28.883
+    },
+    {
+      "start": 28.883,
+      "speed": 0.2,
+      "end": 29.133
+    },
+    {
+      "start": 29.133,
+      "speed": 1,
+      "end": 29.167
+    },
+    {
+      "start": 29.167,
+      "speed": 2,
+      "end": 33.683
+    },
+    {
+      "start": 33.683,
+      "speed": 1,
+      "end": 33.717
+    },
+    {
+      "start": 33.717,
+      "speed": 0.2,
+      "end": 39.083
+    },
+    {
+      "start": 39.083,
+      "speed": 0,
+      "end": 39.967
+    },
+    {
+      "start": 39.967,
+      "speed": 0.2,
+      "end": 40.1
+    },
+    {
+      "start": 40.1,
+      "speed": 0,
+      "end": 40.583
+    },
+    {
+      "start": 40.583,
+      "speed": 0.2,
+      "end": 40.717
+    },
+    {
+      "start": 40.717,
+      "speed": 0,
+      "end": 41.65
+    },
+    {
+      "start": 41.65,
+      "speed": 2,
+      "end": 54.767
+    },
+    {
+      "start": 54.767,
+      "speed": 1,
+      "end": 54.783
+    },
+    {
+      "start": 54.783,
+      "speed": 0.2,
+      "end": 55.05
+    },
+    {
+      "start": 55.05,
+      "speed": 1,
+      "end": 55.067
+    },
+    {
+      "start": 55.067,
+      "speed": 2,
+      "end": 64.117
+    },
+    {
+      "start": 64.117,
+      "speed": 1,
+      "end": 64.15
+    },
+    {
+      "start": 64.15,
+      "speed": 0.2,
+      "end": 70.567
+    },
+    {
+      "start": 70.567,
+      "speed": 1,
+      "end": 70.583
+    },
+    {
+      "start": 70.583,
+      "speed": 2,
+      "end": 80.133
+    },
+    {
+      "start": 80.133,
+      "speed": 1,
+      "end": 80.15
+    },
+    {
+      "start": 80.15,
+      "speed": 0.2,
+      "end": 81.383
+    },
+    {
+      "start": 81.383,
+      "speed": 0,
+      "end": 81.733
+    },
+    {
+      "start": 81.733,
+      "speed": 0.2,
+      "end": 82.167
+    },
+    {
+      "start": 82.167,
+      "speed": 1,
+      "end": 82.183
+    },
+    {
+      "start": 82.183,
+      "speed": 2,
+      "end": 85.0
+    },
+    {
+      "start": 85.0,
+      "speed": 1,
+      "end": 85.017
+    },
+    {
+      "start": 85.017,
+      "speed": 0.2,
+      "end": 85.417
+    },
+    {
+      "start": 85.417,
+      "speed": 0,
+      "end": 86.45
+    },
+    {
+      "start": 86.45,
+      "speed": 2,
+      "end": 86.783
+    },
+    {
+      "start": 86.783,
+      "speed": 0.2,
+      "end": 88.4
+    },
+    {
+      "start": 88.4,
+      "speed": 2,
+      "end": 94.65
+    },
+    {
+      "start": 94.65,
+      "speed": 0.2,
+      "end": 98.433
+    },
+    {
+      "start": 98.433,
+      "speed": 2,
+      "end": 105.583
+    },
+    {
+      "start": 105.583,
+      "speed": 0.2,
+      "end": 106.617
+    },
+    {
+      "start": 106.617,
+      "speed": 2,
+      "end": 112.783
+    },
+    {
+      "start": 112.783,
+      "speed": 0.2,
+      "end": 113.75
+    },
+    {
+      "start": 113.75,
+      "speed": 2,
+      "end": 116.5
+    },
+    {
+      "start": 116.5,
+      "speed": 0.2,
+      "end": 121.3
+    },
+    {
+      "start": 121.3,
+      "speed": 2,
+      "end": 123.467
+    },
+    {
+      "start": 123.467,
+      "speed": 0.2,
+      "end": 124.233
+    },
+    {
+      "start": 124.233,
+      "speed": 2,
+      "end": 127.15
+    },
+    {
+      "start": 127.15,
+      "speed": 0.2,
+      "end": 128.283
+    },
+    {
+      "start": 128.283,
+      "speed": 2,
+      "end": 129.75
+    },
+    {
+      "start": 129.75,
+      "speed": 1,
+      "end": 129.767
+    },
+    {
+      "start": 129.767,
+      "speed": 0.2,
+      "end": 131.167
+    },
+    {
+      "start": 131.167,
+      "speed": 1,
+      "end": 131.183
+    },
+    {
+      "start": 131.183,
+      "speed": 2,
+      "end": 132.1
+    },
+    {
+      "start": 132.1,
+      "speed": 1,
+      "end": 132.117
+    },
+    {
+      "start": 132.117,
+      "speed": 0.2,
+      "end": 132.45
+    },
+    {
+      "start": 132.45,
+      "speed": 0,
+      "end": 133.567
+    },
+    {
+      "start": 133.567,
+      "speed": 2,
+      "end": 136.367
+    },
+    {
+      "start": 136.367,
+      "speed": 0.2,
+      "end": 136.9
+    },
+    {
+      "start": 136.9,
+      "speed": 0,
+      "end": 137.783
+    },
+    {
+      "start": 137.783,
+      "speed": 0.2,
+      "end": 137.85
+    },
+    {
+      "start": 137.85,
+      "speed": 2,
+      "end": 138.583
+    },
+    {
+      "start": 138.583,
+      "speed": 0,
+      "end": 139.167
+    },
+    {
+      "start": 139.167,
+      "speed": 2,
+      "end": 139.283
+    },
+    {
+      "start": 139.283,
+      "speed": 1,
+      "end": 139.3
+    },
+    {
+      "start": 139.3,
+      "speed": 0.2,
+      "end": 139.417
+    },
+    {
+      "start": 139.417,
+      "speed": 0,
+      "end": 141.117
+    },
+    {
+      "start": 141.117,
+      "speed": 2,
+      "end": 142.767
+    },
+    {
+      "start": 142.767,
+      "speed": 0,
+      "end": 143.567
+    },
+    {
+      "start": 143.567,
+      "speed": 2,
+      "end": 143.967
+    },
+    {
+      "start": 143.967,
+      "speed": 1,
+      "end": 144.0
+    },
+    {
+      "start": 144.0,
+      "speed": 0.2,
+      "end": 144.367
+    },
+    {
+      "start": 144.367,
+      "speed": 0,
+      "end": 145.033
+    },
+    {
+      "start": 145.033,
+      "speed": 2,
+      "end": 145.433
+    },
+    {
+      "start": 145.433,
+      "speed": 0.2,
+      "end": 154.2
+    },
+    {
+      "start": 154.2,
+      "speed": 2,
+      "end": 154.317
+    },
+    {
+      "start": 154.317,
+      "speed": 0,
+      "end": 154.717
+    },
+    {
+      "start": 154.717,
+      "speed": 2,
+      "end": 155.617
+    },
+    {
+      "start": 155.617,
+      "speed": 0.2,
+      "end": 160.333
+    },
+    {
+      "start": 160.333,
+      "speed": 2,
+      "end": 162.567
+    },
+    {
+      "start": 162.567,
+      "speed": 0.2,
+      "end": 163.75
+    },
+    {
+      "start": 163.75,
+      "speed": 2,
+      "end": 164.75
+    },
+    {
+      "start": 164.75,
+      "speed": 0.2,
+      "end": 165.933
+    },
+    {
+      "start": 165.933,
+      "speed": 2,
+      "end": 168.0
+    },
+    {
+      "start": 168.0,
+      "speed": 0.2,
+      "end": 169.95
+    },
+    {
+      "start": 169.95,
+      "speed": 2,
+      "end": 170.8
+    },
+    {
+      "start": 170.8,
+      "speed": 0.2,
+      "end": 171.7
+    },
+    {
+      "start": 171.7,
+      "speed": 2,
+      "end": 172.717
+    },
+    {
+      "start": 172.717,
+      "speed": 0.2,
+      "end": 173.417
+    },
+    {
+      "start": 173.417,
+      "speed": 2,
+      "end": 175.783
+    },
+    {
+      "start": 175.783,
+      "speed": 0.2,
+      "end": 177.65
+    },
+    {
+      "start": 177.65,
+      "speed": 0,
+      "end": 178.1
+    },
+    {
+      "start": 178.1,
+      "speed": 0.2,
+      "end": 178.183
+    },
+    {
+      "start": 178.183,
+      "speed": 2,
+      "end": 178.833
+    },
+    {
+      "start": 178.833,
+      "speed": 0.2,
+      "end": 180.817
+    },
+    {
+      "start": 180.817,
+      "speed": 2,
+      "end": 183.017
+    },
+    {
+      "start": 183.017,
+      "speed": 0.2,
+      "end": 183.317
+    },
+    {
+      "start": 183.317,
+      "speed": 2,
+      "end": 187.5
+    },
+    {
+      "start": 187.5,
+      "speed": 1,
+      "end": 187.517
+    },
+    {
+      "start": 187.517,
+      "speed": 0.2,
+      "end": 187.75
+    },
+    {
+      "start": 187.75,
+      "speed": 1,
+      "end": 187.767
+    },
+    {
+      "start": 187.767,
+      "speed": 2,
+      "end": 188.8
+    }
+  ]
+}
