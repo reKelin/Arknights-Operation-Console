@@ -150,11 +150,11 @@ fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
     let has_battle_anchor = features.gear_ratio >= 0.04;
     let controls_visible = features.pause_bright >= 0.12;
     if has_battle_anchor && features.selected_panel {
-        if !controls_visible {
-            return (ObservedBattleState::AdjustingOperatorFacing, 78);
-        }
         if features.deployment_tiles {
             return (ObservedBattleState::DeployingOperator, 84);
+        }
+        if !controls_visible {
+            return (ObservedBattleState::AdjustingOperatorFacing, 78);
         }
         if features.pause_bright < 0.265 {
             return (ObservedBattleState::Paused, 92);

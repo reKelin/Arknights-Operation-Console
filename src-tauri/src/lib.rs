@@ -661,8 +661,19 @@ fn set_log_enabled(enabled: bool) -> diagnostics::LogStatus {
 }
 #[tauri::command]
 #[specta::specta]
-fn export_logs(path: String) -> Result<(), CommandError> {
-    diagnostics::export(&path).map_err(|error| CommandError::new("log_export", error.to_string()))
+async fn export_logs(path: String) -> Result<(), CommandError> {
+    tauri::async_runtime::spawn_blocking(move || diagnostics::export_zip(&path))
+        .await
+        .map_err(|error| CommandError::new("log_export", error.to_string()))?
+        .map_err(|error| CommandError::new("log_export", error.to_string()))
+}
+#[tauri::command]
+#[specta::specta]
+async fn read_logs(errors_only: bool) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || diagnostics::read(errors_only))
+        .await
+        .map_err(|error| CommandError::new("log_read", error.to_string()))?
+        .map_err(|error| CommandError::new("log_read", error.to_string()))
 }
 
 #[tauri::command]
@@ -724,6 +735,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             get_log_status,
             set_log_enabled,
             export_logs,
+            read_logs,
             minimize_window,
             close_app,
         ])
@@ -971,6 +983,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            diagnostics::initialize(app.path().app_log_dir()?)?;
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let stage_cache = app.path().app_cache_dir()?.join("stage-maps");
             let execution_cache = app.path().app_cache_dir()?.join("execution");

@@ -23,8 +23,11 @@ pub struct CommandError {
 
 impl CommandError {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        let code = code.into();
+        // 错误正文可能含用户路径，只记录可定位命令的错误码。
+        crate::diagnostics::error("command", &code);
         Self {
-            code: code.into(),
+            code,
             message: message.into(),
             field: None,
         }

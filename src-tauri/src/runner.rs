@@ -383,7 +383,7 @@ impl RunnerState {
             ));
         }
         let source_timestamp_ns =
-            candidate.source_start.nanoseconds().map_err(|_| {
+            candidate.source_end.nanoseconds().map_err(|_| {
                 CommandError::new("invalid_source_timestamp", "候选来源时间无法换算")
             })? as f64;
         if !source_timestamp_ns.is_finite() {
@@ -1557,6 +1557,8 @@ impl RunnerState {
             .find(|segment| segment.index == segment_index)
             .ok_or_else(|| CommandError::new("recording_segment_not_found", "未找到录屏区段"))?;
         let stage = segment.stage_recognition.stage.clone();
+        let segment_source_start = segment.source_start_frame;
+        let segment_source_end = segment.source_end_frame;
         let candidates = self
             .monitor
             .recording_candidates
@@ -1601,12 +1603,27 @@ impl RunnerState {
             } else {
                 DraftKind::Bookmark
             };
-            let mut event = self.allocate_draft(candidate.game_frame_range.start, kind);
+            let source_end_ns = candidate.source_end.nanoseconds().ok();
+            let estimated_frame = source_end_ns
+                .and_then(|timestamp| {
+                    self.monitor
+                        .trace_points
+                        .iter()
+                        .rev()
+                        .find(|point| {
+                            point.source_timestamp_ns <= timestamp as f64
+                                && point.source_frame >= segment_source_start
+                                && point.source_frame <= segment_source_end
+                        })
+                        .map(|point| point.game_frame)
+                })
+                .unwrap_or(candidate.game_frame_range.start);
+            let mut event = self.allocate_draft(estimated_frame, kind);
             event.source_recording_id = Some(analysis_id.clone());
             event.source_candidate_id = Some(candidate.id.clone());
             event.source_segment_index = Some(segment_index);
             event.source_timestamp_ns = candidate
-                .source_start
+                .source_end
                 .nanoseconds()
                 .ok()
                 .map(|value| value as f64);
@@ -2283,7 +2300,9 @@ mod tests {
         .unwrap();
         let mut uncertain = candidate.clone();
         uncertain.id = "candidate-2".to_string();
-        uncertain.game_frame_range.end = 34;
+        uncertain.game_frame_range.start = 0;
+        uncertain.game_frame_range.end = 1200;
+        uncertain.source_end.raw_pts = "400".into();
         uncertain.unconfirmed_fields = vec![UnconfirmedField::Tile];
         let mut second_segment = candidate.clone();
         second_segment.id = "candidate-3".to_string();
@@ -2296,6 +2315,10 @@ mod tests {
             source_kind: MonitorSourceKind::Recording,
             connection_state: MonitorConnectionState::Ready,
             recording_analysis_id: Some("analysis-1".to_string()),
+            trace_points: serde_json::from_value(serde_json::json!([
+                { "sourceFrame": 12, "sourceTimestampNs": 200000000.0, "gameFrame": 30, "gameFrameMin": 30, "gameFrameMax": 30, "clockQuality": "trusted", "battleState": "oneXRunning", "costPhase": null },
+                { "sourceFrame": 24, "sourceTimestampNs": 400000000.0, "gameFrame": 396, "gameFrameMin": 0, "gameFrameMax": 1200, "clockQuality": "uncertain", "battleState": "twoXRunning", "costPhase": null }
+            ])).unwrap(),
             recording_candidates: vec![candidate, uncertain, second_segment],
             recording_segments: segments,
             ..MonitorSnapshot::default()
@@ -2306,6 +2329,10 @@ mod tests {
         assert_eq!(
             runner.axis.events[0].time_confirmation,
             TimeConfirmation::Observed
+        );
+        assert_eq!(
+            runner.axis.events[1].frame, 396,
+            "应使用估计帧，不能把误差下界 0 当作落点"
         );
         assert_eq!(runner.axis.events[1].tile, None);
         assert!(!runner.axis.events[1].complete);

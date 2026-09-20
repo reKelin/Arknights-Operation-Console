@@ -1,0 +1,93 @@
+{
+  "description": "SR-8 望与火陈录屏人工粗查；视频原始 PTS 秒与游戏秒分开，游戏时间仅前两项为用户给定参考。后半段检查点由落地画面及棋子卡冷却复核，不代表逐操作完整标注。",
+  "checkpoints": [
+    {
+      "label": "望首次部署",
+      "sourceStartSeconds": 10.2,
+      "sourceEndSeconds": 10.6,
+      "kind": "deploy",
+      "gameSeconds": 0.5,
+      "toleranceSeconds": 0.3
+    },
+    {
+      "label": "第一颗棋子",
+      "sourceStartSeconds": 20.4,
+      "sourceEndSeconds": 20.9,
+      "kind": "deploy",
+      "gameSeconds": 13.2,
+      "toleranceSeconds": 0.4
+    },
+    {
+      "label": "火陈首次部署",
+      "sourceStartSeconds": 25.8,
+      "sourceEndSeconds": 26.4,
+      "kind": "deploy"
+    },
+    {
+      "label": "第二颗棋子",
+      "sourceStartSeconds": 27.7,
+      "sourceEndSeconds": 28.3,
+      "kind": "deploy"
+    },
+    {
+      "label": "手动撤退",
+      "sourceStartSeconds": 28.8,
+      "sourceEndSeconds": 29.3,
+      "kind": "retreat"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 98,
+      "sourceEndSeconds": 98.6,
+      "kind": "deploy"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 106.2,
+      "sourceEndSeconds": 106.8,
+      "kind": "deploy"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 113.4,
+      "sourceEndSeconds": 113.9,
+      "kind": "deploy"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 123.9,
+      "sourceEndSeconds": 124.4,
+      "kind": "deploy"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 127.9,
+      "sourceEndSeconds": 128.5,
+      "kind": "deploy"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 137.4,
+      "sourceEndSeconds": 138,
+      "kind": "deploy"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 163.4,
+      "sourceEndSeconds": 164,
+      "kind": "deploy"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 171.3,
+      "sourceEndSeconds": 171.9,
+      "kind": "deploy"
+    },
+    {
+      "label": "后半段棋子部署",
+      "sourceStartSeconds": 177.6,
+      "sourceEndSeconds": 178.3,
+      "kind": "deploy"
+    }
+  ]
+}

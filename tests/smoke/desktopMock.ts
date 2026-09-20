@@ -61,6 +61,10 @@ export async function installDesktopMock(page: Page) {
           case "set_log_enabled":
             logEnabled = Boolean(inputArgs.enabled);
             return { enabled: logEnabled, lines: 1, dropped: 0 };
+          case "read_logs":
+            return args.errorsOnly
+              ? "ERROR test: 测试错误"
+              : "INFO test: 测试历史";
           case "export_logs":
             return null;
           case "get_snapshot":

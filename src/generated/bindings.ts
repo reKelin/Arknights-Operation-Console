@@ -44,6 +44,7 @@ export const commands = {
 	getLogStatus: () => __TAURI_INVOKE<LogStatus>("get_log_status"),
 	setLogEnabled: (enabled: boolean) => __TAURI_INVOKE<LogStatus>("set_log_enabled", { enabled }),
 	exportLogs: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("export_logs", { path })),
+	readLogs: (errorsOnly: boolean) => typedError<string, CommandError>(__TAURI_INVOKE("read_logs", { errorsOnly })),
 	minimizeWindow: () => typedError<null, CommandError>(__TAURI_INVOKE("minimize_window")),
 	closeApp: () => __TAURI_INVOKE<void>("close_app"),
 };

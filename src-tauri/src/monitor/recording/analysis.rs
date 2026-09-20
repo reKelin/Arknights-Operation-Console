@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::fmt;
 
 use super::super::{ClockQuality, ObservedBattleState};
 
@@ -83,159 +82,6 @@ pub enum SourceTimestampError {
     InvalidPts,
     NegativePts,
     Overflow,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SourceFrameTimeline {
-    pub time_base: SourceTimeBase,
-    pub timestamps: Vec<SourceTimestamp>,
-}
-
-impl SourceFrameTimeline {
-    pub fn parse_ffprobe_json(bytes: &[u8]) -> Result<Self, SourceTimelineError> {
-        let probe: FrameProbeOutput = serde_json::from_slice(bytes)
-            .map_err(|error| SourceTimelineError::InvalidJson(error.to_string()))?;
-        let stream = probe
-            .streams
-            .first()
-            .ok_or(SourceTimelineError::MissingVideoStream)?;
-        let time_base = SourceTimeBase::parse(&stream.time_base)
-            .map_err(|_| SourceTimelineError::InvalidTimeBase(stream.time_base.clone()))?;
-        let mut timestamps = Vec::with_capacity(probe.frames.len());
-        let mut previous_raw_pts = None;
-        for (ordinal, frame) in probe.frames.into_iter().enumerate() {
-            let raw_pts = frame
-                .best_effort_timestamp
-                .ok_or(SourceTimelineError::MissingPts { ordinal })?
-                .parse()
-                .map_err(|_| SourceTimelineError::InvalidPts { ordinal })?;
-            if previous_raw_pts.is_some_and(|previous| previous >= raw_pts) {
-                return Err(SourceTimelineError::NonIncreasingPts { ordinal });
-            }
-            previous_raw_pts = Some(raw_pts);
-            timestamps.push(
-                SourceTimestamp::parse(&raw_pts.to_string(), time_base)
-                    .map_err(|_| SourceTimelineError::InvalidPts { ordinal })?,
-            );
-        }
-        if timestamps.is_empty() {
-            return Err(SourceTimelineError::NoVideoFrames);
-        }
-        Ok(Self {
-            time_base,
-            timestamps,
-        })
-    }
-
-    pub fn timestamp_for_decoded_frame(
-        &self,
-        decoded_ordinal: usize,
-    ) -> Result<&SourceTimestamp, SourceTimelineError> {
-        self.timestamps
-            .get(decoded_ordinal)
-            .ok_or(SourceTimelineError::DecodedFrameWithoutPts {
-                ordinal: decoded_ordinal,
-            })
-    }
-
-    pub fn verify_decoded_frame_count(
-        &self,
-        decoded_frames: usize,
-    ) -> Result<(), SourceTimelineError> {
-        if decoded_frames == self.timestamps.len() {
-            return Ok(());
-        }
-        Err(SourceTimelineError::FrameCountMismatch {
-            decoded_frames,
-            timestamp_frames: self.timestamps.len(),
-        })
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SourceTimelineError {
-    InvalidJson(String),
-    MissingVideoStream,
-    InvalidTimeBase(String),
-    NoVideoFrames,
-    MissingPts {
-        ordinal: usize,
-    },
-    InvalidPts {
-        ordinal: usize,
-    },
-    NonIncreasingPts {
-        ordinal: usize,
-    },
-    DecodedFrameWithoutPts {
-        ordinal: usize,
-    },
-    FrameCountMismatch {
-        decoded_frames: usize,
-        timestamp_frames: usize,
-    },
-}
-
-impl fmt::Display for SourceTimelineError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidJson(error) => write!(formatter, "解析逐帧时间戳失败：{error}"),
-            Self::MissingVideoStream => formatter.write_str("录屏中没有视频流时间基"),
-            Self::InvalidTimeBase(value) => write!(formatter, "录屏视频时间基无效：{value}"),
-            Self::NoVideoFrames => formatter.write_str("录屏中没有可分析的视频帧"),
-            Self::MissingPts { ordinal } => {
-                write!(formatter, "录屏第 {ordinal} 帧缺少原始展示时间戳")
-            }
-            Self::InvalidPts { ordinal } => {
-                write!(formatter, "录屏第 {ordinal} 帧的原始展示时间戳无效")
-            }
-            Self::NonIncreasingPts { ordinal } => {
-                write!(formatter, "录屏第 {ordinal} 帧的原始展示时间戳未递增")
-            }
-            Self::DecodedFrameWithoutPts { ordinal } => {
-                write!(formatter, "解码第 {ordinal} 帧没有对应的原始展示时间戳")
-            }
-            Self::FrameCountMismatch {
-                decoded_frames,
-                timestamp_frames,
-            } => write!(
-                formatter,
-                "解码帧数 {decoded_frames} 与时间戳帧数 {timestamp_frames} 不一致"
-            ),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct FrameProbeOutput {
-    streams: Vec<FrameProbeStream>,
-    frames: Vec<FrameProbeFrame>,
-}
-
-#[derive(Deserialize)]
-struct FrameProbeStream {
-    time_base: String,
-}
-
-#[derive(Deserialize)]
-struct FrameProbeFrame {
-    best_effort_timestamp: Option<ProbeTimestamp>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum ProbeTimestamp {
-    String(String),
-    Integer(i64),
-}
-
-impl ProbeTimestamp {
-    fn parse(self) -> Result<i64, std::num::ParseIntError> {
-        match self {
-            Self::String(value) => value.parse(),
-            Self::Integer(value) => Ok(value),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
@@ -576,7 +422,7 @@ fn extract_group_candidates(runs: &[StableRun], candidates: &mut Vec<AnalysisCan
                     UnconfirmedField::Tile,
                 ],
             )
-        } else if deploying {
+        } else if deploying || facing {
             (
                 None,
                 CandidateEvidence::InterruptedInteraction,
@@ -704,56 +550,6 @@ mod tests {
         let timestamp = SourceTimestamp::parse("3003", time_base).unwrap();
         assert_eq!(timestamp.raw_pts, "3003");
         assert_eq!(timestamp.nanoseconds().unwrap(), 33_366_666);
-    }
-
-    #[test]
-    fn pairs_variable_rate_source_pts_with_decoded_frames() {
-        let timeline = SourceFrameTimeline::parse_ffprobe_json(include_bytes!(
-            "../../../tests/fixtures/monitor/recording-source-pts.json"
-        ))
-        .unwrap();
-
-        assert_eq!(
-            timeline.time_base,
-            SourceTimeBase::parse("1/90000").unwrap()
-        );
-        assert_eq!(timeline.timestamps[1].raw_pts, "3003");
-        assert_eq!(
-            timeline.timestamp_for_decoded_frame(2).unwrap().raw_pts,
-            "7507"
-        );
-        assert!(timeline.verify_decoded_frame_count(4).is_ok());
-        assert_eq!(
-            timeline.verify_decoded_frame_count(3).unwrap_err(),
-            SourceTimelineError::FrameCountMismatch {
-                decoded_frames: 3,
-                timestamp_frames: 4,
-            }
-        );
-    }
-
-    #[test]
-    fn rejects_missing_or_non_increasing_source_pts() {
-        let missing = br#"{
-            "streams": [{ "time_base": "1/1000" }],
-            "frames": [{ "best_effort_timestamp": "0" }, {}]
-        }"#;
-        assert_eq!(
-            SourceFrameTimeline::parse_ffprobe_json(missing).unwrap_err(),
-            SourceTimelineError::MissingPts { ordinal: 1 }
-        );
-
-        let repeated = br#"{
-            "streams": [{ "time_base": "1/1000" }],
-            "frames": [
-                { "best_effort_timestamp": 20 },
-                { "best_effort_timestamp": "20" }
-            ]
-        }"#;
-        assert_eq!(
-            SourceFrameTimeline::parse_ffprobe_json(repeated).unwrap_err(),
-            SourceTimelineError::NonIncreasingPts { ordinal: 1 }
-        );
     }
 
     #[test]

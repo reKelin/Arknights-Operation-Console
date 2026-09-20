@@ -1189,3 +1189,120 @@ kbd {
 .axis-point:hover:not(:disabled) {
   background: transparent;
 }
+
+.log-settings {
+  grid-column: 1 / -1;
+  width: 100%;
+  padding: 16px;
+  background: var(--panel);
+  border-radius: 16px;
+}
+.log-settings summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  font-size: 20px;
+  font-weight: 600;
+  padding: 12px 0;
+  cursor: pointer;
+}
+.log-card {
+  background: var(--panel-raised);
+  border-radius: 20px;
+  padding: 8px 24px;
+}
+.log-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  padding: 18px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+.log-row strong {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+}
+.log-row span {
+  color: var(--muted);
+}
+.log-row:last-child {
+  border-bottom: 0;
+}
+.log-debug {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+.log-debug > span {
+  display: grid;
+  gap: 6px;
+}
+.log-toggle {
+  appearance: none;
+  width: 52px;
+  height: 30px;
+  flex: 0 0 52px;
+  border: 2px solid var(--muted);
+  border-radius: 18px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.log-toggle::before {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin: 3px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s;
+}
+.log-toggle:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.log-toggle:checked::before {
+  transform: translateX(22px);
+  background: var(--panel-raised);
+}
+.log-view {
+  margin-top: 16px;
+}
+.log-view > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.log-view pre {
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-size: 12px;
+}
+
+.log-settings summary::-webkit-details-marker {
+  display: none;
+}
+.log-settings summary::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-top: 3px solid var(--muted);
+  border-right: 3px solid var(--muted);
+  transform: rotate(-45deg);
+  margin-right: 8px;
+}
+.log-settings details:not([open]) summary::after {
+  transform: rotate(135deg);
+}

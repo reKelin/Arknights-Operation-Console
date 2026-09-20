@@ -289,13 +289,34 @@ test("录屏区段、生成方式、父版本和冲突下拉进入对应请求",
 });
 
 test("诊断日志可开启、关闭并导出", async ({ page }) => {
-  await openSettings(page, "诊断");
-  const toggle = page.getByRole("checkbox", { name: "开启日志模式" });
+  await openSettings(page, "日志");
+  const toggle = page.getByRole("switch", { name: "调试模式" });
   await expect(toggle).not.toBeChecked();
+  await page
+    .locator(".log-settings")
+    .screenshot({ path: ".local/log-settings-dark.png" });
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+  });
+  await page
+    .locator(".log-settings")
+    .screenshot({ path: ".local/log-settings-light.png" });
   await toggle.check();
   await expect(toggle).toBeChecked();
-  await page.getByRole("button", { name: "导出日志", exact: true }).click();
+  await page
+    .getByRole("button", { name: "导出日志压缩包", exact: false })
+    .click();
   await expect(page.getByRole("status")).toHaveText("日志已导出");
+  await page.getByRole("button", { name: "历史日志 查看任务执行日志" }).click();
+  await expect(page.getByRole("region", { name: "历史日志" })).toContainText(
+    "测试历史",
+  );
+  await page
+    .getByRole("button", { name: "错误日志 查看应用异常和错误记录" })
+    .click();
+  await expect(page.getByRole("region", { name: "错误日志" })).toContainText(
+    "测试错误",
+  );
   await toggle.uncheck();
   await expect(toggle).not.toBeChecked();
   const calls = await page.evaluate(() =>
