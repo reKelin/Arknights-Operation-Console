@@ -1,6 +1,6 @@
-mod geometry;
+pub(crate) mod geometry;
 mod keyboard;
-mod resources;
+pub(crate) mod resources;
 mod touch;
 mod vision;
 

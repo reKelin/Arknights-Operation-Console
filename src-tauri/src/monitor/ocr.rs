@@ -8,6 +8,26 @@ pub struct OcrImage {
     height: u32,
 }
 
+impl OcrImage {
+    pub fn enlarged(self) -> Self {
+        let width = self.width * 2;
+        let height = self.height * 2;
+        let mut pixels = vec![0; (width * height * 4) as usize];
+        for y in 0..height {
+            for x in 0..width {
+                let src = ((y / 2 * self.width + x / 2) * 4) as usize;
+                let dst = ((y * width + x) * 4) as usize;
+                pixels[dst..dst + 4].copy_from_slice(&self.pixels[src..src + 4]);
+            }
+        }
+        Self {
+            pixels,
+            width,
+            height,
+        }
+    }
+}
+
 pub struct StageOcrAccumulator {
     catalog: Arc<StageCatalog>,
     lines: Vec<String>,

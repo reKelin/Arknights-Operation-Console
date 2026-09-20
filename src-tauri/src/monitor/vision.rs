@@ -101,7 +101,9 @@ pub fn analyze_bgra(
         offset_y: (height as f64 - viewport_height) / 2.0,
     };
 
-    let gear_ratio = frame.threshold_ratio(frame.reference_rect(20, 10, 90, 90), 80);
+    let gear_ratio = frame
+        .threshold_ratio(frame.reference_rect(20, 10, 90, 90), 80)
+        .max(frame.threshold_ratio(frame.reference_rect(60, 20, 150, 125), 80));
     let has_battle_anchor = gear_ratio >= 0.04;
     let speed_rect = frame.reference_rect(1609, 42, 1691, 119);
     let pause_rect = frame.reference_rect(1782, 57, 1845, 104);
@@ -325,14 +327,20 @@ impl FrameView<'_> {
         for y in (rect.top..rect.bottom).step_by(step) {
             for x in (rect.left..rect.right).step_by(step) {
                 if let Some((r, g, b)) = self.pixel(x, y) {
-                    total += 1;
-                    if if yellow {
-                        r > 140 && g > 160 && b < 90
+                    total += if yellow { 4 } else { 1 };
+                    matching += if yellow {
+                        if r > 140 && g > 160 && b < 90 {
+                            4
+                        } else {
+                            i32::from(
+                                g > 120
+                                    && u16::from(g) * 10 > u16::from(r) * 13
+                                    && u16::from(g) * 10 > u16::from(b) * 14,
+                            )
+                        }
                     } else {
-                        b > 150 && g > 90 && r < 70
-                    } {
-                        matching += 1;
-                    }
+                        i32::from(b > 150 && g > 90 && r < 70)
+                    };
                 }
             }
         }

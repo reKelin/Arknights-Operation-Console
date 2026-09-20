@@ -21,6 +21,9 @@ use super::{
 };
 
 pub mod analysis;
+mod parameters;
+mod portraits;
+mod refine;
 
 use analysis::{
     CandidateObservation, GameFrameRange, SourceTimeBase, SourceTimestamp,
@@ -399,7 +402,8 @@ fn analyze_file(
     let mut segments = Vec::new();
     let mut candidate_observations = Vec::new();
     let mut ocr_accumulator = StageOcrAccumulator::new(Arc::clone(&catalog));
-    let recognizer = StageOcrRecognizer::new(catalog);
+    let recognizer = StageOcrRecognizer::new(Arc::clone(&catalog));
+    let mut parameters = parameters::Parameters::default();
     let mut stage_recognition = match &recognizer {
         Ok(_) => StageRecognition::default(),
         Err(warning) => StageRecognition {
@@ -454,6 +458,29 @@ fn analyze_file(
             timestamp_ns,
             config,
         )?;
+        if !clock.snapshot().active
+            && !matches!(
+                observation.battle_state,
+                super::ObservedBattleState::NotInBattle | super::ObservedBattleState::BattleBegin
+            )
+            && timestamp_ns < 60_000_000_000
+            && source_frame.is_multiple_of(60)
+            && let Ok(recognizer) = &recognizer
+            && let Ok(image) =
+                crop_title(&buffer, metadata.width, metadata.height, metadata.width * 4)
+            && let Ok(text) = recognizer.recognize_text(image.enlarged())
+        {
+            parameters.read_roster(&text, &operators);
+            if text.contains("编") && parameters.squad_attempts < 4 {
+                parameters.read_squad(
+                    &buffer,
+                    metadata.width,
+                    metadata.height,
+                    recognizer,
+                    &operators,
+                );
+            }
+        }
         if observation.title_candidate
             && stage_recognition.status != StageMatchStatus::Matched
             && source_frame.is_multiple_of(30)
@@ -478,6 +505,18 @@ fn analyze_file(
         {
             observation.stage_recognition = Some(stage_recognition.clone());
         }
+        if !parameters.map_attempted
+            && stage_recognition.status == StageMatchStatus::Matched
+            && let Some(stage) = &stage_recognition.stage
+        {
+            parameters.load_map(&catalog, &stage.id);
+        }
+        if !parameters.bar_checked
+            && observation.battle_state.is_running()
+            && !panel_visible(&buffer, metadata.width, metadata.height)
+        {
+            parameters.verify_bar(&buffer, metadata.width, metadata.height, &operators);
+        }
         *state_counts
             .entry(format!("{:?}", observation.battle_state))
             .or_default() += 1;
@@ -491,6 +530,7 @@ fn analyze_file(
             &mut pending,
             &mut completions,
             &operators,
+            &mut parameters,
         );
         // 离线视频 UI 缩放尚未校准，费用条不能冒充有效时间锚点。
         observation.cost_phase = None;
@@ -611,17 +651,29 @@ fn analyze_file(
             candidate.source_end = response.source_timestamp.clone();
             candidate.game_frame_range = response.game_frame_range;
         }
-        let deployed = (completion.deployment && completion.cooldown_started)
-            || completion
-                .before
-                .slots
-                .zip(completion.after.slots)
-                .is_some_and(|(before, after)| before == after + 1)
-            || completion
-                .before
-                .cost
-                .zip(completion.after.cost)
-                .is_some_and(|(before, after)| after < before);
+        if let Some(tile) = &completion.tile {
+            candidate.tile = Some(tile.clone());
+            candidate
+                .unconfirmed_fields
+                .retain(|f| *f != analysis::UnconfirmedField::Tile);
+        }
+        let retreated = completion
+            .before
+            .slots
+            .zip(completion.after.slots)
+            .is_some_and(|(before, after)| after == before + 1);
+        let deployed = !retreated
+            && ((completion.deployment && completion.cooldown_started)
+                || completion
+                    .before
+                    .slots
+                    .zip(completion.after.slots)
+                    .is_some_and(|(before, after)| before == after + 1)
+                || completion
+                    .before
+                    .cost
+                    .zip(completion.after.cost)
+                    .is_some_and(|(before, after)| after < before));
         if deployed {
             candidate.kind = Some(analysis::CandidateActionKind::Deploy);
             candidate.confidence = 85;
@@ -641,21 +693,22 @@ fn analyze_file(
                     .unconfirmed_fields
                     .push(analysis::UnconfirmedField::Operator);
             }
-            if !candidate
-                .unconfirmed_fields
-                .contains(&analysis::UnconfirmedField::Direction)
+            if let Some(direction) = completion.direction {
+                candidate.direction = Some(direction);
+                candidate
+                    .unconfirmed_fields
+                    .retain(|f| *f != analysis::UnconfirmedField::Direction);
+            }
+            if candidate.direction.is_none()
+                && !candidate
+                    .unconfirmed_fields
+                    .contains(&analysis::UnconfirmedField::Direction)
             {
                 candidate
                     .unconfirmed_fields
                     .push(analysis::UnconfirmedField::Direction);
             }
-        } else if !completion.deployment
-            && completion
-                .before
-                .slots
-                .zip(completion.after.slots)
-                .is_some_and(|(before, after)| after == before + 1)
-        {
+        } else if retreated {
             candidate.kind = Some(analysis::CandidateActionKind::Retreat);
             candidate.confidence = 80;
             candidate
@@ -697,6 +750,15 @@ fn analyze_file(
             candidates.len()
         ),
     );
+    crate::diagnostics::info(
+        "recording.roster",
+        &format!("units={:?}", parameters.roster),
+    );
+    refine::responses(path, &metadata, &mut candidates, &mut trace, cancelled);
+    crate::diagnostics::info(
+        "recording",
+        &format!("including_refinement_ms={}", started.elapsed().as_millis()),
+    );
     let duration_frames = trace
         .iter()
         .map(|point| point.game_frame)
@@ -722,6 +784,8 @@ struct OperatorNames {
 struct OperatorName {
     id: String,
     name: String,
+    #[serde(default)]
+    tokens: Vec<String>,
 }
 struct PendingInteraction {
     start_ns: u64,
@@ -729,11 +793,14 @@ struct PendingInteraction {
     before_cooldown: f64,
     deployment: bool,
     operator: Option<String>,
-    name_read: bool,
+    name_attempts: u8,
+    last_panel: Vec<u8>,
+    facing_panel: Vec<u8>,
     running_frames: u8,
     response_ns: Option<u64>,
     ready: bool,
     before_bars: Vec<(u32, u32)>,
+    before_frame: Vec<u8>,
 }
 struct InteractionBaseline {
     hud: OcrImage,
@@ -753,6 +820,8 @@ struct CompletedInteraction {
     before_bars: Vec<(u32, u32)>,
     skill_started: bool,
     skill_evidence_frames: u8,
+    tile: Option<String>,
+    direction: Option<analysis::FacingDirection>,
 }
 #[derive(Clone, Copy, Debug, Default)]
 struct HudReading {
@@ -762,10 +831,11 @@ struct HudReading {
 fn read_cost(recognizer: Option<&StageOcrRecognizer>, image: Option<OcrImage>) -> HudReading {
     let Some(text) = recognizer
         .zip(image)
-        .and_then(|(recognizer, image)| recognizer.recognize_text(image).ok())
+        .and_then(|(recognizer, image)| recognizer.recognize_text(image.enlarged()).ok())
     else {
         return HudReading::default();
     };
+    crate::diagnostics::debug("recording.hud", &text.replace(char::is_whitespace, " "));
     parse_hud(&text)
 }
 fn parse_hud(text: &str) -> HudReading {
@@ -799,6 +869,7 @@ fn observe_interaction(
     pending: &mut Option<PendingInteraction>,
     completions: &mut Vec<CompletedInteraction>,
     operators: &OperatorNames,
+    parameters: &mut parameters::Parameters,
 ) {
     use super::ObservedBattleState::*;
     let timestamp = observation.capture_timestamp_ns;
@@ -814,45 +885,57 @@ fn observe_interaction(
         let before_bars = previous
             .as_ref()
             .map_or_else(Vec::new, |before| yellow_bars(&before.frame, width, height));
+        let before_frame = previous
+            .as_ref()
+            .map_or_else(Vec::new, |before| before.frame.clone());
         *pending = Some(PendingInteraction {
             start_ns: timestamp,
             before: read_cost(recognizer, previous.map(|before| before.hud)),
             before_cooldown,
             deployment: false,
             operator: None,
-            name_read: false,
+            name_attempts: 0,
+            last_panel: Vec::new(),
+            facing_panel: Vec::new(),
             running_frames: 0,
             response_ns: None,
             ready: false,
             before_bars,
+            before_frame,
         });
     }
     if let Some(event) = pending.as_mut() {
         event.deployment |= observation.battle_state == DeployingOperator;
         if panel {
+            event.last_panel.clear();
+            event.last_panel.extend_from_slice(data);
             event.response_ns = None;
             event.ready |= ready_visible(data, width, height);
+            if matches!(observation.battle_state, AdjustingOperatorFacing | Paused)
+                && !event.ready
+                && event.operator.as_deref() != Some("token_10064_wang_stone1")
+                && parameters.tile(data, width, height, "", true).is_some()
+            {
+                event.facing_panel.clear();
+                event.facing_panel.extend_from_slice(data);
+            }
         } else if event.response_ns.is_none() {
             event.response_ns = Some(timestamp);
         }
         if interacting
-            && !event.name_read
-            && timestamp.saturating_sub(event.start_ns) >= 200_000_000
+            && event.operator.is_none()
+            && event.name_attempts < 3
+            && timestamp.saturating_sub(event.start_ns)
+                >= 100_000_000 + u64::from(event.name_attempts) * 200_000_000
         {
-            event.name_read = true;
+            event.name_attempts += 1;
             if let Some(recognizer) = recognizer
-                && let Ok(image) = crop_region(data, width, height, width * 4, [0, 180, 450, 610])
-                && let Ok(text) = recognizer.recognize_text(image)
+                && let Ok(image) = crop_region(data, width, height, width * 4, [0, 270, 450, 355])
+                && let Ok(text) = recognizer.recognize_text(image.enlarged())
             {
-                let normalized = text.replace(char::is_whitespace, "");
-                let matched = operators
-                    .operators
-                    .iter()
-                    .filter(|operator| normalized.contains(&operator.name))
-                    .collect::<Vec<_>>();
-                if matched.len() == 1 {
-                    event.operator = Some(matched[0].id.clone());
-                }
+                event.operator = parameters
+                    .selected_unit(&text, operators)
+                    .or_else(|| parameters.match_name(data, width, height));
             }
         }
         event.running_frames = if running {
@@ -861,10 +944,25 @@ fn observe_interaction(
             0
         };
         if event.running_frames >= 3 {
-            let event = pending.take().unwrap();
+            let mut event = pending.take().unwrap();
+            if event.operator.is_none() {
+                event.operator = crop_region(
+                    &event.last_panel,
+                    width,
+                    height,
+                    width * 4,
+                    [0, 270, 450, 355],
+                )
+                .ok()
+                .and_then(|image| {
+                    recognizer.and_then(|ocr| ocr.recognize_text(image.enlarged()).ok())
+                })
+                .and_then(|text| parameters.selected_unit(&text, operators))
+                .or_else(|| parameters.match_name(&event.last_panel, width, height));
+            }
             let after = read_cost(
                 recognizer,
-                crop_region(data, width, height, width * 4, [1640, 745, 1919, 900]).ok(),
+                crop_region(data, width, height, width * 4, [1500, 720, 1919, 900]).ok(),
             );
             crate::diagnostics::debug(
                 "recording",
@@ -873,7 +971,88 @@ fn observe_interaction(
                     event.start_ns, event.before, event.deployment, event.operator
                 ),
             );
+            let retreat = event
+                .before
+                .slots
+                .zip(after.slots)
+                .is_some_and(|(a, b)| b == a + 1);
+            let deployed = event
+                .before
+                .cost
+                .zip(after.cost)
+                .is_some_and(|(a, b)| b < a)
+                || event
+                    .before
+                    .slots
+                    .zip(after.slots)
+                    .is_some_and(|(a, b)| a == b + 1);
+            if event.operator.is_none() && (deployed || retreat) {
+                let before_units = portraits::match_bar(
+                    &event.before_frame,
+                    width,
+                    height,
+                    Some(&parameters.roster),
+                );
+                let after_units =
+                    portraits::match_bar(data, width, height, Some(&parameters.roster));
+                let (previous, next) = if retreat {
+                    (&after_units, &before_units)
+                } else {
+                    (&before_units, &after_units)
+                };
+                let changed = previous
+                    .iter()
+                    .filter(|id| !next.contains(id))
+                    .collect::<Vec<_>>();
+                if changed.len() == 1 && !next.is_empty() {
+                    event.operator = Some(changed[0].clone());
+                }
+            }
+            if let Some(unit) = &event.operator {
+                parameters.remember_name(
+                    unit,
+                    if event.facing_panel.is_empty() {
+                        &event.last_panel
+                    } else {
+                        &event.facing_panel
+                    },
+                    width,
+                    height,
+                    operators,
+                );
+            }
+            let placement = if event.facing_panel.is_empty()
+                || event.operator.as_deref() == Some("token_10064_wang_stone1")
+            {
+                &event.last_panel
+            } else {
+                &event.facing_panel
+            };
+            let tile = event.operator.as_deref().and_then(|unit| {
+                parameters.tile(placement, width, height, unit, deployed && !retreat)
+            });
+            let direction = if event.operator.as_deref() == Some("token_10064_wang_stone1") {
+                Some(analysis::FacingDirection::None)
+            } else {
+                parameters
+                    .map
+                    .as_ref()
+                    .zip(tile.as_deref())
+                    .and_then(|(map, tile)| parameters::facing(placement, width, height, map, tile))
+            };
+            if let (Some(unit), Some(tile)) = (&event.operator, &tile) {
+                parameters.complete(unit, tile, deployed && !retreat, retreat);
+            }
+            crate::diagnostics::debug(
+                "recording.parameters",
+                &format!(
+                    "unit={:?} tile={tile:?} direction={direction:?}",
+                    event.operator
+                ),
+            );
             completions.push(CompletedInteraction {
+                tile,
+                direction,
                 start_ns: event.start_ns,
                 end_ns: timestamp,
                 before: event.before,
@@ -910,7 +1089,7 @@ fn observe_interaction(
     if (running || observation.battle_state == Paused)
         && !panel
         && pending.is_none()
-        && let Ok(hud) = crop_region(data, width, height, width * 4, [1640, 745, 1919, 900])
+        && let Ok(hud) = crop_region(data, width, height, width * 4, [1500, 720, 1919, 900])
     {
         let cooldown = cooldown_ratio(data, width, height);
         if let Some(before) = last_cost.as_mut() {
@@ -1062,6 +1241,35 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "需要 CONSOLE_PARAMETER_FRAMES 指定人工书签画面目录"]
+    fn local_roster_recovers_units_absent_from_squad() {
+        let root = std::env::var("CONSOLE_PARAMETER_FRAMES").unwrap();
+        let names: OperatorNames =
+            serde_json::from_str(include_str!("../../data/operators.json")).unwrap();
+        let mut parameters = parameters::Parameters::default();
+        parameters.read_roster("开始行动 赤刃明霄陈", &names);
+        assert!(!parameters.roster.contains("char_2027_wang"));
+        for (file, unit) in [
+            ("sr8-roster.png", "char_1050_chen3"),
+            ("or-initial-bar.png", "char_2023_ling"),
+        ] {
+            let bar = image::open(Path::new(&root).parent().unwrap().join(file))
+                .unwrap()
+                .to_rgba8();
+            let (w, h) = bar.dimensions();
+            let mut data = bar.into_raw();
+            for p in data.as_chunks_mut::<4>().0 {
+                p.swap(0, 2);
+            }
+            let units = portraits::deployment_bar(&data, w, h);
+            println!("{file} units={units:?}");
+            assert_eq!(units, vec![unit, "char_2027_wang"]);
+            parameters.verify_bar(&data, w, h, &names);
+            assert!(parameters.roster.contains("token_10064_wang_stone1"));
+        }
+    }
+
+    #[test]
     fn existing_yellow_bar_or_selection_close_does_not_prove_skill() {
         assert!(!has_new_skill_bar(&[(460, 544)], &[(466, 548)]));
         assert!(!has_new_skill_bar(&[(460, 544)], &[]));
@@ -1115,7 +1323,7 @@ mod tests {
         );
         analyze_file(
             Path::new(&path),
-            metadata,
+            metadata.clone(),
             VisionConfig::default(),
             Arc::new(StageCatalog::embedded().unwrap()),
             &AtomicBool::new(false),
@@ -1132,6 +1340,8 @@ mod tests {
                 duration_frames,
             } = envelope.event
             {
+                assert!(!segments.is_empty(), "测试录屏必须识别到可信关卡区段");
+                assert!(trace.last().is_some_and(|p| p.source_timestamp_ns > metadata.duration_ns as f64 * 0.98), "必须扫描完整录屏");
                 let mut runner = crate::runner::RunnerState::new(Instant::now());
                 runner.set_monitor_snapshot(super::super::MonitorSnapshot {
                     source_kind: super::super::MonitorSourceKind::Recording,
@@ -1144,6 +1354,7 @@ mod tests {
                     ..Default::default()
                 });
                 let axis = runner.snapshot().axis;
+                assert!(!axis.events.is_empty(), "测试录屏不能生成空轴");
                 let output = serde_json::json!({"trace": trace, "segments": segments, "candidates": candidates, "durationFrames": duration_frames, "axis": axis});
                 std::fs::write(&report, serde_json::to_vec_pretty(&output).unwrap()).unwrap();
                 if std::env::var_os("CONSOLE_RECORDING_CHECK_SR8").is_some() {
@@ -1158,13 +1369,43 @@ mod tests {
                     );
                     assert_eq!(axis.events.len(), expected.len(), "操作不得增加或遗漏");
                     let tolerance = reference["toleranceFrames"].as_u64().unwrap() as u32;
+                    let names: OperatorNames =
+                        serde_json::from_str(include_str!("../../data/operators.json")).unwrap();
                     for (event, checkpoint) in axis.events.iter().zip(expected) {
+                        if let (Some(actual), Some(expected)) =
+                            (&event.tile, checkpoint["tile"].as_str())
+                        {
+                            assert_eq!(
+                                actual, expected,
+                                "书签 {} 不应自动填入错误格子",
+                                checkpoint["bookmark"]
+                            );
+                        }
                         assert_eq!(
                             serde_json::to_value(event.kind).unwrap(),
                             checkpoint["kind"],
                             "书签 {} 操作种类不一致",
                             checkpoint["bookmark"]
                         );
+                        if event.kind == crate::axis::DraftKind::Deploy {
+                            let unit = names
+                                .operators
+                                .iter()
+                                .find(|u| u.name == checkpoint["actor"].as_str().unwrap())
+                                .unwrap();
+                            assert_eq!(
+                                event.operator.as_deref(),
+                                Some(unit.id.as_str()),
+                                "书签 {} 部署单位不一致",
+                                checkpoint["bookmark"]
+                            );
+                            if unit.id == "token_10064_wang_stone1" {
+                                assert_eq!(
+                                    event.direction,
+                                    Some(crate::axis::DraftDirection::None)
+                                );
+                            }
+                        }
                         let expected_frame = checkpoint["gameFrame"].as_u64().unwrap() as u32;
                         assert!(
                             event.frame.abs_diff(expected_frame) <= tolerance,
