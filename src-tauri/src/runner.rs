@@ -402,6 +402,7 @@ impl RunnerState {
         event.operator = operation.operator;
         event.tile = Some(operation.tile);
         event.direction = operation.direction.map(|direction| match direction {
+            FacingDirection::None => DraftDirection::None,
             FacingDirection::Up => DraftDirection::Up,
             FacingDirection::Right => DraftDirection::Right,
             FacingDirection::Down => DraftDirection::Down,
@@ -1675,6 +1676,7 @@ impl RunnerState {
                 }
                 if known(UnconfirmedField::Direction) {
                     event.direction = candidate.direction.map(|direction| match direction {
+                        FacingDirection::None => DraftDirection::None,
                         FacingDirection::Up => DraftDirection::Up,
                         FacingDirection::Right => DraftDirection::Right,
                         FacingDirection::Down => DraftDirection::Down,

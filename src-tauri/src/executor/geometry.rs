@@ -101,6 +101,7 @@ pub fn direction_target(
     distance: i32,
 ) -> (i32, i32) {
     match direction {
+        DraftDirection::None => origin,
         DraftDirection::Up => (origin.0, origin.1 - distance),
         DraftDirection::Right => (origin.0 + distance, origin.1),
         DraftDirection::Down => (origin.0, origin.1 + distance),

@@ -845,14 +845,17 @@ impl ProxyExecutor {
                     .direction
                     .ok_or_else(|| "部署操作缺少朝向".to_string())?;
                 let distance = (client.height.min(client.width) as f64 * 0.08) as i32;
-                self.touch.drag(
-                    hwnd,
-                    side,
-                    direction_target(side, direction, distance),
-                    allowed,
-                )?;
-                let after =
-                    self.fresh_frame_after(after_drop.sequence, client, window_id, allowed)?;
+                let after = if direction == crate::axis::DraftDirection::None {
+                    after_drop
+                } else {
+                    self.touch.drag(
+                        hwnd,
+                        side,
+                        direction_target(side, direction, distance),
+                        allowed,
+                    )?;
+                    self.fresh_frame_after(after_drop.sequence, client, window_id, allowed)?
+                };
                 let target_changed = changed_ratio(captured, &after, front, result_radius(client))?;
                 let match_result = match_operator(&after, &templates)?;
                 if target_changed >= 0.08 && match_result == OperatorMatch::Absent {
