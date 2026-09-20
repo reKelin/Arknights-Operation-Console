@@ -71,6 +71,7 @@ struct VisualFeatures {
     selected_panel: bool,
     deployment_tiles: bool,
     recording: bool,
+    pause_shape: Option<f64>,
 }
 
 pub fn analyze_bgra(
@@ -107,6 +108,9 @@ pub fn analyze_bgra(
     let speed_bright = frame.threshold_ratio(speed_rect, 180);
     let pause_bright = frame.threshold_ratio(pause_rect, 180);
     let features = VisualFeatures {
+        pause_shape: config
+            .recording_analysis
+            .then(|| frame.normalized_shape(pause_rect)),
         recording: config.recording_analysis,
         selected_panel: config.recording_analysis
             && frame.color_ratio(frame.reference_rect(0, 490, 450, 510), false) > 0.12,
@@ -150,6 +154,9 @@ fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
     let has_battle_anchor = features.gear_ratio >= 0.04;
     let controls_visible = features.pause_bright >= 0.12;
     if has_battle_anchor && features.selected_panel {
+        if features.pause_shape.is_some_and(|shape| shape < 0.265) {
+            return (ObservedBattleState::Paused, 92);
+        }
         if features.deployment_tiles {
             return (ObservedBattleState::DeployingOperator, 84);
         }
@@ -195,6 +202,25 @@ fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
 }
 
 impl FrameView<'_> {
+    // 按图标自身对比度判断三角/双竖线；拖动时图标会变暗，绝对亮度不能判暂停。
+    fn normalized_shape(&self, rect: Rect) -> f64 {
+        let mut values = Vec::new();
+        for y in rect.top..rect.bottom {
+            for x in rect.left..rect.right {
+                if let Some((r, g, b)) = self.pixel(x, y) {
+                    values.push(r.max(g).max(b));
+                }
+            }
+        }
+        if values.is_empty() {
+            return 0.0;
+        }
+        values.sort_unstable();
+        let low = f64::from(values[values.len() * 15 / 100]);
+        let high = f64::from(values[values.len() * 90 / 100]);
+        let threshold = low + (high - low) * 0.65;
+        values.iter().filter(|&&v| f64::from(v) > threshold).count() as f64 / values.len() as f64
+    }
     fn reference_rect(&self, left: u32, top: u32, right: u32, bottom: u32) -> Rect {
         Rect {
             left: self.reference_x(left).min(self.width),
@@ -377,6 +403,7 @@ mod tests {
     #[test]
     fn recording_panel_distinguishes_selection_from_green_background() {
         let mut features = VisualFeatures {
+            pause_shape: None,
             recording: true,
             gear_ratio: 0.2,
             speed_bright: 0.082,
@@ -399,6 +426,13 @@ mod tests {
             ObservedBattleState::PointTwoXRunning
         );
         features.deployment_tiles = true;
+        assert_eq!(
+            classify_battle(features).0,
+            ObservedBattleState::DeployingOperator
+        );
+        features.pause_shape = Some(0.23);
+        assert_eq!(classify_battle(features).0, ObservedBattleState::Paused);
+        features.pause_shape = Some(0.29);
         assert_eq!(
             classify_battle(features).0,
             ObservedBattleState::DeployingOperator
@@ -456,6 +490,7 @@ mod tests {
 
         for fixture in fixtures {
             let (actual, _) = classify_battle(VisualFeatures {
+                pause_shape: None,
                 gear_ratio: fixture.gear_ratio,
                 speed_bright: fixture.speed_bright,
                 pause_bright: fixture.pause_bright,

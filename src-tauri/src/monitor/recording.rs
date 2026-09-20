@@ -603,6 +603,14 @@ fn analyze_file(
         else {
             continue;
         };
+        if let Some(response) = completion.response_ns.and_then(|timestamp| {
+            candidate_observations
+                .iter()
+                .find(|point| point.source_timestamp.nanoseconds() == Ok(timestamp))
+        }) {
+            candidate.source_end = response.source_timestamp.clone();
+            candidate.game_frame_range = response.game_frame_range;
+        }
         let deployed = (completion.deployment && completion.cooldown_started)
             || completion
                 .before
@@ -653,8 +661,32 @@ fn analyze_file(
             candidate
                 .unconfirmed_fields
                 .retain(|field| *field != analysis::UnconfirmedField::ActionKind);
+        } else if completion.skill_started {
+            candidate.kind = Some(analysis::CandidateActionKind::Skill);
+            candidate.confidence = 85;
+            candidate.unconfirmed_fields.retain(|field| {
+                !matches!(
+                    field,
+                    analysis::UnconfirmedField::ActionKind
+                        | analysis::UnconfirmedField::Operator
+                        | analysis::UnconfirmedField::Direction
+                )
+            });
         }
     }
+    // 完整交互结束且没有任何完成证据的选中/拖动预览，不生成玩家操作。
+    // 中断或未完成的候选仍留给人工核验。
+    candidates.retain(|candidate| {
+        candidate.kind.is_some()
+            || !completions.iter().any(|event| {
+                !event.ready
+                    && event.response_ns.is_some()
+                    && candidate
+                        .source_start
+                        .nanoseconds()
+                        .is_ok_and(|start| start >= event.start_ns && start <= event.end_ns)
+            })
+    });
     crate::diagnostics::info(
         "recording",
         &format!(
@@ -699,6 +731,14 @@ struct PendingInteraction {
     operator: Option<String>,
     name_read: bool,
     running_frames: u8,
+    response_ns: Option<u64>,
+    ready: bool,
+    before_bars: Vec<(u32, u32)>,
+}
+struct InteractionBaseline {
+    hud: OcrImage,
+    cooldown: f64,
+    frame: Vec<u8>,
 }
 struct CompletedInteraction {
     start_ns: u64,
@@ -708,6 +748,11 @@ struct CompletedInteraction {
     cooldown_started: bool,
     deployment: bool,
     operator: Option<String>,
+    response_ns: Option<u64>,
+    ready: bool,
+    before_bars: Vec<(u32, u32)>,
+    skill_started: bool,
+    skill_evidence_frames: u8,
 }
 #[derive(Clone, Copy, Debug, Default)]
 struct HudReading {
@@ -750,33 +795,46 @@ fn observe_interaction(
     height: u32,
     observation: &super::VisualObservation,
     recognizer: Option<&StageOcrRecognizer>,
-    last_cost: &mut Option<(OcrImage, f64)>,
+    last_cost: &mut Option<InteractionBaseline>,
     pending: &mut Option<PendingInteraction>,
     completions: &mut Vec<CompletedInteraction>,
     operators: &OperatorNames,
 ) {
     use super::ObservedBattleState::*;
     let timestamp = observation.capture_timestamp_ns;
+    let panel = panel_visible(data, width, height);
     let running = matches!(observation.battle_state, OneXRunning | TwoXRunning);
     let interacting = matches!(
         observation.battle_state,
         DeployingOperator | AdjustingOperatorFacing | PointTwoXRunning
     );
-    if interacting && pending.is_none() {
+    if (interacting || panel) && pending.is_none() {
         let previous = last_cost.take();
-        let before_cooldown = previous.as_ref().map_or(0.0, |(_, cooldown)| *cooldown);
+        let before_cooldown = previous.as_ref().map_or(0.0, |before| before.cooldown);
+        let before_bars = previous
+            .as_ref()
+            .map_or_else(Vec::new, |before| yellow_bars(&before.frame, width, height));
         *pending = Some(PendingInteraction {
             start_ns: timestamp,
-            before: read_cost(recognizer, previous.map(|(image, _)| image)),
+            before: read_cost(recognizer, previous.map(|before| before.hud)),
             before_cooldown,
             deployment: false,
             operator: None,
             name_read: false,
             running_frames: 0,
+            response_ns: None,
+            ready: false,
+            before_bars,
         });
     }
     if let Some(event) = pending.as_mut() {
         event.deployment |= observation.battle_state == DeployingOperator;
+        if panel {
+            event.response_ns = None;
+            event.ready |= ready_visible(data, width, height);
+        } else if event.response_ns.is_none() {
+            event.response_ns = Some(timestamp);
+        }
         if interacting
             && !event.name_read
             && timestamp.saturating_sub(event.start_ns) >= 200_000_000
@@ -824,18 +882,124 @@ fn observe_interaction(
                     > 0.01,
                 deployment: event.deployment,
                 operator: event.operator,
+                response_ns: event.response_ns,
+                ready: event.ready,
+                before_bars: event.before_bars,
+                skill_started: false,
+                skill_evidence_frames: 0,
             });
         }
     }
-    if running && pending.is_none() {
-        *last_cost = crop_region(data, width, height, width * 4, [1640, 745, 1919, 900])
-            .ok()
-            .map(|image| (image, cooldown_ratio(data, width, height)));
+    if running && !panel {
+        for event in completions.iter_mut().rev().take(1) {
+            if event.ready
+                && !event.deployment
+                && timestamp.saturating_sub(event.end_ns) <= 1_000_000_000
+            {
+                let changed =
+                    has_new_skill_bar(&event.before_bars, &yellow_bars(data, width, height));
+                event.skill_evidence_frames = if changed {
+                    event.skill_evidence_frames.saturating_add(1)
+                } else {
+                    0
+                };
+                event.skill_started |= event.skill_evidence_frames >= 2;
+            }
+        }
+    }
+    if (running || observation.battle_state == Paused)
+        && !panel
+        && pending.is_none()
+        && let Ok(hud) = crop_region(data, width, height, width * 4, [1640, 745, 1919, 900])
+    {
+        let cooldown = cooldown_ratio(data, width, height);
+        if let Some(before) = last_cost.as_mut() {
+            before.hud = hud;
+            before.cooldown = cooldown;
+            before.frame.copy_from_slice(data);
+        } else {
+            *last_cost = Some(InteractionBaseline {
+                hud,
+                cooldown,
+                frame: data.to_vec(),
+            });
+        }
     }
     if matches!(observation.battle_state, NotInBattle | BattleBegin) {
         *pending = None;
         *last_cost = None;
     }
+}
+
+fn reference_pixel(data: &[u8], width: u32, height: u32, x: u32, y: u32) -> (u8, u8, u8) {
+    let scale = (f64::from(width) / 1920.0).min(f64::from(height) / 1080.0);
+    let x = ((f64::from(width) - 1920.0 * scale) / 2.0 + f64::from(x) * scale) as usize;
+    let y = ((f64::from(height) - 1080.0 * scale) / 2.0 + f64::from(y) * scale) as usize;
+    data.get((y * width as usize + x) * 4..)
+        .filter(|p| p.len() >= 3)
+        .map_or((0, 0, 0), |p| (p[2], p[1], p[0]))
+}
+
+fn has_new_skill_bar(before: &[(u32, u32)], after: &[(u32, u32)]) -> bool {
+    after.iter().any(|&(x, y)| {
+        !before
+            .iter()
+            .any(|&(bx, by)| x.abs_diff(bx) < 40 && y.abs_diff(by) < 12)
+    })
+}
+
+fn panel_visible(data: &[u8], width: u32, height: u32) -> bool {
+    let mut cyan = 0;
+    for x in (0..450).step_by(4) {
+        for y in (490..510).step_by(4) {
+            let (r, g, b) = reference_pixel(data, width, height, x, y);
+            cyan += usize::from(b > 150 && g > 90 && r < 70);
+        }
+    }
+    cyan > 15
+}
+
+fn ready_visible(data: &[u8], width: u32, height: u32) -> bool {
+    // READY 色块必须伴随技能按钮右侧的白色九宫格，部署地块也有相近黄绿色。
+    let mut white = 0;
+    for y in (600..670).step_by(2) {
+        for x in (1300..1380).step_by(2) {
+            let (r, g, b) = reference_pixel(data, width, height, x, y);
+            white += usize::from(r.min(g).min(b) > 160);
+        }
+    }
+    if white < 220 {
+        return false;
+    }
+    let mut green = 0;
+    for y in (720..760).step_by(2) {
+        for x in (1160..1300).step_by(2) {
+            let (r, g, b) = reference_pixel(data, width, height, x, y);
+            green += usize::from(
+                r > 130 && g > 155 && b < 100 && u16::from(g) * 100 > u16::from(r) * 105,
+            );
+        }
+    }
+    green > 90
+}
+
+fn yellow_bars(data: &[u8], width: u32, height: u32) -> Vec<(u32, u32)> {
+    let mut bars = Vec::new();
+    for y in (400..850).step_by(4) {
+        let mut run = 0;
+        for x in (350..1660).step_by(2) {
+            let (r, g, b) = reference_pixel(data, width, height, x, y);
+            if r > 110 && g > 90 && b < 90 && r >= g && u16::from(r) < u16::from(g) * 2 {
+                run += 2;
+            } else {
+                if (36..=140).contains(&run) {
+                    bars.push((x - run / 2, y));
+                }
+                run = 0;
+            }
+        }
+    }
+    bars
 }
 
 fn cooldown_ratio(data: &[u8], width: u32, height: u32) -> f64 {
@@ -896,6 +1060,31 @@ fn publish(events: &Mutex<MonitorEventQueue>, event: MonitorEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn existing_yellow_bar_or_selection_close_does_not_prove_skill() {
+        assert!(!has_new_skill_bar(&[(460, 544)], &[(466, 548)]));
+        assert!(!has_new_skill_bar(&[(460, 544)], &[]));
+        assert!(has_new_skill_bar(&[(460, 544)], &[(460, 544), (1578, 750)]));
+    }
+
+    #[test]
+    fn yellow_deployment_tiles_without_skill_button_are_not_ready() {
+        let mut frame = vec![0; 960 * 540 * 4];
+        for y in 360..380 {
+            for x in 580..650 {
+                frame[(y * 960 + x) * 4..(y * 960 + x) * 4 + 4]
+                    .copy_from_slice(&[20, 220, 170, 255]);
+            }
+        }
+        assert!(!ready_visible(&frame, 960, 540));
+        for y in 300..335 {
+            for x in 650..690 {
+                frame[(y * 960 + x) * 4..(y * 960 + x) * 4 + 4].fill(255);
+            }
+        }
+        assert!(ready_visible(&frame, 960, 540));
+    }
 
     #[test]
     #[ignore = "需要本地录屏，设置 CONSOLE_RECORDING_PATH 与 CONSOLE_RECORDING_REPORT"]
@@ -959,55 +1148,38 @@ mod tests {
                 std::fs::write(&report, serde_json::to_vec_pretty(&output).unwrap()).unwrap();
                 if std::env::var_os("CONSOLE_RECORDING_CHECK_SR8").is_some() {
                     let reference: serde_json::Value = serde_json::from_str(include_str!(
-                        "../../tests/fixtures/monitor/sr8-reference.json"
+                        "../../tests/fixtures/monitor/sr8-bookmarks.json"
                     ))
                     .unwrap();
+                    let expected = reference["events"].as_array().unwrap();
                     assert!(
                         trace.last().unwrap().source_timestamp_ns > 194_000_000_000.0,
                         "必须分析完整视频"
                     );
-                    assert!(
-                        axis.events.iter().all(|event| event.frame > 0),
-                        "该视频没有 0 帧操作"
-                    );
-                    assert!(
-                        axis.events.last().unwrap().frame > 180 * 30,
-                        "轴不能在 10 秒结束"
-                    );
-                    for checkpoint in reference["checkpoints"].as_array().unwrap() {
-                        let start = checkpoint["sourceStartSeconds"].as_f64().unwrap();
-                        let end = checkpoint["sourceEndSeconds"].as_f64().unwrap();
-                        let event = axis
-                            .events
-                            .iter()
-                            .find(|event| {
-                                event
-                                    .source_timestamp_ns
-                                    .is_some_and(|ns| ns / 1e9 >= start && ns / 1e9 <= end)
-                            })
-                            .unwrap_or_else(|| panic!("漏识别检查点：{checkpoint}"));
+                    assert_eq!(axis.events.len(), expected.len(), "操作不得增加或遗漏");
+                    let tolerance = reference["toleranceFrames"].as_u64().unwrap() as u32;
+                    for (event, checkpoint) in axis.events.iter().zip(expected) {
                         assert_eq!(
                             serde_json::to_value(event.kind).unwrap(),
                             checkpoint["kind"],
-                            "{checkpoint}"
+                            "书签 {} 操作种类不一致",
+                            checkpoint["bookmark"]
                         );
-                        if let Some(expected) = checkpoint["gameSeconds"].as_f64() {
-                            assert!(
-                                (f64::from(event.frame) / 30.0 - expected).abs()
-                                    <= checkpoint["toleranceSeconds"].as_f64().unwrap(),
-                                "时间偏离检查点：{checkpoint} actual={}",
-                                event.frame
-                            );
-                        }
+                        let expected_frame = checkpoint["gameFrame"].as_u64().unwrap() as u32;
+                        assert!(
+                            event.frame.abs_diff(expected_frame) <= tolerance,
+                            "书签 {} 超过 ±{tolerance}f：expected={expected_frame} actual={}",
+                            checkpoint["bookmark"],
+                            event.frame
+                        );
+                        let source = event.source_timestamp_ns.unwrap() / 1e9;
+                        let expected_source = checkpoint["sourceSeconds"].as_f64().unwrap();
+                        assert!(
+                            (source - expected_source).abs() <= 0.2,
+                            "书签 {} 未匹配正确的视频操作：{source}",
+                            checkpoint["bookmark"]
+                        );
                     }
-                    assert!(
-                        !axis.events.iter().any(|event| event.kind
-                            == crate::axis::DraftKind::Deploy
-                            && event
-                                .source_timestamp_ns
-                                .is_some_and(|ns| (12.0..16.0).contains(&(ns / 1e9)))),
-                        "取消棋子预览不能算部署"
-                    );
                 }
                 ready = true;
             }
