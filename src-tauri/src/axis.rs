@@ -550,7 +550,7 @@ fn validate_event(
             if !valid_operator_id(operator) {
                 return Err(CommandError::field(
                     "invalid_operator",
-                    "operator 必须使用 char_ 开头的角色键",
+                    "operator 必须使用 char_ 或 token_ 开头的单位键",
                     field("operator"),
                 ));
             }
@@ -617,12 +617,15 @@ fn valid_event_id(value: &str) -> bool {
 
 pub(crate) fn valid_operator_id(value: &str) -> bool {
     value.len() <= 128
-        && value.strip_prefix("char_").is_some_and(|rest| {
-            !rest.is_empty()
-                && rest
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric() || character == '_')
-        })
+        && value
+            .strip_prefix("char_")
+            .or_else(|| value.strip_prefix("token_"))
+            .is_some_and(|rest| {
+                !rest.is_empty()
+                    && rest
+                        .chars()
+                        .all(|character| character.is_ascii_alphanumeric() || character == '_')
+            })
 }
 
 pub(crate) fn valid_tile_code(value: &str) -> bool {

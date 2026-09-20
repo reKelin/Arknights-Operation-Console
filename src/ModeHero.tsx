@@ -3,6 +3,7 @@ import {
   frameTime,
   KIND_LABELS,
   type Mode,
+  operatorName,
   STATE_LABELS,
   type TypedResult,
 } from "./console";
@@ -101,7 +102,7 @@ export default function ModeHero({
   const title = point
     ? point.kind === "bookmark"
       ? "待分类操作"
-      : `${KIND_LABELS[point.kind]}${point.kind === "deploy" && point.operator ? ` · ${point.operator}` : ""}`
+      : `${KIND_LABELS[point.kind]}${point.kind === "deploy" && point.operator ? ` · ${operatorName(point.operator)}` : ""}`
     : mode === "live" && waiting
       ? "等待记录"
       : "暂无操作";

@@ -3,6 +3,7 @@ mod bindings;
 mod diagnostics;
 mod executor;
 mod monitor;
+mod operators;
 mod recording_continuation;
 mod runner;
 mod session;

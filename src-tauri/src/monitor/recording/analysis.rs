@@ -494,13 +494,7 @@ fn is_running_state(state: ObservedBattleState) -> bool {
 }
 
 fn valid_operator_id(value: &str) -> bool {
-    value.len() <= 128
-        && value.strip_prefix("char_").is_some_and(|rest| {
-            !rest.is_empty()
-                && rest
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric() || character == '_')
-        })
+    crate::axis::valid_operator_id(value)
 }
 
 fn valid_tile_code(value: &str) -> bool {

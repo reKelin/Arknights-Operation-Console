@@ -647,7 +647,9 @@ impl RunnerState {
             event.frame = input.frame;
             event.kind = input.kind;
             event.operator = if matches!(event.kind, DraftKind::Deploy) {
-                normalized_optional(input.operator)
+                normalized_optional(input.operator).map(|value| {
+                    crate::operators::resolve_name(&value).map_or(value.clone(), str::to_string)
+                })
             } else {
                 None
             };
@@ -2704,6 +2706,44 @@ mod tests {
                 .collect::<Vec<_>>(),
             [30, 65, 90]
         );
+    }
+
+    #[test]
+    fn chinese_deployment_names_become_exportable_unit_keys() {
+        let mut runner = RunnerState::new(Instant::now());
+        runner.axis.stage_id = Some("main_00-01".into());
+        for (index, (name, expected)) in [
+            ("望", "char_2027_wang"),
+            ("赤刃明霄陈", "char_1050_chen3"),
+            ("棋子", "token_10064_wang_stone1"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let frame = index as u32 * 30;
+            runner.add_event(frame, DraftKind::Deploy).unwrap();
+            let id = runner.axis.events[index].id.clone();
+            runner
+                .update_event(UpdateEventInput {
+                    id,
+                    frame,
+                    kind: DraftKind::Deploy,
+                    operator: Some((*name).into()),
+                    tile: Some("C4".into()),
+                    direction: Some(crate::axis::DraftDirection::Up),
+                    label: None,
+                })
+                .unwrap();
+            assert_eq!(
+                runner.axis.events[index].operator.as_deref(),
+                Some(*expected)
+            );
+            assert!(runner.axis.events[index].complete);
+        }
+        let exported = runner.axis.to_axis_json().unwrap();
+        assert_eq!(exported["events"][2]["operator"], "token_10064_wang_stone1");
+        let imported = crate::axis::DraftAxis::from_axis_json(exported).unwrap();
+        assert!(imported.events.iter().all(|event| event.complete));
     }
 
     #[test]

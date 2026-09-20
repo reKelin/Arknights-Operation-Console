@@ -5,6 +5,9 @@ import type {
   RunnerSnapshot,
   UpdateEventInput,
 } from "../../src/generated/bindings";
+import unitCatalog from "../../src-tauri/data/operators.json" with {
+  type: "json",
+};
 import { createSnapshot, stages } from "./fixtures";
 
 type Size = { width: number; height: number };
@@ -28,7 +31,7 @@ export async function installDesktopMock(page: Page) {
     page.setViewportSize(size),
   );
   await page.addInitScript(
-    ({ initial, catalog }) => {
+    ({ initial, catalog, units }) => {
       const state = structuredClone(initial);
       const calls: InvokeCall[] = [];
       const sizes: Size[] = [];
@@ -130,6 +133,18 @@ export async function installDesktopMock(page: Page) {
             if (event.frame !== input.frame)
               event.timeConfirmation = "unconfirmed";
             Object.assign(event, input);
+            if (event.kind === "deploy" && event.operator) {
+              const matches = units.filter(
+                (unit) => unit.name === event.operator,
+              );
+              if (matches.length === 1 && matches[0])
+                event.operator = matches[0].id;
+              event.complete = Boolean(
+                event.tile &&
+                  event.direction &&
+                  /^(char|token)_[A-Za-z0-9_]+$/.test(event.operator),
+              );
+            }
             return snapshot();
           }
           case "confirm_event_times": {
@@ -259,6 +274,10 @@ export async function installDesktopMock(page: Page) {
         },
       });
     },
-    { initial: createSnapshot(), catalog: stages },
+    {
+      initial: createSnapshot(),
+      catalog: stages,
+      units: unitCatalog.operators.map(({ id, name }) => ({ id, name })),
+    },
   );
 }

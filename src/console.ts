@@ -1,3 +1,4 @@
+import unitCatalog from "../src-tauri/data/operators.json";
 import type {
   ClockQuality,
   CommandError,
@@ -5,6 +6,11 @@ import type {
   DraftKind,
   ObservedBattleState,
 } from "./generated/bindings";
+
+const unitNames = new Map(
+  unitCatalog.operators.map((unit) => [unit.id, unit.name]),
+);
+export const unitNameChoices = [...new Set(unitNames.values())].sort();
 
 export type TypedResult<T> =
   | { status: "ok"; data: T }
@@ -56,6 +62,10 @@ export function unwrap<T>(result: TypedResult<T>): T {
   return result.data;
 }
 
+export function operatorName(value: string | null): string {
+  return unitNames.get(value ?? "") ?? value ?? "";
+}
+
 export function eventReviewStatus(
   event: Pick<
     import("./generated/bindings").DraftEvent,
@@ -71,7 +81,7 @@ export function eventReviewStatus(
       ? "待补全参数"
       : !event.complete
         ? event.kind === "deploy" &&
-          !/^char_[A-Za-z0-9_]+$/.test(event.operator ?? "")
+          !/^(char|token)_[A-Za-z0-9_]+$/.test(event.operator ?? "")
           ? "部署单位未识别"
           : "参数待校对"
         : "",

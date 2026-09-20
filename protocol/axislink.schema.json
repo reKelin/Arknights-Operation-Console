@@ -56,7 +56,7 @@
       "type": "string",
       "minLength": 6,
       "maxLength": 128,
-      "pattern": "^char_[A-Za-z0-9_]+$"
+      "pattern": "^(char|token)_[A-Za-z0-9_]+$"
     },
     "Frame": {
       "type": "integer",

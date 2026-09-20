@@ -1,5 +1,11 @@
 import { expect, it } from "vitest";
-import { eventReviewStatus } from "./console";
+import { eventReviewStatus, operatorName } from "./console";
+
+it("界面把内部单位键显示为中文名称", () => {
+  expect(operatorName("char_2027_wang")).toBe("望");
+  expect(operatorName("char_1050_chen3")).toBe("赤刃明霄陈");
+  expect(operatorName("token_10064_wang_stone1")).toBe("棋子");
+});
 
 it("独立显示缺项、参数校验与时间状态", () => {
   const event = {

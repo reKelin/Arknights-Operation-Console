@@ -118,6 +118,41 @@ test("已确认操作重新编辑时间可直接提交当前输入", async ({ pa
   await expect(confirm).toHaveCount(0);
 });
 
+test("中文部署名称自动匹配，参数和时间提示分别清除", async ({ page }) => {
+  await page.evaluate(() => {
+    const first = window.__smoke.snapshot.axis.events[0];
+    if (first) {
+      first.timeConfirmation = "unconfirmed";
+      first.operator = "望";
+      first.complete = false;
+    }
+  });
+  await page.getByRole("tab", { name: "视频分析", exact: true }).click();
+  await page.keyboard.press("h");
+  const row = page.locator(".editor-table tbody tr").first();
+  const input = page.locator('[name="edit-operator"]');
+  for (const [name, id] of [
+    ["望", "char_2027_wang"],
+    ["赤刃明霄陈", "char_1050_chen3"],
+    ["棋子", "token_10064_wang_stone1"],
+  ] as const) {
+    await input.fill(name);
+    await input.press("Tab");
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__smoke.snapshot.axis.events[0]?.operator),
+      )
+      .toBe(id);
+    await expect(input).toHaveValue(name);
+    await expect(row).toContainText(name);
+    await expect(row).not.toContainText("待补全参数");
+    await expect(row).not.toContainText("未识别");
+    await expect(row).toContainText("时间待确认");
+  }
+  await page.getByRole("button", { name: "确认时间", exact: true }).click();
+  await expect(row).not.toContainText("时间待确认");
+});
+
 test("工作台加载及三种模式切换", async ({ page }) => {
   for (const name of ["代理指挥", "视频分析", "实时录轴"]) {
     const tab = page.getByRole("tab", { name, exact: true });

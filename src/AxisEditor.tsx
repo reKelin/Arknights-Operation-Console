@@ -4,7 +4,9 @@ import {
   eventReviewStatus,
   frameTime,
   KIND_LABELS,
+  operatorName,
   type TypedResult,
+  unitNameChoices,
 } from "./console";
 import Picker from "./Dialog";
 import {
@@ -67,7 +69,7 @@ export default function AxisEditor({
         (filter === "incomplete"
           ? !event.complete || event.timeConfirmation === "unconfirmed"
           : event.kind === filter)) &&
-      `${event.operator ?? ""} ${event.tile ?? ""} ${event.label ?? ""} ${frameTime(event.frame)} ${event.frame}f ${KIND_LABELS[event.kind]}`
+      `${operatorName(event.operator)} ${event.tile ?? ""} ${event.label ?? ""} ${frameTime(event.frame)} ${event.frame}f ${KIND_LABELS[event.kind]}`
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
   );
@@ -212,7 +214,7 @@ export default function AxisEditor({
                     title={event.label ?? ""}
                   >
                     {[
-                      event.operator,
+                      operatorName(event.operator),
                       event.tile,
                       event.direction
                         ? (
@@ -535,7 +537,7 @@ function EventForm({
 }) {
   const [frame, setFrame] = useState(String(event.frame));
   const [kind, setKind] = useState<DraftKind>(event.kind);
-  const [operator, setOperator] = useState(event.operator ?? "");
+  const [operator, setOperator] = useState(operatorName(event.operator));
   const [tile, setTile] = useState(event.tile ?? "");
   const [direction, setDirection] = useState<DraftDirection | "">(
     event.direction ?? "",
@@ -590,12 +592,22 @@ function EventForm({
       id: event.id,
       frame: Number(frame),
       kind,
-      operator: kind === "deploy" ? operator.trim() || null : null,
+      operator:
+        kind === "deploy"
+          ? operator.trim() === operatorName(event.operator)
+            ? event.operator
+            : operator.trim() || null
+          : null,
       tile: kind === "bookmark" ? null : tile || null,
       direction: kind === "deploy" ? direction || null : null,
       label: label || null,
     };
     if (
+      !(
+        kind === "deploy" &&
+        !event.complete &&
+        unitNameChoices.includes(operator.trim())
+      ) &&
       Object.entries(input).every(
         ([key, value]) => event[key as keyof DraftEvent] === value,
       )
@@ -660,10 +672,16 @@ function EventForm({
           部署单位
           <input
             name="edit-operator"
+            list="deployment-unit-names"
             value={operator}
-            placeholder="干员 ID"
+            placeholder="输入干员或召唤物名称"
             onChange={(change) => setOperator(change.target.value)}
           />
+          <datalist id="deployment-unit-names">
+            {unitNameChoices.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </label>
       )}
       {kind !== "bookmark" && (
