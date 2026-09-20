@@ -56,6 +56,24 @@ export function unwrap<T>(result: TypedResult<T>): T {
   return result.data;
 }
 
+export function eventReviewStatus(
+  event: Pick<
+    import("./generated/bindings").DraftEvent,
+    "kind" | "operator" | "tile" | "direction" | "complete" | "timeConfirmation"
+  >,
+): string {
+  const missing =
+    event.kind === "bookmark" ||
+    !event.tile ||
+    (event.kind === "deploy" && (!event.operator?.trim() || !event.direction));
+  return [
+    missing ? "待补全参数" : !event.complete ? "参数待校对" : "",
+    event.timeConfirmation === "unconfirmed" ? "时间待确认" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export function messageOf(error: unknown): string {
   if (
     typeof error === "object" &&

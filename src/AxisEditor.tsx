@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   CLOCK_QUALITY_LABELS,
+  eventReviewStatus,
   frameTime,
   KIND_LABELS,
   type TypedResult,
@@ -219,11 +220,7 @@ export default function AxisEditor({
                             } as const
                           )[event.direction]
                         : "",
-                      !event.complete
-                        ? "待补全参数"
-                        : event.timeConfirmation === "unconfirmed"
-                          ? "时间待确认"
-                          : "",
+                      eventReviewStatus(event),
                     ]
                       .filter(Boolean)
                       .join(" · ")}
