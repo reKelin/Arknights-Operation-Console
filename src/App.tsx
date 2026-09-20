@@ -466,9 +466,9 @@ export default function App() {
           <Icon name={page === "settings" ? "back" : "settings"} />
         </button>
         <button
-          aria-label="最小化到托盘"
+          aria-label="最小化到任务栏"
           className="window-button"
-          onClick={() => runVoid(() => commands.hideToTray())}
+          onClick={() => runVoid(() => commands.minimizeWindow())}
           type="button"
         >
           <Icon name="minus" />

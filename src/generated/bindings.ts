@@ -41,7 +41,7 @@ export const commands = {
 	selectGameWindow: (id: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("select_game_window", { id })),
 	analyzeRecording: (path: string) => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("analyze_recording", { path })),
 	stopMonitor: () => typedError<RunnerSnapshot, CommandError>(__TAURI_INVOKE("stop_monitor")),
-	hideToTray: () => typedError<null, CommandError>(__TAURI_INVOKE("hide_to_tray")),
+	minimizeWindow: () => typedError<null, CommandError>(__TAURI_INVOKE("minimize_window")),
 	closeApp: () => __TAURI_INVOKE<void>("close_app"),
 };
 
