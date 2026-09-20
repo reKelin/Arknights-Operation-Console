@@ -16,6 +16,7 @@
     "bindings:axis": "json2ts -i protocol/axislink.schema.json -o src/generated/axislink.ts",
     "bindings:tauri": "node scripts/export-bindings.mjs",
     "stages:sync": "node scripts/sync-stage-catalog.mjs",
+    "portraits:sync": "cargo run --locked --manifest-path src-tauri/Cargo.toml --features catalog-tools --bin sync-portraits",
     "tauri": "tauri",
     "test:ci": "node --test scripts/ci/timing.test.mjs scripts/ci/contracts.test.mjs",
     "test:smoke": "playwright test",
