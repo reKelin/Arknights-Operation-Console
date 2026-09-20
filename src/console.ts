@@ -67,7 +67,14 @@ export function eventReviewStatus(
     !event.tile ||
     (event.kind === "deploy" && (!event.operator?.trim() || !event.direction));
   return [
-    missing ? "待补全参数" : !event.complete ? "参数待校对" : "",
+    missing
+      ? "待补全参数"
+      : !event.complete
+        ? event.kind === "deploy" &&
+          !/^char_[A-Za-z0-9_]+$/.test(event.operator ?? "")
+          ? "部署单位未识别"
+          : "参数待校对"
+        : "",
     event.timeConfirmation === "unconfirmed" ? "时间待确认" : "",
   ]
     .filter(Boolean)
