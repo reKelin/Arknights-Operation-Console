@@ -164,8 +164,10 @@ export default function AxisEditor({
                   }
                 />
               </th>
-              <th>时间</th>
-              <th>帧</th>
+              <th title="30 Hz 游戏时间，受倍速和暂停影响，不是视频播放时间">
+                游戏时间
+              </th>
+              <th>游戏帧</th>
               <th>操作</th>
               <th>参数</th>
             </tr>
@@ -733,7 +735,14 @@ function EventForm({
               `已选 ${pendingEvents.length} 项时间待确认，当前项使用输入帧，其余保持原帧`
             ) : (
               <>
-                时间待确认 · 观测 F{confirmationEvent.frameRange.start}–F
+                {confirmationEvent.sourceTimestampNs !== null && (
+                  <>
+                    视频{" "}
+                    {(confirmationEvent.sourceTimestampNs / 1e9).toFixed(3)} 秒
+                    ·{" "}
+                  </>
+                )}
+                时间待确认 · 游戏帧 F{confirmationEvent.frameRange.start}–F
                 {confirmationEvent.frameRange.end} · 时钟
                 {CLOCK_QUALITY_LABELS[confirmationEvent.clockQuality]}
               </>
