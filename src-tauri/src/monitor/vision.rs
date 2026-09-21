@@ -126,7 +126,11 @@ pub fn analyze_bgra(
         sampled_luma: frame.sampled_average_luma(16),
         title_bright: frame.threshold_ratio(frame.reference_rect(500, 300, 1420, 760), 180),
     };
-    let (battle_state, confidence) = classify_battle(features);
+    let (battle_state, confidence) = if config.recording_analysis {
+        frame.recording_state(features)
+    } else {
+        classify_battle(features)
+    };
     let title_candidate = features.gear_ratio < 0.04
         && features.sampled_luma < 105.0
         && features.title_bright >= 0.01;
@@ -203,7 +207,172 @@ fn classify_battle(features: VisualFeatures) -> (ObservedBattleState, u8) {
     }
 }
 
+// 连通块坐标使用调用方的采样网格，避免把按钮的屏幕位置当作按钮形状。
+#[derive(Debug)]
+pub(super) struct Component {
+    pub left: usize,
+    pub top: usize,
+    pub right: usize,
+    pub bottom: usize,
+    pub area: usize,
+}
+
+pub(super) fn components(mut mask: Vec<bool>, width: usize) -> Vec<Component> {
+    let mut result = Vec::new();
+    for start in 0..mask.len() {
+        if !mask[start] {
+            continue;
+        }
+        let mut stack = vec![start];
+        mask[start] = false;
+        let mut part = Component {
+            left: start % width,
+            right: start % width + 1,
+            top: start / width,
+            bottom: start / width + 1,
+            area: 0,
+        };
+        while let Some(i) = stack.pop() {
+            let x = i % width;
+            let y = i / width;
+            part.left = part.left.min(x);
+            part.right = part.right.max(x + 1);
+            part.top = part.top.min(y);
+            part.bottom = part.bottom.max(y + 1);
+            part.area += 1;
+            for next in [
+                (x > 0).then(|| i - 1),
+                (x + 1 < width).then_some(i + 1),
+                (y > 0).then(|| i - width),
+                (i + width < mask.len()).then_some(i + width),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if mask[next] {
+                    mask[next] = false;
+                    stack.push(next);
+                }
+            }
+        }
+        if part.area >= 5 {
+            result.push(part);
+        }
+    }
+    result
+}
+
 impl FrameView<'_> {
+    fn white_components(&self, left: u32, top: u32, right: u32, bottom: u32) -> Vec<Component> {
+        let mut colors = Vec::new();
+        for y in (top..bottom).step_by(2) {
+            for x in (left..right).step_by(2) {
+                colors.push(
+                    self.pixel(self.reference_x(x), self.reference_y(y))
+                        .unwrap_or_default(),
+                );
+            }
+        }
+        let mut brightness = colors
+            .iter()
+            .map(|&(r, g, b)| r.max(g).max(b))
+            .collect::<Vec<_>>();
+        brightness.sort_unstable();
+        let threshold = (f64::from(brightness[brightness.len() * 99 / 100]) * 0.7).max(60.0);
+        components(
+            colors
+                .into_iter()
+                .map(|(r, g, b)| {
+                    f64::from(r.max(g).max(b)) > threshold && r.max(g).max(b) - r.min(g).min(b) < 45
+                })
+                .collect(),
+            ((right - left) / 2) as usize,
+        )
+    }
+
+    fn recording_state(&self, features: VisualFeatures) -> (ObservedBattleState, u8) {
+        use ObservedBattleState::*;
+        if features.gear_ratio < 0.04 {
+            return classify_battle(features);
+        }
+        let pause = self.white_components(1740, 30, 1890, 130);
+        let bars = pause
+            .iter()
+            .filter(|c| {
+                let w = c.right - c.left;
+                let h = c.bottom - c.top;
+                (14..=28).contains(&h)
+                    && w * 4 >= h
+                    && w * 4 <= h * 3
+                    && c.area * 100 >= w * h * 45
+                    && c.top > 0
+                    && c.bottom < 50
+            })
+            .collect::<Vec<_>>();
+        let running_pair = bars.iter().find(|a| {
+            bars.iter().any(|b| {
+                a.left < b.left
+                    && b.left - a.left < 25
+                    && a.top.abs_diff(b.top) <= 2
+                    && a.bottom.abs_diff(b.bottom) <= 2
+            })
+        });
+        let paused = pause.iter().find(|c| {
+            let w = c.right - c.left;
+            let h = c.bottom - c.top;
+            (14..=28).contains(&h)
+                && w * 10 >= h * 9
+                && w * 10 <= h * 15
+                && c.area * 100 >= w * h * 35
+                && c.area * 100 <= w * h * 70
+                && c.top > 0
+                && c.bottom < 50
+        });
+        // 紧凑 HUD 保留已有独立帧级校准（含拖动变暗/朝向冻结）；
+        // 根据成对竖线或三角图标的位置选择布局，忽略附近无关亮色。
+        if running_pair.is_some_and(|c| c.left >= 30) || paused.is_some_and(|c| c.left >= 30) {
+            return classify_battle(features);
+        }
+        let running = running_pair.is_some();
+        if paused.is_some() && !running {
+            return (Paused, 92);
+        }
+        if running {
+            if features.selected_panel {
+                return (
+                    if features.deployment_tiles {
+                        DeployingOperator
+                    } else {
+                        PointTwoXRunning
+                    },
+                    84,
+                );
+            }
+            let speed = self.white_components(1560, 30, 1760, 130);
+            if let Some(arrow) = speed.iter().find(|c| {
+                let w = c.right - c.left;
+                let h = c.bottom - c.top;
+                c.top >= 24
+                    && c.bottom < 48
+                    && (7..=15).contains(&h)
+                    && (8..=30).contains(&w)
+                    && c.area * 100 >= w * h * 35
+            }) {
+                return (
+                    if (arrow.right - arrow.left) * 10 > (arrow.bottom - arrow.top) * 16 {
+                        TwoXRunning
+                    } else {
+                        OneXRunning
+                    },
+                    95,
+                );
+            }
+            return (Unknown, 40);
+        }
+        // 装载/结算画面可能碰巧有亮色齿轮区域，但没有有效控制图标。
+        (NotInBattle, 82)
+    }
+
     // 按图标自身对比度判断三角/双竖线；拖动时图标会变暗，绝对亮度不能判暂停。
     fn normalized_shape(&self, rect: Rect) -> f64 {
         let mut values = Vec::new();
@@ -445,6 +614,74 @@ mod tests {
             classify_battle(features).0,
             ObservedBattleState::DeployingOperator
         );
+    }
+
+    #[test]
+    fn recording_controls_follow_icons_across_layouts() {
+        use ObservedBattleState::*;
+        for (bytes, selected, expected) in [
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/one-x.png").as_slice(),
+                false,
+                OneXRunning,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/two-x.png").as_slice(),
+                false,
+                TwoXRunning,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/paused.png").as_slice(),
+                false,
+                Paused,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/selected-paused.png")
+                    .as_slice(),
+                true,
+                Paused,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/loading.png").as_slice(),
+                false,
+                NotInBattle,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/sr8-one-x.png").as_slice(),
+                false,
+                OneXRunning,
+            ),
+        ] {
+            let patch = image::load_from_memory(bytes).unwrap().to_rgba8();
+            let mut data = vec![0; 960 * 540 * 4];
+            for (x, y, p) in patch.enumerate_pixels() {
+                let i = (((y + 15) * 960 + x + 780) * 4) as usize;
+                data[i..i + 4].copy_from_slice(&[p[2], p[1], p[0], 255]);
+            }
+            let frame = FrameView {
+                data: &data,
+                width: 960,
+                height: 540,
+                row_pitch: 3840,
+                scale: 0.5,
+                offset_x: 0.0,
+                offset_y: 0.0,
+            };
+            let features = VisualFeatures {
+                gear_ratio: 0.1,
+                speed_bright: frame.threshold_ratio(frame.reference_rect(1609, 42, 1691, 119), 180),
+                pause_bright: frame.threshold_ratio(frame.reference_rect(1782, 57, 1845, 104), 180),
+                pause_overlay: 0.0,
+                green_ratio: 0.0,
+                sampled_luma: 100.0,
+                title_bright: 0.0,
+                selected_panel: selected,
+                deployment_tiles: false,
+                recording: true,
+                pause_shape: None,
+            };
+            assert_eq!(frame.recording_state(features).0, expected);
+        }
     }
 
     #[test]
