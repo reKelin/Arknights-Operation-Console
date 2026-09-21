@@ -910,7 +910,9 @@ fn observe_interaction(
             event.last_panel.clear();
             event.last_panel.extend_from_slice(data);
             event.response_ns = None;
-            event.ready |= ready_visible(data, width, height);
+            if !event.ready {
+                event.ready = ready_visible(data, width, height);
+            }
             if matches!(observation.battle_state, AdjustingOperatorFacing | Paused)
                 && !event.ready
                 && event.operator.as_deref() != Some("token_10064_wang_stone1")
@@ -1138,7 +1140,50 @@ fn panel_visible(data: &[u8], width: u32, height: u32) -> bool {
     cyan > 15
 }
 
+fn ready_glyph_matches(mask: &[bool], c: &super::vision::Component) -> bool {
+    // READY 标签的绿色背景和镂空文字，按包围盒归一化为 32×10。
+    // 来源：controls/ready-ammo.png；仅有相近颜色的部署地块不能通过字形核验。
+    const ROWS: [u32; 10] = [
+        1879048192, 2147467264, 2113929212, 2085766908, 2123657599, 4271138168, 4275562360,
+        4294952060, 268435452, 4095,
+    ];
+    let mut matches = 0;
+    for (y, row) in ROWS.iter().enumerate() {
+        for x in 0..32 {
+            let actual = mask[(c.top + y * (c.bottom - c.top) / 10) * 500
+                + c.left
+                + x * (c.right - c.left) / 32];
+            matches += usize::from(actual == (row & (1 << x) != 0));
+        }
+    }
+    matches >= 256
+}
+
 fn ready_visible(data: &[u8], width: u32, height: u32) -> bool {
+    let mut mask = Vec::new();
+    for y in (400..920).step_by(2) {
+        for x in (700..1700).step_by(2) {
+            let (r, g, b) = reference_pixel(data, width, height, x, y);
+            mask.push(r > 130 && g > 155 && b < 100 && u16::from(g) * 100 > u16::from(r) * 105);
+        }
+    }
+    if super::vision::components(mask.clone(), 500)
+        .iter()
+        .any(|c| {
+            let w = c.right - c.left;
+            let h = c.bottom - c.top;
+            (35..=90).contains(&w)
+                && (6..=25).contains(&h)
+                && w >= h * 2
+                && w <= h * 8
+                && c.area * 100 >= w * h * 35
+                && c.area * 100 <= w * h * 80
+                && ready_glyph_matches(&mask, c)
+        })
+    {
+        return true;
+    }
+
     // READY 色块必须伴随技能按钮右侧的白色九宫格，部署地块也有相近黄绿色。
     let mut white = 0;
     for y in (600..670).step_by(2) {
@@ -1274,6 +1319,28 @@ mod tests {
         assert!(!has_new_skill_bar(&[(460, 544)], &[(466, 548)]));
         assert!(!has_new_skill_bar(&[(460, 544)], &[]));
         assert!(has_new_skill_bar(&[(460, 544)], &[(460, 544), (1578, 750)]));
+    }
+
+    #[test]
+    fn ready_button_without_grid_is_located_in_recording() {
+        for (bytes, expected) in [
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/ready-ammo.png").as_slice(),
+                true,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/not-ready.png").as_slice(),
+                false,
+            ),
+        ] {
+            let patch = image::load_from_memory(bytes).unwrap().to_rgba8();
+            let mut data = vec![0; 960 * 540 * 4];
+            for (x, y, p) in patch.enumerate_pixels() {
+                let i = (((y + 200) * 960 + x + 350) * 4) as usize;
+                data[i..i + 4].copy_from_slice(&[p[2], p[1], p[0], 255]);
+            }
+            assert_eq!(ready_visible(&data, 960, 540), expected);
+        }
     }
 
     #[test]
@@ -1420,6 +1487,70 @@ mod tests {
                             "书签 {} 未匹配正确的视频操作：{source}",
                             checkpoint["bookmark"]
                         );
+                    }
+                }
+                let references: serde_json::Value = serde_json::from_str(include_str!(
+                    "../../tests/fixtures/monitor/recording-regressions.json"
+                ))
+                .unwrap();
+                let filename = Path::new(&path).file_name().unwrap().to_str().unwrap();
+                if let Some(reference) = references.get(filename) {
+                    assert_eq!(
+                        segments.len(),
+                        reference["segments"].as_u64().unwrap() as usize
+                    );
+                    let at = |seconds: f64| {
+                        trace
+                            .iter()
+                            .min_by(|a, b| {
+                                (a.source_timestamp_ns / 1e9 - seconds)
+                                    .abs()
+                                    .total_cmp(&(b.source_timestamp_ns / 1e9 - seconds).abs())
+                            })
+                            .unwrap()
+                    };
+                    for interval in reference["clockIntervals"].as_array().unwrap() {
+                        let a = at(interval["sourceSeconds"][0].as_f64().unwrap());
+                        let b = at(interval["sourceSeconds"][1].as_f64().unwrap());
+                        assert!(
+                            b.game_frame
+                                .saturating_sub(a.game_frame)
+                                .abs_diff(interval["gameFrames"].as_u64().unwrap() as u32)
+                                <= 2,
+                            "独立核验的倍速/暂停区间不一致: {interval}"
+                        );
+                    }
+                    if let Some(states) = reference["states"].as_array() {
+                        for state in states {
+                            assert_eq!(
+                                serde_json::to_value(
+                                    at(state["sourceSeconds"].as_f64().unwrap()).battle_state
+                                )
+                                .unwrap(),
+                                state["state"]
+                            );
+                        }
+                    }
+                    if let Some(outside) = reference["outsideSeconds"].as_array() {
+                        for seconds in outside {
+                            assert_eq!(
+                                at(seconds.as_f64().unwrap()).battle_state,
+                                super::super::ObservedBattleState::NotInBattle
+                            );
+                        }
+                    }
+                    if let Some(expected) = reference["events"].as_array() {
+                        assert_eq!(axis.events.len(), expected.len(), "操作不得增加或遗漏");
+                        for (event, expected) in axis.events.iter().zip(expected) {
+                            assert_eq!(serde_json::to_value(event.kind).unwrap(), expected["kind"]);
+                            let seconds = event.source_timestamp_ns.unwrap() / 1e9;
+                            assert!(
+                                (expected["sourceRangeSeconds"][0].as_f64().unwrap()
+                                    ..=expected["sourceRangeSeconds"][1].as_f64().unwrap())
+                                    .contains(&seconds),
+                                "响应来源时间不符: {seconds}, {expected}"
+                            );
+                        }
                     }
                 }
                 ready = true;

@@ -1,0 +1,88 @@
+{
+  "OR-S-2 突袭（维3+逻3）.mp4": {
+    "segments": 1,
+    "events": [
+      {
+        "kind": "deploy",
+        "sourceRangeSeconds": [26.9, 27.1]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [36.7, 36.9]
+      },
+      {
+        "kind": "deploy",
+        "sourceRangeSeconds": [44.2, 44.4]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [56, 56.3]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [81.1, 81.4]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [110.5, 110.8]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [123.1, 123.4]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [142, 142.3]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [162.6, 162.9]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [207.4, 207.8]
+      },
+      {
+        "kind": "skill",
+        "sourceRangeSeconds": [225.9, 226.2]
+      }
+    ],
+    "clockIntervals": [
+      {
+        "sourceSeconds": [37, 37.5],
+        "gameFrames": 30
+      },
+      {
+        "sourceSeconds": [227, 227.5],
+        "gameFrames": 15
+      }
+    ]
+  },
+  "13-11 磨难（死芒3+艾雅法拉3）.mp4": {
+    "segments": 1,
+    "clockIntervals": [],
+    "outsideSeconds": [393],
+    "states": [
+      {
+        "sourceSeconds": 16,
+        "state": "oneXRunning"
+      },
+      {
+        "sourceSeconds": 16.4,
+        "state": "twoXRunning"
+      },
+      {
+        "sourceSeconds": 33,
+        "state": "paused"
+      },
+      {
+        "sourceSeconds": 54,
+        "state": "paused"
+      },
+      {
+        "sourceSeconds": 54.2,
+        "state": "twoXRunning"
+      }
+    ]
+  }
+}
