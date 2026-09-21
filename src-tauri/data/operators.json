@@ -8,6 +8,7 @@
     {
       "id": "char_002_amiya",
       "name": "阿米娅",
+      "tokens": [],
       "avatars": [
         "avatar/char_002_amiya.png",
         "avatar/char_002_amiya_1+.png",
@@ -20,6 +21,9 @@
     {
       "id": "char_003_kalts",
       "name": "凯尔希",
+      "tokens": [
+        "token_10002_kalts_mon3tr"
+      ],
       "avatars": [
         "avatar/char_003_kalts.png",
         "avatar/char_003_kalts_2.png",
@@ -30,6 +34,7 @@
     {
       "id": "char_009_12fce",
       "name": "12F",
+      "tokens": [],
       "avatars": [
         "avatar/char_009_12fce.png"
       ]
@@ -37,6 +42,7 @@
     {
       "id": "char_010_chen",
       "name": "陈",
+      "tokens": [],
       "avatars": [
         "avatar/char_010_chen.png",
         "avatar/char_010_chen_2.png",
@@ -47,6 +53,7 @@
     {
       "id": "char_017_huang",
       "name": "煌",
+      "tokens": [],
       "avatars": [
         "avatar/char_017_huang.png",
         "avatar/char_017_huang_2.png",
@@ -57,6 +64,7 @@
     {
       "id": "char_1011_lava2",
       "name": "炎狱炎熔",
+      "tokens": [],
       "avatars": [
         "avatar/char_1011_lava2.png",
         "avatar/char_1011_lava2_2.png",
@@ -67,6 +75,9 @@
     {
       "id": "char_1012_skadi2",
       "name": "浊心斯卡蒂",
+      "tokens": [
+        "token_10017_skadi2_dedant"
+      ],
       "avatars": [
         "avatar/char_1012_skadi2.png",
         "avatar/char_1012_skadi2_2.png",
@@ -77,6 +88,7 @@
     {
       "id": "char_1013_chen2",
       "name": "假日威龙陈",
+      "tokens": [],
       "avatars": [
         "avatar/char_1013_chen2.png",
         "avatar/char_1013_chen2_2.png",
@@ -87,6 +99,9 @@
     {
       "id": "char_1014_nearl2",
       "name": "耀骑士临光",
+      "tokens": [
+        "token_10019_nearl2_sword"
+      ],
       "avatars": [
         "avatar/char_1014_nearl2.png",
         "avatar/char_1014_nearl2_2.png",
@@ -96,6 +111,7 @@
     {
       "id": "char_1015_aglna2",
       "name": "予愿安洁莉娜",
+      "tokens": [],
       "avatars": [
         "avatar/char_1015_aglna2.png",
         "avatar/char_1015_aglna2_2.png"
@@ -104,6 +120,7 @@
     {
       "id": "char_1016_agoat2",
       "name": "纯烬艾雅法拉",
+      "tokens": [],
       "avatars": [
         "avatar/char_1016_agoat2.png",
         "avatar/char_1016_agoat2_2.png",
@@ -114,6 +131,9 @@
     {
       "id": "char_1019_siege2",
       "name": "维娜·维多利亚",
+      "tokens": [
+        "token_10040_siege2_vlion"
+      ],
       "avatars": [
         "avatar/char_1019_siege2.png",
         "avatar/char_1019_siege2_2.png",
@@ -123,6 +143,7 @@
     {
       "id": "char_101_sora",
       "name": "空",
+      "tokens": [],
       "avatars": [
         "avatar/char_101_sora.png",
         "avatar/char_101_sora_2.png",
@@ -133,6 +154,7 @@
     {
       "id": "char_1020_reed2",
       "name": "焰影苇草",
+      "tokens": [],
       "avatars": [
         "avatar/char_1020_reed2.png",
         "avatar/char_1020_reed2_2.png",
@@ -144,6 +166,7 @@
     {
       "id": "char_1021_kroos2",
       "name": "寒芒克洛丝",
+      "tokens": [],
       "avatars": [
         "avatar/char_1021_kroos2.png",
         "avatar/char_1021_kroos2_2.png",
@@ -154,6 +177,7 @@
     {
       "id": "char_1022_flwr2",
       "name": "撷英调香师",
+      "tokens": [],
       "avatars": [
         "avatar/char_1022_flwr2.png",
         "avatar/char_1022_flwr2_2.png"
@@ -162,6 +186,7 @@
     {
       "id": "char_1023_ghost2",
       "name": "归溟幽灵鲨",
+      "tokens": [],
       "avatars": [
         "avatar/char_1023_ghost2.png",
         "avatar/char_1023_ghost2_2.png",
@@ -171,6 +196,7 @@
     {
       "id": "char_1024_hbisc2",
       "name": "濯尘芙蓉",
+      "tokens": [],
       "avatars": [
         "avatar/char_1024_hbisc2.png",
         "avatar/char_1024_hbisc2_2.png",
@@ -180,6 +206,7 @@
     {
       "id": "char_1026_gvial2",
       "name": "百炼嘉维尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_1026_gvial2.png",
         "avatar/char_1026_gvial2_2.png",
@@ -189,6 +216,7 @@
     {
       "id": "char_1027_greyy2",
       "name": "承曦格雷伊",
+      "tokens": [],
       "avatars": [
         "avatar/char_1027_greyy2.png",
         "avatar/char_1027_greyy2_2.png",
@@ -199,6 +227,7 @@
     {
       "id": "char_1028_texas2",
       "name": "缄默德克萨斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_1028_texas2.png",
         "avatar/char_1028_texas2_2.png",
@@ -209,6 +238,7 @@
     {
       "id": "char_1029_yato2",
       "name": "麒麟R夜刀",
+      "tokens": [],
       "avatars": [
         "avatar/char_1029_yato2.png",
         "avatar/char_1029_yato2_2.png"
@@ -217,6 +247,7 @@
     {
       "id": "char_102_texas",
       "name": "德克萨斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_102_texas.png",
         "avatar/char_102_texas_2.png",
@@ -227,6 +258,7 @@
     {
       "id": "char_1030_noirc2",
       "name": "火龙S黑角",
+      "tokens": [],
       "avatars": [
         "avatar/char_1030_noirc2.png",
         "avatar/char_1030_noirc2_2.png"
@@ -235,6 +267,9 @@
     {
       "id": "char_1031_slent2",
       "name": "淬羽赫默",
+      "tokens": [
+        "token_10029_slent2_protrb"
+      ],
       "avatars": [
         "avatar/char_1031_slent2.png",
         "avatar/char_1031_slent2_2.png",
@@ -244,6 +279,7 @@
     {
       "id": "char_1032_excu2",
       "name": "圣约送葬人",
+      "tokens": [],
       "avatars": [
         "avatar/char_1032_excu2.png",
         "avatar/char_1032_excu2_2.png",
@@ -254,6 +290,7 @@
     {
       "id": "char_1033_swire2",
       "name": "琳琅诗怀雅",
+      "tokens": [],
       "avatars": [
         "avatar/char_1033_swire2.png",
         "avatar/char_1033_swire2_2.png",
@@ -263,6 +300,9 @@
     {
       "id": "char_1034_jesca2",
       "name": "涤火杰西卡",
+      "tokens": [
+        "token_10032_jesca2_jckshd"
+      ],
       "avatars": [
         "avatar/char_1034_jesca2.png",
         "avatar/char_1034_jesca2_2.png",
@@ -272,6 +312,9 @@
     {
       "id": "char_1035_wisdel",
       "name": "维什戴尔",
+      "tokens": [
+        "token_10035_wisdel_wward"
+      ],
       "avatars": [
         "avatar/char_1035_wisdel.png",
         "avatar/char_1035_wisdel_2.png",
@@ -282,6 +325,7 @@
     {
       "id": "char_1036_fang2",
       "name": "历阵锐枪芬",
+      "tokens": [],
       "avatars": [
         "avatar/char_1036_fang2.png",
         "avatar/char_1036_fang2_2.png",
@@ -291,6 +335,7 @@
     {
       "id": "char_1038_whitw2",
       "name": "荒芜拉普兰德",
+      "tokens": [],
       "avatars": [
         "avatar/char_1038_whitw2.png",
         "avatar/char_1038_whitw2_2.png",
@@ -300,6 +345,7 @@
     {
       "id": "char_1039_thorn2",
       "name": "引星棘刺",
+      "tokens": [],
       "avatars": [
         "avatar/char_1039_thorn2.png",
         "avatar/char_1039_thorn2_2.png",
@@ -309,6 +355,7 @@
     {
       "id": "char_103_angel",
       "name": "能天使",
+      "tokens": [],
       "avatars": [
         "avatar/char_103_angel.png",
         "avatar/char_103_angel_2.png",
@@ -320,6 +367,7 @@
     {
       "id": "char_1040_blaze2",
       "name": "烛煌",
+      "tokens": [],
       "avatars": [
         "avatar/char_1040_blaze2.png",
         "avatar/char_1040_blaze2_2.png",
@@ -329,6 +377,9 @@
     {
       "id": "char_1041_angel2",
       "name": "新约能天使",
+      "tokens": [
+        "token_10056_angel2_target"
+      ],
       "avatars": [
         "avatar/char_1041_angel2.png",
         "avatar/char_1041_angel2_2.png",
@@ -338,6 +389,10 @@
     {
       "id": "char_1042_phatm2",
       "name": "酒神",
+      "tokens": [
+        "token_10054_phatm2_encdool",
+        "token_10055_phatm2_mndclv"
+      ],
       "avatars": [
         "avatar/char_1042_phatm2.png",
         "avatar/char_1042_phatm2_2.png"
@@ -346,6 +401,7 @@
     {
       "id": "char_1043_leizi2",
       "name": "司霆惊蛰",
+      "tokens": [],
       "avatars": [
         "avatar/char_1043_leizi2.png",
         "avatar/char_1043_leizi2_2.png",
@@ -355,6 +411,7 @@
     {
       "id": "char_1044_hsgma2",
       "name": "斩业星熊",
+      "tokens": [],
       "avatars": [
         "avatar/char_1044_hsgma2.png",
         "avatar/char_1044_hsgma2_2.png",
@@ -364,6 +421,12 @@
     {
       "id": "char_1045_svash2",
       "name": "凛御银灰",
+      "tokens": [
+        "token_10057_svash2_eagle",
+        "token_10057_svash2_eagle1",
+        "token_10057_svash2_eagle2",
+        "token_10057_svash2_eagle3"
+      ],
       "avatars": [
         "avatar/char_1045_svash2.png",
         "avatar/char_1045_svash2_2.png"
@@ -372,6 +435,9 @@
     {
       "id": "char_1046_sbell2",
       "name": "圣聆初雪",
+      "tokens": [
+        "token_10058_sbell2_icetgt"
+      ],
       "avatars": [
         "avatar/char_1046_sbell2.png",
         "avatar/char_1046_sbell2_2.png",
@@ -381,6 +447,7 @@
     {
       "id": "char_1047_halo2",
       "name": "溯光星源",
+      "tokens": [],
       "avatars": [
         "avatar/char_1047_halo2.png",
         "avatar/char_1047_halo2_2.png"
@@ -389,6 +456,7 @@
     {
       "id": "char_1048_orchd2",
       "name": "焰狐龙梓兰",
+      "tokens": [],
       "avatars": [
         "avatar/char_1048_orchd2.png",
         "avatar/char_1048_orchd2_2.png"
@@ -397,6 +465,7 @@
     {
       "id": "char_1049_catap2",
       "name": "雷狼龙S空爆",
+      "tokens": [],
       "avatars": [
         "avatar/char_1049_catap2.png",
         "avatar/char_1049_catap2_2.png"
@@ -405,6 +474,7 @@
     {
       "id": "char_1050_chen3",
       "name": "赤刃明霄陈",
+      "tokens": [],
       "avatars": [
         "avatar/char_1050_chen3.png",
         "avatar/char_1050_chen3_1.png",
@@ -414,6 +484,7 @@
     {
       "id": "char_1051_headb2",
       "name": "怒潮凛冬",
+      "tokens": [],
       "avatars": [
         "avatar/char_1051_headb2.png",
         "avatar/char_1051_headb2_2.png"
@@ -422,6 +493,9 @@
     {
       "id": "char_1052_kalts2",
       "name": "凯尔希·思衡托",
+      "tokens": [
+        "token_10068_kalts2_mtship"
+      ],
       "avatars": [
         "avatar/char_1052_kalts2.png",
         "avatar/char_1052_kalts2_2.png"
@@ -430,6 +504,7 @@
     {
       "id": "char_106_franka",
       "name": "芙兰卡",
+      "tokens": [],
       "avatars": [
         "avatar/char_106_franka.png",
         "avatar/char_106_franka_2.png",
@@ -439,6 +514,7 @@
     {
       "id": "char_107_liskam",
       "name": "雷蛇",
+      "tokens": [],
       "avatars": [
         "avatar/char_107_liskam.png",
         "avatar/char_107_liskam_2.png",
@@ -449,6 +525,9 @@
     {
       "id": "char_108_silent",
       "name": "赫默",
+      "tokens": [
+        "token_10000_silent_healrb"
+      ],
       "avatars": [
         "avatar/char_108_silent.png",
         "avatar/char_108_silent_2.png",
@@ -459,6 +538,7 @@
     {
       "id": "char_109_fmout",
       "name": "远山",
+      "tokens": [],
       "avatars": [
         "avatar/char_109_fmout.png",
         "avatar/char_109_fmout_2.png",
@@ -468,6 +548,9 @@
     {
       "id": "char_110_deepcl",
       "name": "深海色",
+      "tokens": [
+        "token_10001_deepcl_tentac"
+      ],
       "avatars": [
         "avatar/char_110_deepcl.png",
         "avatar/char_110_deepcl_2.png",
@@ -477,6 +560,7 @@
     {
       "id": "char_112_siege",
       "name": "推进之王",
+      "tokens": [],
       "avatars": [
         "avatar/char_112_siege.png",
         "avatar/char_112_siege_2.png",
@@ -487,6 +571,7 @@
     {
       "id": "char_113_cqbw",
       "name": "W",
+      "tokens": [],
       "avatars": [
         "avatar/char_113_cqbw.png",
         "avatar/char_113_cqbw_2.png",
@@ -496,6 +581,7 @@
     {
       "id": "char_115_headbr",
       "name": "凛冬",
+      "tokens": [],
       "avatars": [
         "avatar/char_115_headbr.png",
         "avatar/char_115_headbr_2.png",
@@ -506,6 +592,7 @@
     {
       "id": "char_117_myrrh",
       "name": "末药",
+      "tokens": [],
       "avatars": [
         "avatar/char_117_myrrh.png",
         "avatar/char_117_myrrh_2.png",
@@ -515,6 +602,7 @@
     {
       "id": "char_118_yuki",
       "name": "白雪",
+      "tokens": [],
       "avatars": [
         "avatar/char_118_yuki.png",
         "avatar/char_118_yuki_2.png",
@@ -524,6 +612,7 @@
     {
       "id": "char_120_hibisc",
       "name": "芙蓉",
+      "tokens": [],
       "avatars": [
         "avatar/char_120_hibisc.png",
         "avatar/char_120_hibisc_nian#1.png"
@@ -532,6 +621,7 @@
     {
       "id": "char_121_lava",
       "name": "炎熔",
+      "tokens": [],
       "avatars": [
         "avatar/char_121_lava.png",
         "avatar/char_121_lava_sale#9.png"
@@ -540,6 +630,7 @@
     {
       "id": "char_122_beagle",
       "name": "米格鲁",
+      "tokens": [],
       "avatars": [
         "avatar/char_122_beagle.png",
         "avatar/char_122_beagle_boc#1.png"
@@ -548,6 +639,7 @@
     {
       "id": "char_123_fang",
       "name": "芬",
+      "tokens": [],
       "avatars": [
         "avatar/char_123_fang.png",
         "avatar/char_123_fang_winter#1.png"
@@ -556,6 +648,7 @@
     {
       "id": "char_124_kroos",
       "name": "克洛丝",
+      "tokens": [],
       "avatars": [
         "avatar/char_124_kroos.png",
         "avatar/char_124_kroos_sale#14.png",
@@ -565,6 +658,7 @@
     {
       "id": "char_126_shotst",
       "name": "流星",
+      "tokens": [],
       "avatars": [
         "avatar/char_126_shotst.png",
         "avatar/char_126_shotst_2.png",
@@ -575,6 +669,7 @@
     {
       "id": "char_127_estell",
       "name": "艾丝黛尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_127_estell.png",
         "avatar/char_127_estell_2.png",
@@ -584,6 +679,7 @@
     {
       "id": "char_128_plosis",
       "name": "白面鸮",
+      "tokens": [],
       "avatars": [
         "avatar/char_128_plosis.png",
         "avatar/char_128_plosis_2.png",
@@ -594,6 +690,7 @@
     {
       "id": "char_129_bluep",
       "name": "蓝毒",
+      "tokens": [],
       "avatars": [
         "avatar/char_129_bluep.png",
         "avatar/char_129_bluep_2.png",
@@ -604,6 +701,7 @@
     {
       "id": "char_130_doberm",
       "name": "杜宾",
+      "tokens": [],
       "avatars": [
         "avatar/char_130_doberm.png",
         "avatar/char_130_doberm_2.png",
@@ -613,6 +711,7 @@
     {
       "id": "char_131_flameb",
       "name": "炎客",
+      "tokens": [],
       "avatars": [
         "avatar/char_131_flameb.png",
         "avatar/char_131_flameb_2.png",
@@ -623,6 +722,7 @@
     {
       "id": "char_133_mm",
       "name": "梅",
+      "tokens": [],
       "avatars": [
         "avatar/char_133_mm.png",
         "avatar/char_133_mm_2.png",
@@ -632,6 +732,7 @@
     {
       "id": "char_134_ifrit",
       "name": "伊芙利特",
+      "tokens": [],
       "avatars": [
         "avatar/char_134_ifrit.png",
         "avatar/char_134_ifrit_2.png",
@@ -643,6 +744,7 @@
     {
       "id": "char_135_halo",
       "name": "星源",
+      "tokens": [],
       "avatars": [
         "avatar/char_135_halo.png",
         "avatar/char_135_halo_2.png",
@@ -652,6 +754,7 @@
     {
       "id": "char_136_hsguma",
       "name": "星熊",
+      "tokens": [],
       "avatars": [
         "avatar/char_136_hsguma.png",
         "avatar/char_136_hsguma_2.png",
@@ -662,6 +765,7 @@
     {
       "id": "char_137_brownb",
       "name": "猎蜂",
+      "tokens": [],
       "avatars": [
         "avatar/char_137_brownb.png",
         "avatar/char_137_brownb_2.png",
@@ -671,6 +775,7 @@
     {
       "id": "char_140_whitew",
       "name": "拉普兰德",
+      "tokens": [],
       "avatars": [
         "avatar/char_140_whitew.png",
         "avatar/char_140_whitew_2.png",
@@ -680,6 +785,7 @@
     {
       "id": "char_141_nights",
       "name": "夜烟",
+      "tokens": [],
       "avatars": [
         "avatar/char_141_nights.png",
         "avatar/char_141_nights_2.png",
@@ -689,6 +795,7 @@
     {
       "id": "char_143_ghost",
       "name": "幽灵鲨",
+      "tokens": [],
       "avatars": [
         "avatar/char_143_ghost.png",
         "avatar/char_143_ghost_2.png",
@@ -698,6 +805,7 @@
     {
       "id": "char_144_red",
       "name": "红",
+      "tokens": [],
       "avatars": [
         "avatar/char_144_red.png",
         "avatar/char_144_red_2.png",
@@ -707,6 +815,7 @@
     {
       "id": "char_145_prove",
       "name": "普罗旺斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_145_prove.png",
         "avatar/char_145_prove_2.png",
@@ -717,6 +826,7 @@
     {
       "id": "char_147_shining",
       "name": "闪灵",
+      "tokens": [],
       "avatars": [
         "avatar/char_147_shining.png",
         "avatar/char_147_shining_2.png",
@@ -726,6 +836,7 @@
     {
       "id": "char_148_nearl",
       "name": "临光",
+      "tokens": [],
       "avatars": [
         "avatar/char_148_nearl.png",
         "avatar/char_148_nearl_2.png",
@@ -735,6 +846,7 @@
     {
       "id": "char_149_scave",
       "name": "清道夫",
+      "tokens": [],
       "avatars": [
         "avatar/char_149_scave.png",
         "avatar/char_149_scave_2.png",
@@ -744,6 +856,7 @@
     {
       "id": "char_1502_crosly",
       "name": "弑君者",
+      "tokens": [],
       "avatars": [
         "avatar/char_1502_crosly.png",
         "avatar/char_1502_crosly_2.png",
@@ -753,6 +866,7 @@
     {
       "id": "char_150_snakek",
       "name": "蛇屠箱",
+      "tokens": [],
       "avatars": [
         "avatar/char_150_snakek.png",
         "avatar/char_150_snakek_2.png",
@@ -763,6 +877,7 @@
     {
       "id": "char_151_myrtle",
       "name": "桃金娘",
+      "tokens": [],
       "avatars": [
         "avatar/char_151_myrtle.png",
         "avatar/char_151_myrtle_2.png",
@@ -774,6 +889,7 @@
     {
       "id": "char_154_morgan",
       "name": "摩根",
+      "tokens": [],
       "avatars": [
         "avatar/char_154_morgan.png",
         "avatar/char_154_morgan_2.png",
@@ -783,6 +899,7 @@
     {
       "id": "char_155_tiger",
       "name": "因陀罗",
+      "tokens": [],
       "avatars": [
         "avatar/char_155_tiger.png",
         "avatar/char_155_tiger_2.png",
@@ -792,6 +909,7 @@
     {
       "id": "char_157_dagda",
       "name": "达格达",
+      "tokens": [],
       "avatars": [
         "avatar/char_157_dagda.png",
         "avatar/char_157_dagda_2.png"
@@ -800,6 +918,7 @@
     {
       "id": "char_158_milu",
       "name": "守林人",
+      "tokens": [],
       "avatars": [
         "avatar/char_158_milu.png",
         "avatar/char_158_milu_2.png",
@@ -810,6 +929,7 @@
     {
       "id": "char_159_peacok",
       "name": "断罪者",
+      "tokens": [],
       "avatars": [
         "avatar/char_159_peacok.png",
         "avatar/char_159_peacok_2.png",
@@ -819,6 +939,7 @@
     {
       "id": "char_163_hpsts",
       "name": "火神",
+      "tokens": [],
       "avatars": [
         "avatar/char_163_hpsts.png",
         "avatar/char_163_hpsts_2.png",
@@ -828,6 +949,7 @@
     {
       "id": "char_164_nightm",
       "name": "夜魔",
+      "tokens": [],
       "avatars": [
         "avatar/char_164_nightm.png",
         "avatar/char_164_nightm_2.png",
@@ -838,6 +960,7 @@
     {
       "id": "char_166_skfire",
       "name": "天火",
+      "tokens": [],
       "avatars": [
         "avatar/char_166_skfire.png",
         "avatar/char_166_skfire_2.png",
@@ -847,6 +970,7 @@
     {
       "id": "char_171_bldsk",
       "name": "华法琳",
+      "tokens": [],
       "avatars": [
         "avatar/char_171_bldsk.png",
         "avatar/char_171_bldsk_2.png",
@@ -857,6 +981,7 @@
     {
       "id": "char_172_svrash",
       "name": "银灰",
+      "tokens": [],
       "avatars": [
         "avatar/char_172_svrash.png",
         "avatar/char_172_svrash_2.png",
@@ -868,6 +993,7 @@
     {
       "id": "char_173_slchan",
       "name": "崖心",
+      "tokens": [],
       "avatars": [
         "avatar/char_173_slchan.png",
         "avatar/char_173_slchan_2.png",
@@ -878,6 +1004,7 @@
     {
       "id": "char_174_slbell",
       "name": "初雪",
+      "tokens": [],
       "avatars": [
         "avatar/char_174_slbell.png",
         "avatar/char_174_slbell_2.png",
@@ -887,6 +1014,9 @@
     {
       "id": "char_179_cgbird",
       "name": "夜莺",
+      "tokens": [
+        "token_10003_cgbird_bird"
+      ],
       "avatars": [
         "avatar/char_179_cgbird.png",
         "avatar/char_179_cgbird_2.png",
@@ -897,6 +1027,7 @@
     {
       "id": "char_180_amgoat",
       "name": "艾雅法拉",
+      "tokens": [],
       "avatars": [
         "avatar/char_180_amgoat.png",
         "avatar/char_180_amgoat_2.png",
@@ -907,6 +1038,7 @@
     {
       "id": "char_181_flower",
       "name": "调香师",
+      "tokens": [],
       "avatars": [
         "avatar/char_181_flower.png",
         "avatar/char_181_flower_2.png",
@@ -917,6 +1049,7 @@
     {
       "id": "char_183_skgoat",
       "name": "地灵",
+      "tokens": [],
       "avatars": [
         "avatar/char_183_skgoat.png",
         "avatar/char_183_skgoat_2.png",
@@ -926,6 +1059,7 @@
     {
       "id": "char_185_frncat",
       "name": "慕斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_185_frncat.png",
         "avatar/char_185_frncat_2.png",
@@ -936,6 +1070,7 @@
     {
       "id": "char_187_ccheal",
       "name": "嘉维尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_187_ccheal.png",
         "avatar/char_187_ccheal_2.png",
@@ -945,6 +1080,7 @@
     {
       "id": "char_188_helage",
       "name": "赫拉格",
+      "tokens": [],
       "avatars": [
         "avatar/char_188_helage.png",
         "avatar/char_188_helage_2.png",
@@ -954,6 +1090,7 @@
     {
       "id": "char_190_clour",
       "name": "红云",
+      "tokens": [],
       "avatars": [
         "avatar/char_190_clour.png",
         "avatar/char_190_clour_2.png",
@@ -963,6 +1100,7 @@
     {
       "id": "char_192_falco",
       "name": "翎羽",
+      "tokens": [],
       "avatars": [
         "avatar/char_192_falco.png",
         "avatar/char_192_falco_marthe#6.png"
@@ -971,6 +1109,7 @@
     {
       "id": "char_193_frostl",
       "name": "霜叶",
+      "tokens": [],
       "avatars": [
         "avatar/char_193_frostl.png",
         "avatar/char_193_frostl_2.png",
@@ -980,6 +1119,7 @@
     {
       "id": "char_194_leto",
       "name": "烈夏",
+      "tokens": [],
       "avatars": [
         "avatar/char_194_leto.png",
         "avatar/char_194_leto_2.png"
@@ -988,6 +1128,7 @@
     {
       "id": "char_195_glassb",
       "name": "真理",
+      "tokens": [],
       "avatars": [
         "avatar/char_195_glassb.png",
         "avatar/char_195_glassb_2.png",
@@ -997,6 +1138,7 @@
     {
       "id": "char_196_sunbr",
       "name": "古米",
+      "tokens": [],
       "avatars": [
         "avatar/char_196_sunbr.png",
         "avatar/char_196_sunbr_2.png",
@@ -1006,6 +1148,7 @@
     {
       "id": "char_197_poca",
       "name": "早露",
+      "tokens": [],
       "avatars": [
         "avatar/char_197_poca.png",
         "avatar/char_197_poca_2.png",
@@ -1016,6 +1159,7 @@
     {
       "id": "char_198_blackd",
       "name": "讯使",
+      "tokens": [],
       "avatars": [
         "avatar/char_198_blackd.png",
         "avatar/char_198_blackd_2.png",
@@ -1026,6 +1170,7 @@
     {
       "id": "char_199_yak",
       "name": "角峰",
+      "tokens": [],
       "avatars": [
         "avatar/char_199_yak.png",
         "avatar/char_199_yak_2.png",
@@ -1035,6 +1180,7 @@
     {
       "id": "char_2012_typhon",
       "name": "提丰",
+      "tokens": [],
       "avatars": [
         "avatar/char_2012_typhon.png",
         "avatar/char_2012_typhon_2.png",
@@ -1045,6 +1191,7 @@
     {
       "id": "char_2013_cerber",
       "name": "刻俄柏",
+      "tokens": [],
       "avatars": [
         "avatar/char_2013_cerber.png",
         "avatar/char_2013_cerber_2.png",
@@ -1055,6 +1202,7 @@
     {
       "id": "char_2014_nian",
       "name": "年",
+      "tokens": [],
       "avatars": [
         "avatar/char_2014_nian.png",
         "avatar/char_2014_nian_2.png",
@@ -1065,6 +1213,9 @@
     {
       "id": "char_2015_dusk",
       "name": "夕",
+      "tokens": [
+        "token_10015_dusk_drgn"
+      ],
       "avatars": [
         "avatar/char_2015_dusk.png",
         "avatar/char_2015_dusk_2.png",
@@ -1075,6 +1226,7 @@
     {
       "id": "char_201_moeshd",
       "name": "可颂",
+      "tokens": [],
       "avatars": [
         "avatar/char_201_moeshd.png",
         "avatar/char_201_moeshd_2.png",
@@ -1085,6 +1237,11 @@
     {
       "id": "char_2023_ling",
       "name": "令",
+      "tokens": [
+        "token_10020_ling_soul1",
+        "token_10020_ling_soul2",
+        "token_10020_ling_soul3"
+      ],
       "avatars": [
         "avatar/char_2023_ling.png",
         "avatar/char_2023_ling_2.png",
@@ -1096,6 +1253,7 @@
     {
       "id": "char_2024_chyue",
       "name": "重岳",
+      "tokens": [],
       "avatars": [
         "avatar/char_2024_chyue.png",
         "avatar/char_2024_chyue_2.png",
@@ -1106,6 +1264,7 @@
     {
       "id": "char_2025_shu",
       "name": "黍",
+      "tokens": [],
       "avatars": [
         "avatar/char_2025_shu.png",
         "avatar/char_2025_shu_2.png",
@@ -1115,6 +1274,7 @@
     {
       "id": "char_2026_yu",
       "name": "余",
+      "tokens": [],
       "avatars": [
         "avatar/char_2026_yu.png",
         "avatar/char_2026_yu_2.png",
@@ -1124,6 +1284,9 @@
     {
       "id": "char_2027_wang",
       "name": "望",
+      "tokens": [
+        "token_10064_wang_stone1"
+      ],
       "avatars": [
         "avatar/char_2027_wang.png",
         "avatar/char_2027_wang_1.png",
@@ -1133,6 +1296,7 @@
     {
       "id": "char_202_demkni",
       "name": "塞雷娅",
+      "tokens": [],
       "avatars": [
         "avatar/char_202_demkni.png",
         "avatar/char_202_demkni_2.png",
@@ -1144,6 +1308,7 @@
     {
       "id": "char_204_platnm",
       "name": "白金",
+      "tokens": [],
       "avatars": [
         "avatar/char_204_platnm.png",
         "avatar/char_204_platnm_2.png",
@@ -1153,6 +1318,7 @@
     {
       "id": "char_206_gnosis",
       "name": "灵知",
+      "tokens": [],
       "avatars": [
         "avatar/char_206_gnosis.png",
         "avatar/char_206_gnosis_2.png",
@@ -1162,6 +1328,7 @@
     {
       "id": "char_208_melan",
       "name": "玫兰莎",
+      "tokens": [],
       "avatars": [
         "avatar/char_208_melan.png",
         "avatar/char_208_melan_epoque#1.png"
@@ -1170,6 +1337,7 @@
     {
       "id": "char_209_ardign",
       "name": "卡缇",
+      "tokens": [],
       "avatars": [
         "avatar/char_209_ardign.png",
         "avatar/char_209_ardign_epoque#26.png",
@@ -1179,6 +1347,7 @@
     {
       "id": "char_210_stward",
       "name": "史都华德",
+      "tokens": [],
       "avatars": [
         "avatar/char_210_stward.png",
         "avatar/char_210_stward_sale#6.png"
@@ -1187,6 +1356,7 @@
     {
       "id": "char_211_adnach",
       "name": "安德切尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_211_adnach.png",
         "avatar/char_211_adnach_sale#5.png"
@@ -1195,6 +1365,7 @@
     {
       "id": "char_212_ansel",
       "name": "安赛尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_212_ansel.png",
         "avatar/char_212_ansel_epoque#29.png",
@@ -1204,6 +1375,7 @@
     {
       "id": "char_213_mostma",
       "name": "莫斯提马",
+      "tokens": [],
       "avatars": [
         "avatar/char_213_mostma.png",
         "avatar/char_213_mostma_2.png",
@@ -1214,6 +1386,7 @@
     {
       "id": "char_214_kafka",
       "name": "卡夫卡",
+      "tokens": [],
       "avatars": [
         "avatar/char_214_kafka.png",
         "avatar/char_214_kafka_2.png",
@@ -1223,6 +1396,7 @@
     {
       "id": "char_215_mantic",
       "name": "狮蝎",
+      "tokens": [],
       "avatars": [
         "avatar/char_215_mantic.png",
         "avatar/char_215_mantic_2.png",
@@ -1233,6 +1407,7 @@
     {
       "id": "char_218_cuttle",
       "name": "安哲拉",
+      "tokens": [],
       "avatars": [
         "avatar/char_218_cuttle.png",
         "avatar/char_218_cuttle_2.png",
@@ -1242,6 +1417,7 @@
     {
       "id": "char_219_meteo",
       "name": "陨星",
+      "tokens": [],
       "avatars": [
         "avatar/char_219_meteo.png",
         "avatar/char_219_meteo_2.png",
@@ -1252,6 +1428,7 @@
     {
       "id": "char_220_grani",
       "name": "格拉尼",
+      "tokens": [],
       "avatars": [
         "avatar/char_220_grani.png",
         "avatar/char_220_grani_2.png",
@@ -1261,6 +1438,7 @@
     {
       "id": "char_222_bpipe",
       "name": "风笛",
+      "tokens": [],
       "avatars": [
         "avatar/char_222_bpipe.png",
         "avatar/char_222_bpipe_2.png",
@@ -1272,6 +1450,7 @@
     {
       "id": "char_225_haak",
       "name": "阿",
+      "tokens": [],
       "avatars": [
         "avatar/char_225_haak.png",
         "avatar/char_225_haak_2.png",
@@ -1282,6 +1461,7 @@
     {
       "id": "char_226_hmau",
       "name": "吽",
+      "tokens": [],
       "avatars": [
         "avatar/char_226_hmau.png",
         "avatar/char_226_hmau_2.png",
@@ -1291,6 +1471,7 @@
     {
       "id": "char_230_savage",
       "name": "暴行",
+      "tokens": [],
       "avatars": [
         "avatar/char_230_savage.png",
         "avatar/char_230_savage_2.png",
@@ -1302,6 +1483,7 @@
     {
       "id": "char_235_jesica",
       "name": "杰西卡",
+      "tokens": [],
       "avatars": [
         "avatar/char_235_jesica.png",
         "avatar/char_235_jesica_2.png",
@@ -1313,6 +1495,7 @@
     {
       "id": "char_236_rope",
       "name": "暗索",
+      "tokens": [],
       "avatars": [
         "avatar/char_236_rope.png",
         "avatar/char_236_rope_2.png",
@@ -1323,6 +1506,7 @@
     {
       "id": "char_237_gravel",
       "name": "砾",
+      "tokens": [],
       "avatars": [
         "avatar/char_237_gravel.png",
         "avatar/char_237_gravel_2.png",
@@ -1332,6 +1516,7 @@
     {
       "id": "char_240_wyvern",
       "name": "香草",
+      "tokens": [],
       "avatars": [
         "avatar/char_240_wyvern.png",
         "avatar/char_240_wyvern_game#4.png"
@@ -1340,6 +1525,7 @@
     {
       "id": "char_241_panda",
       "name": "食铁兽",
+      "tokens": [],
       "avatars": [
         "avatar/char_241_panda.png",
         "avatar/char_241_panda_2.png",
@@ -1350,6 +1536,9 @@
     {
       "id": "char_242_otter",
       "name": "梅尔",
+      "tokens": [
+        "token_10004_otter_motter"
+      ],
       "avatars": [
         "avatar/char_242_otter.png",
         "avatar/char_242_otter_2.png",
@@ -1359,6 +1548,7 @@
     {
       "id": "char_243_waaifu",
       "name": "槐琥",
+      "tokens": [],
       "avatars": [
         "avatar/char_243_waaifu.png",
         "avatar/char_243_waaifu_2.png",
@@ -1368,6 +1558,7 @@
     {
       "id": "char_245_cello",
       "name": "塑心",
+      "tokens": [],
       "avatars": [
         "avatar/char_245_cello.png",
         "avatar/char_245_cello_2.png",
@@ -1377,6 +1568,11 @@
     {
       "id": "char_248_mgllan",
       "name": "麦哲伦",
+      "tokens": [
+        "token_10005_mgllan_drone1",
+        "token_10005_mgllan_drone2",
+        "token_10005_mgllan_drone3"
+      ],
       "avatars": [
         "avatar/char_248_mgllan.png",
         "avatar/char_248_mgllan_2.png",
@@ -1386,6 +1582,9 @@
     {
       "id": "char_249_mlyss",
       "name": "缪尔赛思",
+      "tokens": [
+        "token_10030_mlyss_wtrman"
+      ],
       "avatars": [
         "avatar/char_249_mlyss.png",
         "avatar/char_249_mlyss_2.png",
@@ -1396,6 +1595,9 @@
     {
       "id": "char_250_phatom",
       "name": "傀影",
+      "tokens": [
+        "token_10007_phatom_twin"
+      ],
       "avatars": [
         "avatar/char_250_phatom.png",
         "avatar/char_250_phatom_2.png",
@@ -1406,6 +1608,7 @@
     {
       "id": "char_252_bibeak",
       "name": "柏喙",
+      "tokens": [],
       "avatars": [
         "avatar/char_252_bibeak.png",
         "avatar/char_252_bibeak_2.png",
@@ -1415,6 +1618,7 @@
     {
       "id": "char_253_greyy",
       "name": "格雷伊",
+      "tokens": [],
       "avatars": [
         "avatar/char_253_greyy.png",
         "avatar/char_253_greyy_2.png",
@@ -1425,6 +1629,9 @@
     {
       "id": "char_254_vodfox",
       "name": "巫恋",
+      "tokens": [
+        "token_10006_vodfox_doll"
+      ],
       "avatars": [
         "avatar/char_254_vodfox.png",
         "avatar/char_254_vodfox_2.png",
@@ -1435,6 +1642,7 @@
     {
       "id": "char_258_podego",
       "name": "波登可",
+      "tokens": [],
       "avatars": [
         "avatar/char_258_podego.png",
         "avatar/char_258_podego_2.png",
@@ -1444,6 +1652,7 @@
     {
       "id": "char_260_durnar",
       "name": "坚雷",
+      "tokens": [],
       "avatars": [
         "avatar/char_260_durnar.png",
         "avatar/char_260_durnar_2.png",
@@ -1453,6 +1662,7 @@
     {
       "id": "char_261_sddrag",
       "name": "苇草",
+      "tokens": [],
       "avatars": [
         "avatar/char_261_sddrag.png",
         "avatar/char_261_sddrag_2.png",
@@ -1462,6 +1672,7 @@
     {
       "id": "char_263_skadi",
       "name": "斯卡蒂",
+      "tokens": [],
       "avatars": [
         "avatar/char_263_skadi.png",
         "avatar/char_263_skadi_2.png",
@@ -1472,6 +1683,7 @@
     {
       "id": "char_264_f12yin",
       "name": "山",
+      "tokens": [],
       "avatars": [
         "avatar/char_264_f12yin.png",
         "avatar/char_264_f12yin_2.png",
@@ -1483,6 +1695,7 @@
     {
       "id": "char_265_sophia",
       "name": "鞭刃",
+      "tokens": [],
       "avatars": [
         "avatar/char_265_sophia.png",
         "avatar/char_265_sophia_2.png",
@@ -1492,6 +1705,7 @@
     {
       "id": "char_271_spikes",
       "name": "芳汀",
+      "tokens": [],
       "avatars": [
         "avatar/char_271_spikes.png",
         "avatar/char_271_spikes_2.png",
@@ -1502,6 +1716,7 @@
     {
       "id": "char_272_strong",
       "name": "孑",
+      "tokens": [],
       "avatars": [
         "avatar/char_272_strong.png",
         "avatar/char_272_strong_2.png",
@@ -1511,6 +1726,7 @@
     {
       "id": "char_274_astesi",
       "name": "星极",
+      "tokens": [],
       "avatars": [
         "avatar/char_274_astesi.png",
         "avatar/char_274_astesi_2.png",
@@ -1522,6 +1738,7 @@
     {
       "id": "char_275_breeze",
       "name": "微风",
+      "tokens": [],
       "avatars": [
         "avatar/char_275_breeze.png",
         "avatar/char_275_breeze_2.png",
@@ -1531,6 +1748,7 @@
     {
       "id": "char_277_sqrrel",
       "name": "阿消",
+      "tokens": [],
       "avatars": [
         "avatar/char_277_sqrrel.png",
         "avatar/char_277_sqrrel_2.png",
@@ -1540,6 +1758,7 @@
     {
       "id": "char_278_orchid",
       "name": "梓兰",
+      "tokens": [],
       "avatars": [
         "avatar/char_278_orchid.png",
         "avatar/char_278_orchid_boc#6.png"
@@ -1548,6 +1767,7 @@
     {
       "id": "char_279_excu",
       "name": "送葬人",
+      "tokens": [],
       "avatars": [
         "avatar/char_279_excu.png",
         "avatar/char_279_excu_2.png",
@@ -1557,6 +1777,7 @@
     {
       "id": "char_281_popka",
       "name": "泡普卡",
+      "tokens": [],
       "avatars": [
         "avatar/char_281_popka.png",
         "avatar/char_281_popka_sale#17.png",
@@ -1567,6 +1788,7 @@
     {
       "id": "char_282_catap",
       "name": "空爆",
+      "tokens": [],
       "avatars": [
         "avatar/char_282_catap.png",
         "avatar/char_282_catap_summer#17.png"
@@ -1575,6 +1797,7 @@
     {
       "id": "char_283_midn",
       "name": "月见夜",
+      "tokens": [],
       "avatars": [
         "avatar/char_283_midn.png",
         "avatar/char_283_midn_boc#1.png"
@@ -1583,6 +1806,7 @@
     {
       "id": "char_284_spot",
       "name": "斑点",
+      "tokens": [],
       "avatars": [
         "avatar/char_284_spot.png",
         "avatar/char_284_spot_boc#3.png"
@@ -1591,6 +1815,7 @@
     {
       "id": "char_285_medic2",
       "name": "Lancet-2",
+      "tokens": [],
       "avatars": [
         "avatar/char_285_medic2.png",
         "avatar/char_285_medic2_boc#4.png"
@@ -1599,6 +1824,7 @@
     {
       "id": "char_286_cast3",
       "name": "Castle-3",
+      "tokens": [],
       "avatars": [
         "avatar/char_286_cast3.png",
         "avatar/char_286_cast3_summer#1.png"
@@ -1607,6 +1833,7 @@
     {
       "id": "char_289_gyuki",
       "name": "缠丸",
+      "tokens": [],
       "avatars": [
         "avatar/char_289_gyuki.png",
         "avatar/char_289_gyuki_2.png",
@@ -1616,6 +1843,7 @@
     {
       "id": "char_290_vigna",
       "name": "红豆",
+      "tokens": [],
       "avatars": [
         "avatar/char_290_vigna.png",
         "avatar/char_290_vigna_2.png",
@@ -1626,6 +1854,7 @@
     {
       "id": "char_291_aglina",
       "name": "安洁莉娜",
+      "tokens": [],
       "avatars": [
         "avatar/char_291_aglina.png",
         "avatar/char_291_aglina_2.png",
@@ -1636,6 +1865,7 @@
     {
       "id": "char_293_thorns",
       "name": "棘刺",
+      "tokens": [],
       "avatars": [
         "avatar/char_293_thorns.png",
         "avatar/char_293_thorns_2.png",
@@ -1646,6 +1876,7 @@
     {
       "id": "char_294_ayer",
       "name": "断崖",
+      "tokens": [],
       "avatars": [
         "avatar/char_294_ayer.png",
         "avatar/char_294_ayer_2.png",
@@ -1655,6 +1886,7 @@
     {
       "id": "char_297_hamoni",
       "name": "和弦",
+      "tokens": [],
       "avatars": [
         "avatar/char_297_hamoni.png",
         "avatar/char_297_hamoni_2.png",
@@ -1665,6 +1897,7 @@
     {
       "id": "char_298_susuro",
       "name": "苏苏洛",
+      "tokens": [],
       "avatars": [
         "avatar/char_298_susuro.png",
         "avatar/char_298_susuro_2.png",
@@ -1675,6 +1908,7 @@
     {
       "id": "char_300_phenxi",
       "name": "菲亚梅塔",
+      "tokens": [],
       "avatars": [
         "avatar/char_300_phenxi.png",
         "avatar/char_300_phenxi_2.png",
@@ -1685,6 +1919,7 @@
     {
       "id": "char_301_cutter",
       "name": "刻刀",
+      "tokens": [],
       "avatars": [
         "avatar/char_301_cutter.png",
         "avatar/char_301_cutter_2.png",
@@ -1694,6 +1929,7 @@
     {
       "id": "char_302_glaze",
       "name": "安比尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_302_glaze.png",
         "avatar/char_302_glaze_2.png",
@@ -1703,6 +1939,7 @@
     {
       "id": "char_304_zebra",
       "name": "暴雨",
+      "tokens": [],
       "avatars": [
         "avatar/char_304_zebra.png",
         "avatar/char_304_zebra_2.png",
@@ -1712,6 +1949,7 @@
     {
       "id": "char_306_leizi",
       "name": "惊蛰",
+      "tokens": [],
       "avatars": [
         "avatar/char_306_leizi.png",
         "avatar/char_306_leizi_2.png",
@@ -1721,6 +1959,7 @@
     {
       "id": "char_308_swire",
       "name": "诗怀雅",
+      "tokens": [],
       "avatars": [
         "avatar/char_308_swire.png",
         "avatar/char_308_swire_2.png",
@@ -1730,6 +1969,7 @@
     {
       "id": "char_311_mudrok",
       "name": "泥岩",
+      "tokens": [],
       "avatars": [
         "avatar/char_311_mudrok.png",
         "avatar/char_311_mudrok_2.png",
@@ -1741,6 +1981,7 @@
     {
       "id": "char_322_lmlee",
       "name": "老鲤",
+      "tokens": [],
       "avatars": [
         "avatar/char_322_lmlee.png",
         "avatar/char_322_lmlee_2.png",
@@ -1752,6 +1993,7 @@
     {
       "id": "char_325_bison",
       "name": "拜松",
+      "tokens": [],
       "avatars": [
         "avatar/char_325_bison.png",
         "avatar/char_325_bison_2.png",
@@ -1761,6 +2003,7 @@
     {
       "id": "char_326_glacus",
       "name": "格劳克斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_326_glacus.png",
         "avatar/char_326_glacus_2.png",
@@ -1770,6 +2013,7 @@
     {
       "id": "char_328_cammou",
       "name": "卡达",
+      "tokens": [],
       "avatars": [
         "avatar/char_328_cammou.png",
         "avatar/char_328_cammou_2.png",
@@ -1780,6 +2024,7 @@
     {
       "id": "char_332_archet",
       "name": "空弦",
+      "tokens": [],
       "avatars": [
         "avatar/char_332_archet.png",
         "avatar/char_332_archet_2.png",
@@ -1790,6 +2035,7 @@
     {
       "id": "char_333_sidero",
       "name": "铸铁",
+      "tokens": [],
       "avatars": [
         "avatar/char_333_sidero.png",
         "avatar/char_333_sidero_2.png",
@@ -1799,6 +2045,9 @@
     {
       "id": "char_336_folivo",
       "name": "稀音",
+      "tokens": [
+        "token_10010_folivo_car"
+      ],
       "avatars": [
         "avatar/char_336_folivo.png",
         "avatar/char_336_folivo_2.png",
@@ -1809,6 +2058,7 @@
     {
       "id": "char_337_utage",
       "name": "宴",
+      "tokens": [],
       "avatars": [
         "avatar/char_337_utage.png",
         "avatar/char_337_utage_2.png",
@@ -1819,6 +2069,7 @@
     {
       "id": "char_338_iris",
       "name": "爱丽丝",
+      "tokens": [],
       "avatars": [
         "avatar/char_338_iris.png",
         "avatar/char_338_iris_2.png",
@@ -1828,6 +2079,7 @@
     {
       "id": "char_340_shwaz",
       "name": "黑",
+      "tokens": [],
       "avatars": [
         "avatar/char_340_shwaz.png",
         "avatar/char_340_shwaz_2.png",
@@ -1838,6 +2090,7 @@
     {
       "id": "char_341_sntlla",
       "name": "寒檀",
+      "tokens": [],
       "avatars": [
         "avatar/char_341_sntlla.png",
         "avatar/char_341_sntlla_2.png",
@@ -1847,6 +2100,7 @@
     {
       "id": "char_343_tknogi",
       "name": "月禾",
+      "tokens": [],
       "avatars": [
         "avatar/char_343_tknogi.png",
         "avatar/char_343_tknogi_2.png",
@@ -1857,6 +2111,9 @@
     {
       "id": "char_344_beewax",
       "name": "蜜蜡",
+      "tokens": [
+        "token_10011_beewax_oblisk"
+      ],
       "avatars": [
         "avatar/char_344_beewax.png",
         "avatar/char_344_beewax_2.png",
@@ -1867,6 +2124,7 @@
     {
       "id": "char_345_folnic",
       "name": "亚叶",
+      "tokens": [],
       "avatars": [
         "avatar/char_345_folnic.png",
         "avatar/char_345_folnic_2.png",
@@ -1876,6 +2134,7 @@
     {
       "id": "char_346_aosta",
       "name": "奥斯塔",
+      "tokens": [],
       "avatars": [
         "avatar/char_346_aosta.png",
         "avatar/char_346_aosta_2.png",
@@ -1885,6 +2144,7 @@
     {
       "id": "char_347_jaksel",
       "name": "杰克",
+      "tokens": [],
       "avatars": [
         "avatar/char_347_jaksel.png",
         "avatar/char_347_jaksel_2.png",
@@ -1894,6 +2154,7 @@
     {
       "id": "char_348_ceylon",
       "name": "锡兰",
+      "tokens": [],
       "avatars": [
         "avatar/char_348_ceylon.png",
         "avatar/char_348_ceylon_2.png",
@@ -1903,6 +2164,7 @@
     {
       "id": "char_349_chiave",
       "name": "贾维",
+      "tokens": [],
       "avatars": [
         "avatar/char_349_chiave.png",
         "avatar/char_349_chiave_2.png",
@@ -1912,6 +2174,7 @@
     {
       "id": "char_350_surtr",
       "name": "史尔特尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_350_surtr.png",
         "avatar/char_350_surtr_2.png",
@@ -1923,6 +2186,7 @@
     {
       "id": "char_355_ethan",
       "name": "伊桑",
+      "tokens": [],
       "avatars": [
         "avatar/char_355_ethan.png",
         "avatar/char_355_ethan_2.png",
@@ -1932,6 +2196,7 @@
     {
       "id": "char_356_broca",
       "name": "布洛卡",
+      "tokens": [],
       "avatars": [
         "avatar/char_356_broca.png",
         "avatar/char_356_broca_2.png",
@@ -1941,6 +2206,7 @@
     {
       "id": "char_358_lisa",
       "name": "铃兰",
+      "tokens": [],
       "avatars": [
         "avatar/char_358_lisa.png",
         "avatar/char_358_lisa_2.png",
@@ -1952,6 +2218,7 @@
     {
       "id": "char_362_saga",
       "name": "嵯峨",
+      "tokens": [],
       "avatars": [
         "avatar/char_362_saga.png",
         "avatar/char_362_saga_2.png",
@@ -1961,6 +2228,7 @@
     {
       "id": "char_363_toddi",
       "name": "熔泉",
+      "tokens": [],
       "avatars": [
         "avatar/char_363_toddi.png",
         "avatar/char_363_toddi_2.png"
@@ -1969,6 +2237,7 @@
     {
       "id": "char_365_aprl",
       "name": "四月",
+      "tokens": [],
       "avatars": [
         "avatar/char_365_aprl.png",
         "avatar/char_365_aprl_2.png",
@@ -1978,6 +2247,7 @@
     {
       "id": "char_366_acdrop",
       "name": "酸糖",
+      "tokens": [],
       "avatars": [
         "avatar/char_366_acdrop.png",
         "avatar/char_366_acdrop_2.png",
@@ -1988,6 +2258,7 @@
     {
       "id": "char_367_swllow",
       "name": "灰喉",
+      "tokens": [],
       "avatars": [
         "avatar/char_367_swllow.png",
         "avatar/char_367_swllow_2.png",
@@ -1997,6 +2268,7 @@
     {
       "id": "char_369_bena",
       "name": "贝娜",
+      "tokens": [],
       "avatars": [
         "avatar/char_369_bena.png",
         "avatar/char_369_bena_2.png",
@@ -2006,6 +2278,7 @@
     {
       "id": "char_373_lionhd",
       "name": "莱恩哈特",
+      "tokens": [],
       "avatars": [
         "avatar/char_373_lionhd.png",
         "avatar/char_373_lionhd_2.png",
@@ -2016,6 +2289,7 @@
     {
       "id": "char_376_therex",
       "name": "THRM-EX",
+      "tokens": [],
       "avatars": [
         "avatar/char_376_therex.png",
         "avatar/char_376_therex_marthe#7.png"
@@ -2024,6 +2298,7 @@
     {
       "id": "char_377_gdglow",
       "name": "澄闪",
+      "tokens": [],
       "avatars": [
         "avatar/char_377_gdglow.png",
         "avatar/char_377_gdglow_2.png",
@@ -2035,6 +2310,7 @@
     {
       "id": "char_378_asbest",
       "name": "石棉",
+      "tokens": [],
       "avatars": [
         "avatar/char_378_asbest.png",
         "avatar/char_378_asbest_2.png",
@@ -2044,6 +2320,7 @@
     {
       "id": "char_379_sesa",
       "name": "慑砂",
+      "tokens": [],
       "avatars": [
         "avatar/char_379_sesa.png",
         "avatar/char_379_sesa_2.png",
@@ -2053,6 +2330,7 @@
     {
       "id": "char_381_bubble",
       "name": "泡泡",
+      "tokens": [],
       "avatars": [
         "avatar/char_381_bubble.png",
         "avatar/char_381_bubble_2.png",
@@ -2062,6 +2340,7 @@
     {
       "id": "char_383_snsant",
       "name": "雪雉",
+      "tokens": [],
       "avatars": [
         "avatar/char_383_snsant.png",
         "avatar/char_383_snsant_2.png",
@@ -2071,6 +2350,7 @@
     {
       "id": "char_385_finlpp",
       "name": "清流",
+      "tokens": [],
       "avatars": [
         "avatar/char_385_finlpp.png",
         "avatar/char_385_finlpp_2.png",
@@ -2080,6 +2360,7 @@
     {
       "id": "char_388_mint",
       "name": "薄绿",
+      "tokens": [],
       "avatars": [
         "avatar/char_388_mint.png",
         "avatar/char_388_mint_2.png",
@@ -2090,6 +2371,9 @@
     {
       "id": "char_391_rosmon",
       "name": "迷迭香",
+      "tokens": [
+        "token_10012_rosmon_shield"
+      ],
       "avatars": [
         "avatar/char_391_rosmon.png",
         "avatar/char_391_rosmon_2.png",
@@ -2100,6 +2384,7 @@
     {
       "id": "char_394_hadiya",
       "name": "哈蒂娅",
+      "tokens": [],
       "avatars": [
         "avatar/char_394_hadiya.png",
         "avatar/char_394_hadiya_2.png"
@@ -2108,6 +2393,7 @@
     {
       "id": "char_4000_jnight",
       "name": "正义骑士号",
+      "tokens": [],
       "avatars": [
         "avatar/char_4000_jnight.png",
         "avatar/char_4000_jnight_boc#7.png"
@@ -2116,6 +2402,7 @@
     {
       "id": "char_4004_pudd",
       "name": "布丁",
+      "tokens": [],
       "avatars": [
         "avatar/char_4004_pudd.png",
         "avatar/char_4004_pudd_2.png",
@@ -2125,6 +2412,7 @@
     {
       "id": "char_4006_melnte",
       "name": "玫拉",
+      "tokens": [],
       "avatars": [
         "avatar/char_4006_melnte.png",
         "avatar/char_4006_melnte_2.png",
@@ -2134,6 +2422,7 @@
     {
       "id": "char_4009_irene",
       "name": "艾丽妮",
+      "tokens": [],
       "avatars": [
         "avatar/char_4009_irene.png",
         "avatar/char_4009_irene_2.png",
@@ -2144,6 +2433,9 @@
     {
       "id": "char_400_weedy",
       "name": "温蒂",
+      "tokens": [
+        "token_10009_weedy_cannon"
+      ],
       "avatars": [
         "avatar/char_400_weedy.png",
         "avatar/char_400_weedy_2.png",
@@ -2154,6 +2446,7 @@
     {
       "id": "char_4010_etlchi",
       "name": "隐德来希",
+      "tokens": [],
       "avatars": [
         "avatar/char_4010_etlchi.png",
         "avatar/char_4010_etlchi_2.png",
@@ -2163,6 +2456,7 @@
     {
       "id": "char_4011_lessng",
       "name": "止颂",
+      "tokens": [],
       "avatars": [
         "avatar/char_4011_lessng.png",
         "avatar/char_4011_lessng_2.png",
@@ -2172,6 +2466,7 @@
     {
       "id": "char_4013_kjera",
       "name": "耶拉",
+      "tokens": [],
       "avatars": [
         "avatar/char_4013_kjera.png",
         "avatar/char_4013_kjera_2.png",
@@ -2181,6 +2476,7 @@
     {
       "id": "char_4014_lunacu",
       "name": "子月",
+      "tokens": [],
       "avatars": [
         "avatar/char_4014_lunacu.png",
         "avatar/char_4014_lunacu_2.png",
@@ -2190,6 +2486,7 @@
     {
       "id": "char_4015_spuria",
       "name": "空构",
+      "tokens": [],
       "avatars": [
         "avatar/char_4015_spuria.png",
         "avatar/char_4015_spuria_2.png"
@@ -2198,6 +2495,7 @@
     {
       "id": "char_4016_kazema",
       "name": "风丸",
+      "tokens": [],
       "avatars": [
         "avatar/char_4016_kazema.png",
         "avatar/char_4016_kazema_2.png",
@@ -2207,6 +2505,7 @@
     {
       "id": "char_4017_puzzle",
       "name": "谜图",
+      "tokens": [],
       "avatars": [
         "avatar/char_4017_puzzle.png",
         "avatar/char_4017_puzzle_2.png",
@@ -2217,6 +2516,7 @@
     {
       "id": "char_4019_ncdeer",
       "name": "九色鹿",
+      "tokens": [],
       "avatars": [
         "avatar/char_4019_ncdeer.png",
         "avatar/char_4019_ncdeer_2.png",
@@ -2226,6 +2526,7 @@
     {
       "id": "char_401_elysm",
       "name": "极境",
+      "tokens": [],
       "avatars": [
         "avatar/char_401_elysm.png",
         "avatar/char_401_elysm_2.png",
@@ -2236,6 +2537,7 @@
     {
       "id": "char_4023_rfalcn",
       "name": "红隼",
+      "tokens": [],
       "avatars": [
         "avatar/char_4023_rfalcn.png",
         "avatar/char_4023_rfalcn_2.png",
@@ -2245,6 +2547,7 @@
     {
       "id": "char_4025_aprot2",
       "name": "暮落",
+      "tokens": [],
       "avatars": [
         "avatar/char_4025_aprot2.png",
         "avatar/char_4025_aprot2_2.png",
@@ -2254,6 +2557,7 @@
     {
       "id": "char_4026_vulpis",
       "name": "忍冬",
+      "tokens": [],
       "avatars": [
         "avatar/char_4026_vulpis.png",
         "avatar/char_4026_vulpis_2.png",
@@ -2263,6 +2567,7 @@
     {
       "id": "char_4027_heyak",
       "name": "霍尔海雅",
+      "tokens": [],
       "avatars": [
         "avatar/char_4027_heyak.png",
         "avatar/char_4027_heyak_2.png",
@@ -2273,6 +2578,7 @@
     {
       "id": "char_402_tuye",
       "name": "图耶",
+      "tokens": [],
       "avatars": [
         "avatar/char_402_tuye.png",
         "avatar/char_402_tuye_2.png",
@@ -2282,6 +2588,7 @@
     {
       "id": "char_4031_liesel",
       "name": "复奏",
+      "tokens": [],
       "avatars": [
         "avatar/char_4031_liesel.png",
         "avatar/char_4031_liesel_2.png"
@@ -2290,6 +2597,7 @@
     {
       "id": "char_4032_provs",
       "name": "但书",
+      "tokens": [],
       "avatars": [
         "avatar/char_4032_provs.png",
         "avatar/char_4032_provs_2.png",
@@ -2300,6 +2608,7 @@
     {
       "id": "char_4036_forcer",
       "name": "见行者",
+      "tokens": [],
       "avatars": [
         "avatar/char_4036_forcer.png",
         "avatar/char_4036_forcer_2.png",
@@ -2309,6 +2618,7 @@
     {
       "id": "char_4037_demetr",
       "name": "贝洛内",
+      "tokens": [],
       "avatars": [
         "avatar/char_4037_demetr.png",
         "avatar/char_4037_demetr_2.png"
@@ -2317,6 +2627,7 @@
     {
       "id": "char_4039_horn",
       "name": "号角",
+      "tokens": [],
       "avatars": [
         "avatar/char_4039_horn.png",
         "avatar/char_4039_horn_2.png",
@@ -2326,6 +2637,7 @@
     {
       "id": "char_4040_rockr",
       "name": "洛洛",
+      "tokens": [],
       "avatars": [
         "avatar/char_4040_rockr.png",
         "avatar/char_4040_rockr_2.png",
@@ -2335,6 +2647,7 @@
     {
       "id": "char_4041_chnut",
       "name": "褐果",
+      "tokens": [],
       "avatars": [
         "avatar/char_4041_chnut.png",
         "avatar/char_4041_chnut_2.png",
@@ -2344,6 +2657,7 @@
     {
       "id": "char_4042_lumen",
       "name": "流明",
+      "tokens": [],
       "avatars": [
         "avatar/char_4042_lumen.png",
         "avatar/char_4042_lumen_2.png",
@@ -2354,6 +2668,7 @@
     {
       "id": "char_4043_erato",
       "name": "埃拉托",
+      "tokens": [],
       "avatars": [
         "avatar/char_4043_erato.png",
         "avatar/char_4043_erato_2.png",
@@ -2363,6 +2678,7 @@
     {
       "id": "char_4045_heidi",
       "name": "海蒂",
+      "tokens": [],
       "avatars": [
         "avatar/char_4045_heidi.png",
         "avatar/char_4045_heidi_2.png",
@@ -2372,6 +2688,7 @@
     {
       "id": "char_4046_ebnhlz",
       "name": "黑键",
+      "tokens": [],
       "avatars": [
         "avatar/char_4046_ebnhlz.png",
         "avatar/char_4046_ebnhlz_2.png",
@@ -2381,6 +2698,7 @@
     {
       "id": "char_4047_pianst",
       "name": "车尔尼",
+      "tokens": [],
       "avatars": [
         "avatar/char_4047_pianst.png",
         "avatar/char_4047_pianst_2.png",
@@ -2390,6 +2708,9 @@
     {
       "id": "char_4048_doroth",
       "name": "多萝西",
+      "tokens": [
+        "token_10025_doroth_recttp"
+      ],
       "avatars": [
         "avatar/char_4048_doroth.png",
         "avatar/char_4048_doroth_2.png",
@@ -2399,6 +2720,7 @@
     {
       "id": "char_4051_akkord",
       "name": "协律",
+      "tokens": [],
       "avatars": [
         "avatar/char_4051_akkord.png",
         "avatar/char_4051_akkord_2.png",
@@ -2408,6 +2730,7 @@
     {
       "id": "char_4052_surfer",
       "name": "寻澜",
+      "tokens": [],
       "avatars": [
         "avatar/char_4052_surfer.png",
         "avatar/char_4052_surfer_2.png",
@@ -2417,6 +2740,7 @@
     {
       "id": "char_4054_malist",
       "name": "至简",
+      "tokens": [],
       "avatars": [
         "avatar/char_4054_malist.png",
         "avatar/char_4054_malist_2.png",
@@ -2426,6 +2750,9 @@
     {
       "id": "char_4055_bgsnow",
       "name": "鸿雪",
+      "tokens": [
+        "token_10026_bgsnow_subbow"
+      ],
       "avatars": [
         "avatar/char_4055_bgsnow.png",
         "avatar/char_4055_bgsnow_2.png",
@@ -2436,6 +2763,7 @@
     {
       "id": "char_4056_titi",
       "name": "缇缇",
+      "tokens": [],
       "avatars": [
         "avatar/char_4056_titi.png",
         "avatar/char_4056_titi_2.png"
@@ -2444,6 +2772,7 @@
     {
       "id": "char_4058_pepe",
       "name": "佩佩",
+      "tokens": [],
       "avatars": [
         "avatar/char_4058_pepe.png",
         "avatar/char_4058_pepe_2.png",
@@ -2453,6 +2782,7 @@
     {
       "id": "char_405_absin",
       "name": "苦艾",
+      "tokens": [],
       "avatars": [
         "avatar/char_405_absin.png",
         "avatar/char_405_absin_2.png",
@@ -2462,6 +2792,7 @@
     {
       "id": "char_4062_totter",
       "name": "铅踝",
+      "tokens": [],
       "avatars": [
         "avatar/char_4062_totter.png",
         "avatar/char_4062_totter_2.png",
@@ -2471,6 +2802,7 @@
     {
       "id": "char_4063_quartz",
       "name": "石英",
+      "tokens": [],
       "avatars": [
         "avatar/char_4063_quartz.png",
         "avatar/char_4063_quartz_2.png",
@@ -2480,6 +2812,7 @@
     {
       "id": "char_4064_mlynar",
       "name": "玛恩纳",
+      "tokens": [],
       "avatars": [
         "avatar/char_4064_mlynar.png",
         "avatar/char_4064_mlynar_2.png",
@@ -2490,6 +2823,7 @@
     {
       "id": "char_4065_judge",
       "name": "斥罪",
+      "tokens": [],
       "avatars": [
         "avatar/char_4065_judge.png",
         "avatar/char_4065_judge_2.png",
@@ -2500,6 +2834,7 @@
     {
       "id": "char_4066_highmo",
       "name": "海沫",
+      "tokens": [],
       "avatars": [
         "avatar/char_4066_highmo.png",
         "avatar/char_4066_highmo_2.png",
@@ -2510,6 +2845,7 @@
     {
       "id": "char_4067_lolxh",
       "name": "罗小黑",
+      "tokens": [],
       "avatars": [
         "avatar/char_4067_lolxh.png",
         "avatar/char_4067_lolxh_2.png"
@@ -2518,6 +2854,7 @@
     {
       "id": "char_4071_peper",
       "name": "明椒",
+      "tokens": [],
       "avatars": [
         "avatar/char_4071_peper.png",
         "avatar/char_4071_peper_2.png",
@@ -2527,6 +2864,11 @@
     {
       "id": "char_4072_ironmn",
       "name": "白铁",
+      "tokens": [
+        "token_10027_ironmn_pile1",
+        "token_10027_ironmn_pile2",
+        "token_10027_ironmn_pile3"
+      ],
       "avatars": [
         "avatar/char_4072_ironmn.png",
         "avatar/char_4072_ironmn_2.png",
@@ -2537,6 +2879,7 @@
     {
       "id": "char_4077_palico",
       "name": "泰拉大陆调查团",
+      "tokens": [],
       "avatars": [
         "avatar/char_4077_palico.png",
         "avatar/char_4077_palico_mh#1.png"
@@ -2545,6 +2888,7 @@
     {
       "id": "char_4078_bdhkgt",
       "name": "截云",
+      "tokens": [],
       "avatars": [
         "avatar/char_4078_bdhkgt.png",
         "avatar/char_4078_bdhkgt_2.png",
@@ -2554,6 +2898,7 @@
     {
       "id": "char_4079_haini",
       "name": "海霓",
+      "tokens": [],
       "avatars": [
         "avatar/char_4079_haini.png",
         "avatar/char_4079_haini_2.png",
@@ -2563,6 +2908,7 @@
     {
       "id": "char_4080_lin",
       "name": "林",
+      "tokens": [],
       "avatars": [
         "avatar/char_4080_lin.png",
         "avatar/char_4080_lin_2.png",
@@ -2574,6 +2920,7 @@
     {
       "id": "char_4081_warmy",
       "name": "温米",
+      "tokens": [],
       "avatars": [
         "avatar/char_4081_warmy.png",
         "avatar/char_4081_warmy_2.png",
@@ -2583,6 +2930,7 @@
     {
       "id": "char_4082_qiubai",
       "name": "仇白",
+      "tokens": [],
       "avatars": [
         "avatar/char_4082_qiubai.png",
         "avatar/char_4082_qiubai_2.png",
@@ -2593,6 +2941,7 @@
     {
       "id": "char_4083_chimes",
       "name": "铎铃",
+      "tokens": [],
       "avatars": [
         "avatar/char_4083_chimes.png",
         "avatar/char_4083_chimes_2.png",
@@ -2602,6 +2951,7 @@
     {
       "id": "char_4087_ines",
       "name": "伊内丝",
+      "tokens": [],
       "avatars": [
         "avatar/char_4087_ines.png",
         "avatar/char_4087_ines_2.png",
@@ -2612,6 +2962,7 @@
     {
       "id": "char_4088_hodrer",
       "name": "赫德雷",
+      "tokens": [],
       "avatars": [
         "avatar/char_4088_hodrer.png",
         "avatar/char_4088_hodrer_2.png",
@@ -2621,6 +2972,7 @@
     {
       "id": "char_4091_ulika",
       "name": "U-Official",
+      "tokens": [],
       "avatars": [
         "avatar/char_4091_ulika.png",
         "avatar/char_4091_ulika_sanrio#1.png"
@@ -2629,6 +2981,7 @@
     {
       "id": "char_4093_frston",
       "name": "Friston-3",
+      "tokens": [],
       "avatars": [
         "avatar/char_4093_frston.png"
       ]
@@ -2636,6 +2989,7 @@
     {
       "id": "char_4098_vvana",
       "name": "薇薇安娜",
+      "tokens": [],
       "avatars": [
         "avatar/char_4098_vvana.png",
         "avatar/char_4098_vvana_2.png",
@@ -2645,6 +2999,7 @@
     {
       "id": "char_4100_caper",
       "name": "跃跃",
+      "tokens": [],
       "avatars": [
         "avatar/char_4100_caper.png",
         "avatar/char_4100_caper_2.png",
@@ -2654,6 +3009,7 @@
     {
       "id": "char_4102_threye",
       "name": "凛视",
+      "tokens": [],
       "avatars": [
         "avatar/char_4102_threye.png",
         "avatar/char_4102_threye_2.png",
@@ -2663,6 +3019,7 @@
     {
       "id": "char_4104_coldst",
       "name": "冰酿",
+      "tokens": [],
       "avatars": [
         "avatar/char_4104_coldst.png",
         "avatar/char_4104_coldst_2.png",
@@ -2672,6 +3029,7 @@
     {
       "id": "char_4105_almond",
       "name": "杏仁",
+      "tokens": [],
       "avatars": [
         "avatar/char_4105_almond.png",
         "avatar/char_4105_almond_2.png",
@@ -2681,6 +3039,7 @@
     {
       "id": "char_4106_bryota",
       "name": "苍苔",
+      "tokens": [],
       "avatars": [
         "avatar/char_4106_bryota.png",
         "avatar/char_4106_bryota_2.png",
@@ -2690,6 +3049,7 @@
     {
       "id": "char_4107_vrdant",
       "name": "维荻",
+      "tokens": [],
       "avatars": [
         "avatar/char_4107_vrdant.png",
         "avatar/char_4107_vrdant_2.png",
@@ -2699,6 +3059,7 @@
     {
       "id": "char_4109_baslin",
       "name": "深律",
+      "tokens": [],
       "avatars": [
         "avatar/char_4109_baslin.png",
         "avatar/char_4109_baslin_2.png",
@@ -2708,6 +3069,7 @@
     {
       "id": "char_4110_delphn",
       "name": "戴菲恩",
+      "tokens": [],
       "avatars": [
         "avatar/char_4110_delphn.png",
         "avatar/char_4110_delphn_2.png"
@@ -2716,6 +3078,7 @@
     {
       "id": "char_4114_harold",
       "name": "哈洛德",
+      "tokens": [],
       "avatars": [
         "avatar/char_4114_harold.png",
         "avatar/char_4114_harold_2.png",
@@ -2725,6 +3088,7 @@
     {
       "id": "char_4116_blkkgt",
       "name": "锏",
+      "tokens": [],
       "avatars": [
         "avatar/char_4116_blkkgt.png",
         "avatar/char_4116_blkkgt_2.png",
@@ -2734,6 +3098,9 @@
     {
       "id": "char_4117_ray",
       "name": "莱伊",
+      "tokens": [
+        "token_10034_ray_sndbst"
+      ],
       "avatars": [
         "avatar/char_4117_ray.png",
         "avatar/char_4117_ray_2.png",
@@ -2744,6 +3111,7 @@
     {
       "id": "char_4119_wanqin",
       "name": "万顷",
+      "tokens": [],
       "avatars": [
         "avatar/char_4119_wanqin.png",
         "avatar/char_4119_wanqin_2.png",
@@ -2753,6 +3121,7 @@
     {
       "id": "char_411_tomimi",
       "name": "特米米",
+      "tokens": [],
       "avatars": [
         "avatar/char_411_tomimi.png",
         "avatar/char_411_tomimi_2.png",
@@ -2762,6 +3131,7 @@
     {
       "id": "char_4121_zuole",
       "name": "左乐",
+      "tokens": [],
       "avatars": [
         "avatar/char_4121_zuole.png",
         "avatar/char_4121_zuole_2.png",
@@ -2772,6 +3142,7 @@
     {
       "id": "char_4122_grabds",
       "name": "小满",
+      "tokens": [],
       "avatars": [
         "avatar/char_4122_grabds.png",
         "avatar/char_4122_grabds_2.png",
@@ -2781,6 +3152,9 @@
     {
       "id": "char_4123_ela",
       "name": "艾拉",
+      "tokens": [
+        "token_10033_ela_grzmot"
+      ],
       "avatars": [
         "avatar/char_4123_ela.png",
         "avatar/char_4123_ela_2.png",
@@ -2790,6 +3164,7 @@
     {
       "id": "char_4124_iana",
       "name": "双月",
+      "tokens": [],
       "avatars": [
         "avatar/char_4124_iana.png",
         "avatar/char_4124_iana_2.png",
@@ -2799,6 +3174,7 @@
     {
       "id": "char_4125_rdoc",
       "name": "医生",
+      "tokens": [],
       "avatars": [
         "avatar/char_4125_rdoc.png",
         "avatar/char_4125_rdoc_2.png",
@@ -2808,6 +3184,7 @@
     {
       "id": "char_4126_fuze",
       "name": "导火索",
+      "tokens": [],
       "avatars": [
         "avatar/char_4126_fuze.png",
         "avatar/char_4126_fuze_2.png"
@@ -2816,6 +3193,7 @@
     {
       "id": "char_4130_luton",
       "name": "露托",
+      "tokens": [],
       "avatars": [
         "avatar/char_4130_luton.png",
         "avatar/char_4130_luton_2.png",
@@ -2825,6 +3203,7 @@
     {
       "id": "char_4131_odda",
       "name": "奥达",
+      "tokens": [],
       "avatars": [
         "avatar/char_4131_odda.png",
         "avatar/char_4131_odda_2.png",
@@ -2834,6 +3213,7 @@
     {
       "id": "char_4132_ascln",
       "name": "阿斯卡纶",
+      "tokens": [],
       "avatars": [
         "avatar/char_4132_ascln.png",
         "avatar/char_4132_ascln_2.png",
@@ -2843,6 +3223,7 @@
     {
       "id": "char_4133_logos",
       "name": "逻各斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_4133_logos.png",
         "avatar/char_4133_logos_2.png",
@@ -2852,6 +3233,7 @@
     {
       "id": "char_4134_cetsyr",
       "name": "魔王",
+      "tokens": [],
       "avatars": [
         "avatar/char_4134_cetsyr.png",
         "avatar/char_4134_cetsyr_2.png",
@@ -2861,6 +3243,7 @@
     {
       "id": "char_4136_phonor",
       "name": "PhonoR-0",
+      "tokens": [],
       "avatars": [
         "avatar/char_4136_phonor.png",
         "avatar/char_4136_phonor_boc#9.png"
@@ -2869,6 +3252,7 @@
     {
       "id": "char_4137_udflow",
       "name": "深巡",
+      "tokens": [],
       "avatars": [
         "avatar/char_4137_udflow.png",
         "avatar/char_4137_udflow_2.png",
@@ -2878,6 +3262,7 @@
     {
       "id": "char_4138_narant",
       "name": "娜仁图亚",
+      "tokens": [],
       "avatars": [
         "avatar/char_4138_narant.png",
         "avatar/char_4138_narant_2.png",
@@ -2888,6 +3273,7 @@
     {
       "id": "char_4139_papyrs",
       "name": "莎草",
+      "tokens": [],
       "avatars": [
         "avatar/char_4139_papyrs.png",
         "avatar/char_4139_papyrs_2.png",
@@ -2897,6 +3283,9 @@
     {
       "id": "char_4140_lasher",
       "name": "衡沙",
+      "tokens": [
+        "token_10036_lasher_mcbird"
+      ],
       "avatars": [
         "avatar/char_4140_lasher.png",
         "avatar/char_4140_lasher_2.png",
@@ -2906,6 +3295,7 @@
     {
       "id": "char_4141_marcil",
       "name": "玛露西尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_4141_marcil.png",
         "avatar/char_4141_marcil_2.png",
@@ -2915,6 +3305,7 @@
     {
       "id": "char_4142_laios",
       "name": "莱欧斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_4142_laios.png",
         "avatar/char_4142_laios_2.png"
@@ -2923,6 +3314,7 @@
     {
       "id": "char_4143_sensi",
       "name": "森西",
+      "tokens": [],
       "avatars": [
         "avatar/char_4143_sensi.png",
         "avatar/char_4143_sensi_2.png"
@@ -2931,6 +3323,7 @@
     {
       "id": "char_4144_chilc",
       "name": "齐尔查克",
+      "tokens": [],
       "avatars": [
         "avatar/char_4144_chilc.png",
         "avatar/char_4144_chilc_2.png"
@@ -2939,6 +3332,7 @@
     {
       "id": "char_4145_ulpia",
       "name": "乌尔比安",
+      "tokens": [],
       "avatars": [
         "avatar/char_4145_ulpia.png",
         "avatar/char_4145_ulpia_2.png",
@@ -2948,6 +3342,7 @@
     {
       "id": "char_4146_nymph",
       "name": "妮芙",
+      "tokens": [],
       "avatars": [
         "avatar/char_4146_nymph.png",
         "avatar/char_4146_nymph_2.png",
@@ -2958,6 +3353,9 @@
     {
       "id": "char_4147_mitm",
       "name": "渡桥",
+      "tokens": [
+        "token_10037_mitm_trshrb"
+      ],
       "avatars": [
         "avatar/char_4147_mitm.png",
         "avatar/char_4147_mitm_2.png",
@@ -2967,6 +3365,7 @@
     {
       "id": "char_4148_philae",
       "name": "菲莱",
+      "tokens": [],
       "avatars": [
         "avatar/char_4148_philae.png",
         "avatar/char_4148_philae_2.png",
@@ -2976,6 +3375,7 @@
     {
       "id": "char_4151_tinman",
       "name": "锡人",
+      "tokens": [],
       "avatars": [
         "avatar/char_4151_tinman.png",
         "avatar/char_4151_tinman_2.png",
@@ -2985,6 +3385,7 @@
     {
       "id": "char_4155_talr",
       "name": "裁度",
+      "tokens": [],
       "avatars": [
         "avatar/char_4155_talr.png",
         "avatar/char_4155_talr_2.png",
@@ -2994,6 +3395,7 @@
     {
       "id": "char_415_flint",
       "name": "燧石",
+      "tokens": [],
       "avatars": [
         "avatar/char_415_flint.png",
         "avatar/char_415_flint_2.png",
@@ -3003,6 +3405,9 @@
     {
       "id": "char_4162_cathy",
       "name": "凯瑟琳",
+      "tokens": [
+        "token_10041_cathy_catsld"
+      ],
       "avatars": [
         "avatar/char_4162_cathy.png",
         "avatar/char_4162_cathy_2.png"
@@ -3011,6 +3416,7 @@
     {
       "id": "char_4163_rosesa",
       "name": "瑰盐",
+      "tokens": [],
       "avatars": [
         "avatar/char_4163_rosesa.png",
         "avatar/char_4163_rosesa_2.png",
@@ -3020,6 +3426,9 @@
     {
       "id": "char_4164_tecno",
       "name": "特克诺",
+      "tokens": [
+        "token_10042_tecno_puppet"
+      ],
       "avatars": [
         "avatar/char_4164_tecno.png",
         "avatar/char_4164_tecno_2.png"
@@ -3028,6 +3437,7 @@
     {
       "id": "char_4165_ctrail",
       "name": "云迹",
+      "tokens": [],
       "avatars": [
         "avatar/char_4165_ctrail.png",
         "avatar/char_4165_ctrail_2.png",
@@ -3037,6 +3447,7 @@
     {
       "id": "char_4166_varkis",
       "name": "摆渡人",
+      "tokens": [],
       "avatars": [
         "avatar/char_4166_varkis.png",
         "avatar/char_4166_varkis_2.png"
@@ -3045,6 +3456,7 @@
     {
       "id": "char_416_zumama",
       "name": "森蚺",
+      "tokens": [],
       "avatars": [
         "avatar/char_416_zumama.png",
         "avatar/char_416_zumama_2.png",
@@ -3054,6 +3466,9 @@
     {
       "id": "char_4171_wulfen",
       "name": "钼铅",
+      "tokens": [
+        "token_10044_wulfen_mine"
+      ],
       "avatars": [
         "avatar/char_4171_wulfen.png",
         "avatar/char_4171_wulfen_2.png",
@@ -3063,6 +3478,7 @@
     {
       "id": "char_4172_xingzh",
       "name": "行箸",
+      "tokens": [],
       "avatars": [
         "avatar/char_4172_xingzh.png",
         "avatar/char_4172_xingzh_2.png",
@@ -3072,6 +3488,7 @@
     {
       "id": "char_4173_nowell",
       "name": "诺威尔",
+      "tokens": [],
       "avatars": [
         "avatar/char_4173_nowell.png",
         "avatar/char_4173_nowell_2.png",
@@ -3081,6 +3498,7 @@
     {
       "id": "char_4177_brigid",
       "name": "水灯心",
+      "tokens": [],
       "avatars": [
         "avatar/char_4177_brigid.png",
         "avatar/char_4177_brigid_2.png",
@@ -3090,6 +3508,9 @@
     {
       "id": "char_4178_alanna",
       "name": "阿兰娜",
+      "tokens": [
+        "token_10045_alanna_crane"
+      ],
       "avatars": [
         "avatar/char_4178_alanna.png",
         "avatar/char_4178_alanna_2.png"
@@ -3098,6 +3519,9 @@
     {
       "id": "char_4179_monstr",
       "name": "Mon3tr",
+      "tokens": [
+        "token_10050_monstr_prosts"
+      ],
       "avatars": [
         "avatar/char_4179_monstr.png",
         "avatar/char_4179_monstr_2.png",
@@ -3107,6 +3531,7 @@
     {
       "id": "char_4182_oblvns",
       "name": "丰川祥子",
+      "tokens": [],
       "avatars": [
         "avatar/char_4182_oblvns.png",
         "avatar/char_4182_oblvns_2.png",
@@ -3116,6 +3541,7 @@
     {
       "id": "char_4183_mortis",
       "name": "若叶睦",
+      "tokens": [],
       "avatars": [
         "avatar/char_4183_mortis.png",
         "avatar/char_4183_mortis_2.png",
@@ -3125,6 +3551,7 @@
     {
       "id": "char_4184_dolris",
       "name": "三角初华",
+      "tokens": [],
       "avatars": [
         "avatar/char_4184_dolris.png",
         "avatar/char_4184_dolris_2.png",
@@ -3134,6 +3561,7 @@
     {
       "id": "char_4185_amoris",
       "name": "祐天寺若麦",
+      "tokens": [],
       "avatars": [
         "avatar/char_4185_amoris.png",
         "avatar/char_4185_amoris_2.png",
@@ -3143,6 +3571,7 @@
     {
       "id": "char_4186_tmoris",
       "name": "八幡海铃",
+      "tokens": [],
       "avatars": [
         "avatar/char_4186_tmoris.png",
         "avatar/char_4186_tmoris_2.png",
@@ -3152,6 +3581,7 @@
     {
       "id": "char_4187_graceb",
       "name": "聆音",
+      "tokens": [],
       "avatars": [
         "avatar/char_4187_graceb.png",
         "avatar/char_4187_graceb_2.png",
@@ -3161,6 +3591,7 @@
     {
       "id": "char_4188_confes",
       "name": "CONFESS-47",
+      "tokens": [],
       "avatars": [
         "avatar/char_4188_confes.png"
       ]
@@ -3168,6 +3599,7 @@
     {
       "id": "char_4191_tippi",
       "name": "蒂比",
+      "tokens": [],
       "avatars": [
         "avatar/char_4191_tippi.png",
         "avatar/char_4191_tippi_2.png",
@@ -3177,6 +3609,7 @@
     {
       "id": "char_4193_lemuen",
       "name": "蕾缪安",
+      "tokens": [],
       "avatars": [
         "avatar/char_4193_lemuen.png",
         "avatar/char_4193_lemuen_2.png",
@@ -3186,6 +3619,7 @@
     {
       "id": "char_4194_rmixer",
       "name": "信仰搅拌机",
+      "tokens": [],
       "avatars": [
         "avatar/char_4194_rmixer.png",
         "avatar/char_4194_rmixer_2.png",
@@ -3195,6 +3629,11 @@
     {
       "id": "char_4195_radian",
       "name": "电弧",
+      "tokens": [
+        "token_10051_radian_tower1",
+        "token_10052_radian_tower2",
+        "token_10053_radian_tower3"
+      ],
       "avatars": [
         "avatar/char_4195_radian.png",
         "avatar/char_4195_radian_2.png",
@@ -3204,6 +3643,7 @@
     {
       "id": "char_4196_reckpr",
       "name": "录武官",
+      "tokens": [],
       "avatars": [
         "avatar/char_4196_reckpr.png",
         "avatar/char_4196_reckpr_2.png"
@@ -3212,6 +3652,7 @@
     {
       "id": "char_4198_christ",
       "name": "Miss.Christine",
+      "tokens": [],
       "avatars": [
         "avatar/char_4198_christ.png",
         "avatar/char_4198_christ_2.png",
@@ -3221,6 +3662,7 @@
     {
       "id": "char_4199_makiri",
       "name": "松桐",
+      "tokens": [],
       "avatars": [
         "avatar/char_4199_makiri.png",
         "avatar/char_4199_makiri_2.png",
@@ -3230,6 +3672,7 @@
     {
       "id": "char_4202_haruka",
       "name": "遥",
+      "tokens": [],
       "avatars": [
         "avatar/char_4202_haruka.png",
         "avatar/char_4202_haruka_2.png",
@@ -3239,6 +3682,7 @@
     {
       "id": "char_4203_kichi",
       "name": "吉星",
+      "tokens": [],
       "avatars": [
         "avatar/char_4203_kichi.png",
         "avatar/char_4203_kichi_2.png"
@@ -3247,6 +3691,7 @@
     {
       "id": "char_4204_mantra",
       "name": "真言",
+      "tokens": [],
       "avatars": [
         "avatar/char_4204_mantra.png",
         "avatar/char_4204_mantra_2.png"
@@ -3255,6 +3700,7 @@
     {
       "id": "char_4207_branch",
       "name": "折桠",
+      "tokens": [],
       "avatars": [
         "avatar/char_4207_branch.png",
         "avatar/char_4207_branch_2.png",
@@ -3264,6 +3710,7 @@
     {
       "id": "char_4208_wintim",
       "name": "冬时",
+      "tokens": [],
       "avatars": [
         "avatar/char_4208_wintim.png",
         "avatar/char_4208_wintim_2.png"
@@ -3272,6 +3719,7 @@
     {
       "id": "char_420_flamtl",
       "name": "焰尾",
+      "tokens": [],
       "avatars": [
         "avatar/char_420_flamtl.png",
         "avatar/char_420_flamtl_2.png",
@@ -3281,6 +3729,7 @@
     {
       "id": "char_4211_snhunt",
       "name": "雪猎",
+      "tokens": [],
       "avatars": [
         "avatar/char_4211_snhunt.png",
         "avatar/char_4211_snhunt_2.png"
@@ -3289,6 +3738,11 @@
     {
       "id": "char_4212_nasti",
       "name": "娜斯提",
+      "tokens": [
+        "token_10059_nasti_nstdef",
+        "token_10060_nasti_nstchr",
+        "token_10061_nasti_nstbld"
+      ],
       "avatars": [
         "avatar/char_4212_nasti.png",
         "avatar/char_4212_nasti_2.png"
@@ -3297,6 +3751,7 @@
     {
       "id": "char_4213_skybx",
       "name": "天空盒",
+      "tokens": [],
       "avatars": [
         "avatar/char_4213_skybx.png",
         "avatar/char_4213_skybx_2.png"
@@ -3305,6 +3760,7 @@
     {
       "id": "char_4214_cairn",
       "name": "响石",
+      "tokens": [],
       "avatars": [
         "avatar/char_4214_cairn.png",
         "avatar/char_4214_cairn_2.png"
@@ -3313,6 +3769,9 @@
     {
       "id": "char_4215_buddy",
       "name": "罗德岛隐秘队",
+      "tokens": [
+        "token_10063_buddy_bddg"
+      ],
       "avatars": [
         "avatar/char_4215_buddy.png",
         "avatar/char_4215_buddy_mh#2.png"
@@ -3321,6 +3780,7 @@
     {
       "id": "char_4217_makoto",
       "name": "结城理",
+      "tokens": [],
       "avatars": [
         "avatar/char_4217_makoto.png",
         "avatar/char_4217_makoto_2.png",
@@ -3330,6 +3790,7 @@
     {
       "id": "char_4218_aigis",
       "name": "埃癸斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_4218_aigis.png",
         "avatar/char_4218_aigis_2.png",
@@ -3339,6 +3800,7 @@
     {
       "id": "char_4219_yukari",
       "name": "岳羽由加莉",
+      "tokens": [],
       "avatars": [
         "avatar/char_4219_yukari.png",
         "avatar/char_4219_yukari_2.png",
@@ -3348,6 +3810,7 @@
     {
       "id": "char_421_crow",
       "name": "羽毛笔",
+      "tokens": [],
       "avatars": [
         "avatar/char_421_crow.png",
         "avatar/char_421_crow_2.png",
@@ -3357,6 +3820,7 @@
     {
       "id": "char_4220_kormr",
       "name": "虎狼丸",
+      "tokens": [],
       "avatars": [
         "avatar/char_4220_kormr.png",
         "avatar/char_4220_kormr_p3r#1.png"
@@ -3365,6 +3829,7 @@
     {
       "id": "char_4221_ju",
       "name": "矩",
+      "tokens": [],
       "avatars": [
         "avatar/char_4221_ju.png",
         "avatar/char_4221_ju_1.png",
@@ -3374,6 +3839,7 @@
     {
       "id": "char_4222_taraxa",
       "name": "风絮",
+      "tokens": [],
       "avatars": [
         "avatar/char_4222_taraxa.png",
         "avatar/char_4222_taraxa_1.png",
@@ -3383,6 +3849,7 @@
     {
       "id": "char_4223_botany",
       "name": "伯塔尼",
+      "tokens": [],
       "avatars": [
         "avatar/char_4223_botany.png",
         "avatar/char_4223_botany_2.png"
@@ -3391,6 +3858,7 @@
     {
       "id": "char_4224_turdus",
       "name": "乌啾",
+      "tokens": [],
       "avatars": [
         "avatar/char_4224_turdus.png",
         "avatar/char_4224_turdus_2.png"
@@ -3399,6 +3867,7 @@
     {
       "id": "char_4225_tanya",
       "name": "裂响",
+      "tokens": [],
       "avatars": [
         "avatar/char_4225_tanya.png",
         "avatar/char_4225_tanya_2.png"
@@ -3407,6 +3876,7 @@
     {
       "id": "char_4226_veen",
       "name": "维伊",
+      "tokens": [],
       "avatars": [
         "avatar/char_4226_veen.png",
         "avatar/char_4226_veen_2.png"
@@ -3415,6 +3885,7 @@
     {
       "id": "char_4227_gallus",
       "name": "GALLUS²",
+      "tokens": [],
       "avatars": [
         "avatar/char_4227_gallus.png"
       ]
@@ -3422,6 +3893,9 @@
     {
       "id": "char_4228_closur",
       "name": "可露希尔",
+      "tokens": [
+        "token_10066_closur_ourbase"
+      ],
       "avatars": [
         "avatar/char_4228_closur.png",
         "avatar/char_4228_closur_2.png"
@@ -3430,6 +3904,9 @@
     {
       "id": "char_4229_aphris",
       "name": "谬因",
+      "tokens": [
+        "token_10070_aphris_pc"
+      ],
       "avatars": [
         "avatar/char_4229_aphris.png",
         "avatar/char_4229_aphris_2.png"
@@ -3438,6 +3915,7 @@
     {
       "id": "char_422_aurora",
       "name": "极光",
+      "tokens": [],
       "avatars": [
         "avatar/char_422_aurora.png",
         "avatar/char_422_aurora_2.png",
@@ -3447,6 +3925,9 @@
     {
       "id": "char_4230_mcnist",
       "name": "机械师",
+      "tokens": [
+        "token_10069_mcnist_mcgraf"
+      ],
       "avatars": [
         "avatar/char_4230_mcnist.png",
         "avatar/char_4230_mcnist_2.png"
@@ -3455,6 +3936,7 @@
     {
       "id": "char_4234_pedro",
       "name": "佩德洛",
+      "tokens": [],
       "avatars": [
         "avatar/char_4234_pedro.png",
         "avatar/char_4234_pedro_2.png"
@@ -3463,6 +3945,7 @@
     {
       "id": "char_4235_thumpy",
       "name": "珊比",
+      "tokens": [],
       "avatars": [
         "avatar/char_4235_thumpy.png",
         "avatar/char_4235_thumpy_2.png"
@@ -3471,6 +3954,7 @@
     {
       "id": "char_4236_tmslot",
       "name": "时隙",
+      "tokens": [],
       "avatars": [
         "avatar/char_4236_tmslot.png",
         "avatar/char_4236_tmslot_2.png"
@@ -3479,6 +3963,7 @@
     {
       "id": "char_4237_jcinta",
       "name": "嘉辛塔",
+      "tokens": [],
       "avatars": [
         "avatar/char_4237_jcinta.png",
         "avatar/char_4237_jcinta_2.png"
@@ -3487,6 +3972,7 @@
     {
       "id": "char_423_blemsh",
       "name": "瑕光",
+      "tokens": [],
       "avatars": [
         "avatar/char_423_blemsh.png",
         "avatar/char_423_blemsh_2.png",
@@ -3497,6 +3983,7 @@
     {
       "id": "char_426_billro",
       "name": "卡涅利安",
+      "tokens": [],
       "avatars": [
         "avatar/char_426_billro.png",
         "avatar/char_426_billro_2.png",
@@ -3507,6 +3994,9 @@
     {
       "id": "char_427_vigil",
       "name": "伺夜",
+      "tokens": [
+        "token_10028_vigil_wolf"
+      ],
       "avatars": [
         "avatar/char_427_vigil.png",
         "avatar/char_427_vigil_2.png",
@@ -3516,6 +4006,7 @@
     {
       "id": "char_430_fartth",
       "name": "远牙",
+      "tokens": [],
       "avatars": [
         "avatar/char_430_fartth.png",
         "avatar/char_430_fartth_2.png",
@@ -3525,6 +4016,7 @@
     {
       "id": "char_431_ashlok",
       "name": "灰毫",
+      "tokens": [],
       "avatars": [
         "avatar/char_431_ashlok.png",
         "avatar/char_431_ashlok_2.png",
@@ -3534,6 +4026,9 @@
     {
       "id": "char_433_windft",
       "name": "掠风",
+      "tokens": [
+        "token_10023_windft_wrench"
+      ],
       "avatars": [
         "avatar/char_433_windft.png",
         "avatar/char_433_windft_2.png"
@@ -3542,6 +4037,7 @@
     {
       "id": "char_436_whispr",
       "name": "絮雨",
+      "tokens": [],
       "avatars": [
         "avatar/char_436_whispr.png",
         "avatar/char_436_whispr_2.png",
@@ -3552,6 +4048,7 @@
     {
       "id": "char_437_mizuki",
       "name": "水月",
+      "tokens": [],
       "avatars": [
         "avatar/char_437_mizuki.png",
         "avatar/char_437_mizuki_2.png",
@@ -3562,6 +4059,7 @@
     {
       "id": "char_440_pinecn",
       "name": "松果",
+      "tokens": [],
       "avatars": [
         "avatar/char_440_pinecn.png",
         "avatar/char_440_pinecn_2.png",
@@ -3572,6 +4070,7 @@
     {
       "id": "char_445_wscoot",
       "name": "骋风",
+      "tokens": [],
       "avatars": [
         "avatar/char_445_wscoot.png",
         "avatar/char_445_wscoot_2.png",
@@ -3581,6 +4080,7 @@
     {
       "id": "char_446_aroma",
       "name": "阿罗玛",
+      "tokens": [],
       "avatars": [
         "avatar/char_446_aroma.png",
         "avatar/char_446_aroma_2.png",
@@ -3590,6 +4090,7 @@
     {
       "id": "char_449_glider",
       "name": "蜜莓",
+      "tokens": [],
       "avatars": [
         "avatar/char_449_glider.png",
         "avatar/char_449_glider_2.png",
@@ -3600,6 +4101,9 @@
     {
       "id": "char_450_necras",
       "name": "死芒",
+      "tokens": [
+        "token_10043_necras_skeltn"
+      ],
       "avatars": [
         "avatar/char_450_necras.png",
         "avatar/char_450_necras_2.png",
@@ -3610,6 +4114,9 @@
     {
       "id": "char_451_robin",
       "name": "罗宾",
+      "tokens": [
+        "token_10013_robin_mine"
+      ],
       "avatars": [
         "avatar/char_451_robin.png",
         "avatar/char_451_robin_2.png",
@@ -3619,6 +4126,9 @@
     {
       "id": "char_452_bstalk",
       "name": "豆苗",
+      "tokens": [
+        "token_10014_bstalk_crab"
+      ],
       "avatars": [
         "avatar/char_452_bstalk.png",
         "avatar/char_452_bstalk_2.png",
@@ -3629,6 +4139,7 @@
     {
       "id": "char_455_nothin",
       "name": "乌有",
+      "tokens": [],
       "avatars": [
         "avatar/char_455_nothin.png",
         "avatar/char_455_nothin_2.png",
@@ -3638,6 +4149,7 @@
     {
       "id": "char_456_ash",
       "name": "灰烬",
+      "tokens": [],
       "avatars": [
         "avatar/char_456_ash.png",
         "avatar/char_456_ash_2.png",
@@ -3647,6 +4159,7 @@
     {
       "id": "char_457_blitz",
       "name": "闪击",
+      "tokens": [],
       "avatars": [
         "avatar/char_457_blitz.png",
         "avatar/char_457_blitz_2.png"
@@ -3655,6 +4168,9 @@
     {
       "id": "char_458_rfrost",
       "name": "霜华",
+      "tokens": [
+        "token_10016_rfrost_mine"
+      ],
       "avatars": [
         "avatar/char_458_rfrost.png",
         "avatar/char_458_rfrost_2.png"
@@ -3663,6 +4179,7 @@
     {
       "id": "char_459_tachak",
       "name": "战车",
+      "tokens": [],
       "avatars": [
         "avatar/char_459_tachak.png",
         "avatar/char_459_tachak_2.png",
@@ -3672,6 +4189,7 @@
     {
       "id": "char_464_cement",
       "name": "洋灰",
+      "tokens": [],
       "avatars": [
         "avatar/char_464_cement.png",
         "avatar/char_464_cement_2.png",
@@ -3681,6 +4199,7 @@
     {
       "id": "char_466_qanik",
       "name": "雪绒",
+      "tokens": [],
       "avatars": [
         "avatar/char_466_qanik.png",
         "avatar/char_466_qanik_2.png",
@@ -3690,6 +4209,7 @@
     {
       "id": "char_469_indigo",
       "name": "深靛",
+      "tokens": [],
       "avatars": [
         "avatar/char_469_indigo.png",
         "avatar/char_469_indigo_2.png",
@@ -3699,6 +4219,7 @@
     {
       "id": "char_472_pasngr",
       "name": "异客",
+      "tokens": [],
       "avatars": [
         "avatar/char_472_pasngr.png",
         "avatar/char_472_pasngr_2.png",
@@ -3708,6 +4229,7 @@
     {
       "id": "char_473_mberry",
       "name": "桑葚",
+      "tokens": [],
       "avatars": [
         "avatar/char_473_mberry.png",
         "avatar/char_473_mberry_2.png",
@@ -3718,6 +4240,7 @@
     {
       "id": "char_474_glady",
       "name": "歌蕾蒂娅",
+      "tokens": [],
       "avatars": [
         "avatar/char_474_glady.png",
         "avatar/char_474_glady_2.png",
@@ -3728,6 +4251,7 @@
     {
       "id": "char_475_akafyu",
       "name": "赤冬",
+      "tokens": [],
       "avatars": [
         "avatar/char_475_akafyu.png",
         "avatar/char_475_akafyu_2.png",
@@ -3737,6 +4261,9 @@
     {
       "id": "char_476_blkngt",
       "name": "夜半",
+      "tokens": [
+        "token_10021_blkngt_hypnos"
+      ],
       "avatars": [
         "avatar/char_476_blkngt.png",
         "avatar/char_476_blkngt_2.png",
@@ -3747,6 +4274,7 @@
     {
       "id": "char_478_kirara",
       "name": "绮良",
+      "tokens": [],
       "avatars": [
         "avatar/char_478_kirara.png",
         "avatar/char_478_kirara_2.png",
@@ -3757,6 +4285,7 @@
     {
       "id": "char_479_sleach",
       "name": "琴柳",
+      "tokens": [],
       "avatars": [
         "avatar/char_479_sleach.png",
         "avatar/char_479_sleach_2.png",
@@ -3767,6 +4296,9 @@
     {
       "id": "char_484_robrta",
       "name": "罗比菈塔",
+      "tokens": [
+        "token_10018_robrta_mach"
+      ],
       "avatars": [
         "avatar/char_484_robrta.png",
         "avatar/char_484_robrta_2.png",
@@ -3777,6 +4309,7 @@
     {
       "id": "char_485_pallas",
       "name": "帕拉斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_485_pallas.png",
         "avatar/char_485_pallas_2.png",
@@ -3787,6 +4320,7 @@
     {
       "id": "char_486_takila",
       "name": "龙舌兰",
+      "tokens": [],
       "avatars": [
         "avatar/char_486_takila.png",
         "avatar/char_486_takila_2.png",
@@ -3797,6 +4331,7 @@
     {
       "id": "char_487_bobb",
       "name": "波卜",
+      "tokens": [],
       "avatars": [
         "avatar/char_487_bobb.png",
         "avatar/char_487_bobb_2.png",
@@ -3806,6 +4341,7 @@
     {
       "id": "char_488_buildr",
       "name": "青枳",
+      "tokens": [],
       "avatars": [
         "avatar/char_488_buildr.png",
         "avatar/char_488_buildr_2.png",
@@ -3815,6 +4351,7 @@
     {
       "id": "char_489_serum",
       "name": "蚀清",
+      "tokens": [],
       "avatars": [
         "avatar/char_489_serum.png",
         "avatar/char_489_serum_2.png",
@@ -3824,6 +4361,7 @@
     {
       "id": "char_491_humus",
       "name": "休谟斯",
+      "tokens": [],
       "avatars": [
         "avatar/char_491_humus.png",
         "avatar/char_491_humus_2.png",
@@ -3833,6 +4371,7 @@
     {
       "id": "char_492_quercu",
       "name": "夏栎",
+      "tokens": [],
       "avatars": [
         "avatar/char_492_quercu.png",
         "avatar/char_492_quercu_2.png",
@@ -3843,6 +4382,7 @@
     {
       "id": "char_493_firwhl",
       "name": "火哨",
+      "tokens": [],
       "avatars": [
         "avatar/char_493_firwhl.png",
         "avatar/char_493_firwhl_2.png"
@@ -3851,6 +4391,7 @@
     {
       "id": "char_494_vendla",
       "name": "刺玫",
+      "tokens": [],
       "avatars": [
         "avatar/char_494_vendla.png",
         "avatar/char_494_vendla_2.png",
@@ -3860,6 +4401,7 @@
     {
       "id": "char_496_wildmn",
       "name": "野鬃",
+      "tokens": [],
       "avatars": [
         "avatar/char_496_wildmn.png",
         "avatar/char_496_wildmn_2.png",
@@ -3869,6 +4411,7 @@
     {
       "id": "char_497_ctable",
       "name": "晓歌",
+      "tokens": [],
       "avatars": [
         "avatar/char_497_ctable.png",
         "avatar/char_497_ctable_2.png",
@@ -3879,6 +4422,7 @@
     {
       "id": "char_498_inside",
       "name": "隐现",
+      "tokens": [],
       "avatars": [
         "avatar/char_498_inside.png",
         "avatar/char_498_inside_2.png",
@@ -3889,6 +4433,7 @@
     {
       "id": "char_499_kaitou",
       "name": "折光",
+      "tokens": [],
       "avatars": [
         "avatar/char_499_kaitou.png",
         "avatar/char_499_kaitou_2.png",
@@ -3898,6 +4443,7 @@
     {
       "id": "char_500_noirc",
       "name": "黑角",
+      "tokens": [],
       "avatars": [
         "avatar/char_500_noirc.png"
       ]
@@ -3905,6 +4451,7 @@
     {
       "id": "char_501_durin",
       "name": "杜林",
+      "tokens": [],
       "avatars": [
         "avatar/char_501_durin.png"
       ]
@@ -3912,6 +4459,7 @@
     {
       "id": "char_502_nblade",
       "name": "夜刀",
+      "tokens": [],
       "avatars": [
         "avatar/char_502_nblade.png"
       ]
@@ -3919,6 +4467,7 @@
     {
       "id": "char_503_rang",
       "name": "巡林者",
+      "tokens": [],
       "avatars": [
         "avatar/char_503_rang.png"
       ]
@@ -3926,6 +4475,7 @@
     {
       "id": "char_504_rguard",
       "name": "预备干员-近战",
+      "tokens": [],
       "avatars": [
         "avatar/char_504_rguard.png"
       ]
@@ -3933,6 +4483,7 @@
     {
       "id": "char_505_rcast",
       "name": "预备干员-术师",
+      "tokens": [],
       "avatars": [
         "avatar/char_505_rcast.png"
       ]
@@ -3940,6 +4491,7 @@
     {
       "id": "char_506_rmedic",
       "name": "预备干员-后勤",
+      "tokens": [],
       "avatars": [
         "avatar/char_506_rmedic.png"
       ]
@@ -3947,6 +4499,7 @@
     {
       "id": "char_507_rsnipe",
       "name": "预备干员-狙击",
+      "tokens": [],
       "avatars": [
         "avatar/char_507_rsnipe.png"
       ]
@@ -3954,6 +4507,7 @@
     {
       "id": "char_508_aguard",
       "name": "Sharp",
+      "tokens": [],
       "avatars": [
         "avatar/char_508_aguard.png",
         "avatar/char_508_aguard_2.png"
@@ -3962,6 +4516,7 @@
     {
       "id": "char_509_acast",
       "name": "Pith",
+      "tokens": [],
       "avatars": [
         "avatar/char_509_acast.png",
         "avatar/char_509_acast_2.png"
@@ -3970,6 +4525,7 @@
     {
       "id": "char_510_amedic",
       "name": "Touch",
+      "tokens": [],
       "avatars": [
         "avatar/char_510_amedic.png",
         "avatar/char_510_amedic_2.png"
@@ -3978,6 +4534,7 @@
     {
       "id": "char_511_asnipe",
       "name": "Stormeye",
+      "tokens": [],
       "avatars": [
         "avatar/char_511_asnipe.png",
         "avatar/char_511_asnipe_2.png"
@@ -3986,6 +4543,7 @@
     {
       "id": "char_512_aprot",
       "name": "暮落",
+      "tokens": [],
       "avatars": [
         "avatar/char_512_aprot.png",
         "avatar/char_512_aprot_2.png"
@@ -3994,6 +4552,7 @@
     {
       "id": "char_513_apionr",
       "name": "郁金香",
+      "tokens": [],
       "avatars": [
         "avatar/char_513_apionr.png",
         "avatar/char_513_apionr_2.png"
@@ -4002,6 +4561,7 @@
     {
       "id": "char_514_rdfend",
       "name": "预备干员-重装",
+      "tokens": [],
       "avatars": [
         "avatar/char_514_rdfend.png"
       ]
@@ -4009,6 +4569,7 @@
     {
       "id": "char_600_cpione",
       "name": "预备干员-先锋",
+      "tokens": [],
       "avatars": [
         "avatar/char_600_cpione.png"
       ]
@@ -4016,6 +4577,7 @@
     {
       "id": "char_601_cguard",
       "name": "预备干员-近卫",
+      "tokens": [],
       "avatars": [
         "avatar/char_601_cguard.png"
       ]
@@ -4023,6 +4585,7 @@
     {
       "id": "char_602_cdfend",
       "name": "预备干员-重装",
+      "tokens": [],
       "avatars": [
         "avatar/char_602_cdfend.png"
       ]
@@ -4030,6 +4593,7 @@
     {
       "id": "char_603_csnipe",
       "name": "预备干员-狙击",
+      "tokens": [],
       "avatars": [
         "avatar/char_603_csnipe.png"
       ]
@@ -4037,6 +4601,7 @@
     {
       "id": "char_604_ccast",
       "name": "预备干员-术师",
+      "tokens": [],
       "avatars": [
         "avatar/char_604_ccast.png"
       ]
@@ -4044,6 +4609,7 @@
     {
       "id": "char_605_cmedic",
       "name": "预备干员-医疗",
+      "tokens": [],
       "avatars": [
         "avatar/char_605_cmedic.png"
       ]
@@ -4051,6 +4617,7 @@
     {
       "id": "char_606_csuppo",
       "name": "预备干员-辅助",
+      "tokens": [],
       "avatars": [
         "avatar/char_606_csuppo.png"
       ]
@@ -4058,6 +4625,7 @@
     {
       "id": "char_607_cspec",
       "name": "预备干员-特种",
+      "tokens": [],
       "avatars": [
         "avatar/char_607_cspec.png"
       ]
@@ -4065,6 +4633,7 @@
     {
       "id": "char_608_acpion",
       "name": "郁金香",
+      "tokens": [],
       "avatars": [
         "avatar/char_608_acpion.png"
       ]
@@ -4072,6 +4641,7 @@
     {
       "id": "char_609_acguad",
       "name": "Sharp",
+      "tokens": [],
       "avatars": [
         "avatar/char_609_acguad.png"
       ]
@@ -4079,6 +4649,7 @@
     {
       "id": "char_610_acfend",
       "name": "Mechanist",
+      "tokens": [],
       "avatars": [
         "avatar/char_610_acfend.png"
       ]
@@ -4086,6 +4657,7 @@
     {
       "id": "char_611_acnipe",
       "name": "Stormeye",
+      "tokens": [],
       "avatars": [
         "avatar/char_611_acnipe.png"
       ]
@@ -4093,6 +4665,7 @@
     {
       "id": "char_612_accast",
       "name": "Pith",
+      "tokens": [],
       "avatars": [
         "avatar/char_612_accast.png"
       ]
@@ -4100,6 +4673,7 @@
     {
       "id": "char_613_acmedc",
       "name": "Touch",
+      "tokens": [],
       "avatars": [
         "avatar/char_613_acmedc.png"
       ]
@@ -4107,6 +4681,7 @@
     {
       "id": "char_614_acsupo",
       "name": "Raidian",
+      "tokens": [],
       "avatars": [
         "avatar/char_614_acsupo.png"
       ]
@@ -4114,6 +4689,7 @@
     {
       "id": "char_615_acspec",
       "name": "Misery",
+      "tokens": [],
       "avatars": [
         "avatar/char_615_acspec.png"
       ]
@@ -4121,6 +4697,7 @@
     {
       "id": "char_616_pithst",
       "name": "盟约·辅助干员",
+      "tokens": [],
       "avatars": [
         "avatar/char_616_pithst.png",
         "avatar/char_616_pithst_2.png"
@@ -4129,6 +4706,7 @@
     {
       "id": "char_617_sharp2",
       "name": "领主·Sharp",
+      "tokens": [],
       "avatars": [
         "avatar/char_617_sharp2.png",
         "avatar/char_617_sharp2_2.png"
@@ -4137,6 +4715,7 @@
     {
       "id": "token_10000_silent_healrb",
       "name": "医疗探机",
+      "tokens": [],
       "avatars": [
         "avatar/token_10000_silent_healrb.png",
         "avatar/token_10000_silent_healrb_sweep#1.png",
@@ -4146,6 +4725,7 @@
     {
       "id": "token_10001_deepcl_tentac",
       "name": "触手",
+      "tokens": [],
       "avatars": [
         "avatar/token_10001_deepcl_tentac.png",
         "avatar/token_10001_deepcl_tentac_winter#3.png"
@@ -4154,6 +4734,7 @@
     {
       "id": "token_10002_kalts_mon3tr",
       "name": "Mon3tr",
+      "tokens": [],
       "avatars": [
         "avatar/token_10002_kalts_mon3tr.png",
         "avatar/token_10002_kalts_mon3tr_boc#6.png",
@@ -4163,6 +4744,7 @@
     {
       "id": "token_10003_cgbird_bird",
       "name": "幻影",
+      "tokens": [],
       "avatars": [
         "avatar/token_10003_cgbird_bird.png",
         "avatar/token_10003_cgbird_bird_sightseer#1.png",
@@ -4172,6 +4754,7 @@
     {
       "id": "token_10004_otter_motter",
       "name": "机械水獭",
+      "tokens": [],
       "avatars": [
         "avatar/token_10004_otter_motter.png",
         "avatar/token_10004_otter_motter_ghost#1.png"
@@ -4180,6 +4763,7 @@
     {
       "id": "token_10005_mgllan_drone1",
       "name": "龙腾.F",
+      "tokens": [],
       "avatars": [
         "avatar/token_10005_mgllan_drone1.png",
         "avatar/token_10005_mgllan_drone1_kitchen#1.png"
@@ -4188,6 +4772,7 @@
     {
       "id": "token_10005_mgllan_drone2",
       "name": "龙腾.L",
+      "tokens": [],
       "avatars": [
         "avatar/token_10005_mgllan_drone2.png",
         "avatar/token_10005_mgllan_drone2_kitchen#1.png"
@@ -4196,6 +4781,7 @@
     {
       "id": "token_10005_mgllan_drone3",
       "name": "龙腾.A",
+      "tokens": [],
       "avatars": [
         "avatar/token_10005_mgllan_drone3.png",
         "avatar/token_10005_mgllan_drone3_kitchen#1.png"
@@ -4204,6 +4790,7 @@
     {
       "id": "token_10006_vodfox_doll",
       "name": "诅咒娃娃",
+      "tokens": [],
       "avatars": [
         "avatar/token_10006_vodfox_doll.png",
         "avatar/token_10006_vodfox_doll_witch#2.png",
@@ -4213,6 +4800,7 @@
     {
       "id": "token_10007_phatom_twin",
       "name": "镜中虚影",
+      "tokens": [],
       "avatars": [
         "avatar/token_10007_phatom_twin.png",
         "avatar/token_10007_phatom_twin_ghost#1.png",
@@ -4222,6 +4810,7 @@
     {
       "id": "token_10008_cqbw_box",
       "name": "此面向敌",
+      "tokens": [],
       "avatars": [
         "avatar/token_10008_cqbw_box.png"
       ]
@@ -4229,6 +4818,7 @@
     {
       "id": "token_10009_weedy_cannon",
       "name": "工程蓄水炮",
+      "tokens": [],
       "avatars": [
         "avatar/token_10009_weedy_cannon.png",
         "avatar/token_10009_weedy_cannon_sightseer#1.png",
@@ -4238,6 +4828,7 @@
     {
       "id": "token_10010_folivo_car",
       "name": "移动摄影器",
+      "tokens": [],
       "avatars": [
         "avatar/token_10010_folivo_car.png",
         "avatar/token_10010_folivo_car_epoque#22.png",
@@ -4247,6 +4838,7 @@
     {
       "id": "token_10011_beewax_oblisk",
       "name": "沙之碑",
+      "tokens": [],
       "avatars": [
         "avatar/token_10011_beewax_oblisk.png",
         "avatar/token_10011_beewax_oblisk_summer#11.png"
@@ -4255,6 +4847,7 @@
     {
       "id": "token_10012_rosmon_shield",
       "name": "迷迭香的战术装备",
+      "tokens": [],
       "avatars": [
         "avatar/token_10012_rosmon_shield_sale#16.png"
       ]
@@ -4262,6 +4855,7 @@
     {
       "id": "token_10013_robin_mine",
       "name": "“夹子”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10013_robin_mine.png",
         "avatar/token_10013_robin_mine_epoque#13.png"
@@ -4270,6 +4864,7 @@
     {
       "id": "token_10014_bstalk_crab",
       "name": "磐蟹护卫队",
+      "tokens": [],
       "avatars": [
         "avatar/token_10014_bstalk_crab.png",
         "avatar/token_10014_bstalk_crab_snow#4.png",
@@ -4279,6 +4874,7 @@
     {
       "id": "token_10015_dusk_drgn",
       "name": "“小自在”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10015_dusk_drgn.png",
         "avatar/token_10015_dusk_drgn_nian#12.png"
@@ -4287,6 +4883,7 @@
     {
       "id": "token_10016_rfrost_mine",
       "name": "迎宾踏垫",
+      "tokens": [],
       "avatars": [
         "avatar/token_10016_rfrost_mine.png"
       ]
@@ -4294,6 +4891,7 @@
     {
       "id": "token_10017_skadi2_dedant",
       "name": "斯卡蒂的海嗣",
+      "tokens": [],
       "avatars": [
         "avatar/token_10017_skadi2_dedant.png",
         "avatar/token_10017_skadi2_dedant_boc#4.png",
@@ -4303,6 +4901,7 @@
     {
       "id": "token_10018_robrta_mach",
       "name": "全自动造型仪",
+      "tokens": [],
       "avatars": [
         "avatar/token_10018_robrta_mach.png",
         "avatar/token_10018_robrta_mach_ambienceSynesthesia#3.png",
@@ -4312,6 +4911,7 @@
     {
       "id": "token_10019_nearl2_sword",
       "name": "“耀阳”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10019_nearl2_sword.png"
       ]
@@ -4319,6 +4919,7 @@
     {
       "id": "token_10020_ling_soul1",
       "name": "“清平”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10020_ling_soul1.png",
         "avatar/token_10020_ling_soul1_ncg#1.png",
@@ -4329,6 +4930,7 @@
     {
       "id": "token_10020_ling_soul2",
       "name": "“逍遥”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10020_ling_soul2.png",
         "avatar/token_10020_ling_soul2_ncg#1.png",
@@ -4339,6 +4941,7 @@
     {
       "id": "token_10020_ling_soul3",
       "name": "“弦惊”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10020_ling_soul3.png",
         "avatar/token_10020_ling_soul3_ncg#1.png",
@@ -4349,6 +4952,7 @@
     {
       "id": "token_10021_blkngt_hypnos",
       "name": "眠兽",
+      "tokens": [],
       "avatars": [
         "avatar/token_10021_blkngt_hypnos.png",
         "avatar/token_10021_blkngt_hypnos_nian#8.png",
@@ -4358,6 +4962,7 @@
     {
       "id": "token_10022_kazema_shadow",
       "name": "纸偶",
+      "tokens": [],
       "avatars": [
         "avatar/token_10022_kazema_shadow.png",
         "avatar/token_10022_kazema_shadow_witch#3.png"
@@ -4366,6 +4971,7 @@
     {
       "id": "token_10023_windft_wrench",
       "name": "可靠电池",
+      "tokens": [],
       "avatars": [
         "avatar/token_10023_windft_wrench.png"
       ]
@@ -4373,6 +4979,7 @@
     {
       "id": "token_10024_ebnhlz_rcube",
       "name": "旧日残影",
+      "tokens": [],
       "avatars": [
         "avatar/token_10024_ebnhlz_rcube.png"
       ]
@@ -4380,6 +4987,7 @@
     {
       "id": "token_10025_doroth_recttp",
       "name": "共振装置",
+      "tokens": [],
       "avatars": [
         "avatar/token_10025_doroth_recttp.png",
         "avatar/token_10025_doroth_recttp_witch#4.png"
@@ -4388,6 +4996,7 @@
     {
       "id": "token_10026_bgsnow_subbow",
       "name": "“打字机”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10026_bgsnow_subbow.png",
         "avatar/token_10026_bgsnow_subbow_wild#7.png",
@@ -4397,6 +5006,7 @@
     {
       "id": "token_10027_ironmn_pile1",
       "name": "白铁™多功能平台",
+      "tokens": [],
       "avatars": [
         "avatar/token_10027_ironmn_pile1.png",
         "avatar/token_10027_ironmn_pile1_ambienceSynesthesia#5.png",
@@ -4406,6 +5016,7 @@
     {
       "id": "token_10027_ironmn_pile2",
       "name": "白铁™多功能平台",
+      "tokens": [],
       "avatars": [
         "avatar/token_10027_ironmn_pile2.png",
         "avatar/token_10027_ironmn_pile2_ambienceSynesthesia#5.png",
@@ -4415,6 +5026,7 @@
     {
       "id": "token_10027_ironmn_pile3",
       "name": "铁钳号·原型机",
+      "tokens": [],
       "avatars": [
         "avatar/token_10027_ironmn_pile3.png",
         "avatar/token_10027_ironmn_pile3_ambienceSynesthesia#5.png",
@@ -4424,6 +5036,7 @@
     {
       "id": "token_10028_vigil_wolf",
       "name": "狼群",
+      "tokens": [],
       "avatars": [
         "avatar/token_10028_vigil_wolf.png",
         "avatar/token_10028_vigil_wolf_epoque#27.png"
@@ -4432,6 +5045,7 @@
     {
       "id": "token_10029_slent2_protrb",
       "name": "夜灯",
+      "tokens": [],
       "avatars": [
         "avatar/token_10029_slent2_protrb.png",
         "avatar/token_10029_slent2_protrb_epoque#32.png"
@@ -4440,6 +5054,7 @@
     {
       "id": "token_10030_mlyss_wtrman",
       "name": "流形",
+      "tokens": [],
       "avatars": [
         "avatar/token_10030_mlyss_wtrman.png",
         "avatar/token_10030_mlyss_wtrman_ambienceSynesthesia#6.png",
@@ -4449,6 +5064,7 @@
     {
       "id": "token_10031_swire2_gdtrap",
       "name": "香槟炸弹",
+      "tokens": [],
       "avatars": [
         "avatar/token_10031_swire2_gdtrap.png",
         "avatar/token_10031_swire2_gdtrap_ambienceSynesthesia#4.png"
@@ -4457,6 +5073,7 @@
     {
       "id": "token_10032_jesca2_jckshd",
       "name": "机动盾牌",
+      "tokens": [],
       "avatars": [
         "avatar/token_10032_jesca2_jckshd.png",
         "avatar/token_10032_jesca2_jckshd_cfa#1.png"
@@ -4465,6 +5082,7 @@
     {
       "id": "token_10033_ela_grzmot",
       "name": "雷鸣地雷",
+      "tokens": [],
       "avatars": [
         "avatar/token_10033_ela_grzmot.png",
         "avatar/token_10033_ela_grzmot_rainbow6#2.png"
@@ -4473,6 +5091,7 @@
     {
       "id": "token_10034_ray_sndbst",
       "name": "沙地兽",
+      "tokens": [],
       "avatars": [
         "avatar/token_10034_ray_sndbst.png",
         "avatar/token_10034_ray_sndbst_shining#2.png",
@@ -4482,6 +5101,7 @@
     {
       "id": "token_10035_wisdel_wward",
       "name": "魂灵之影",
+      "tokens": [],
       "avatars": [
         "avatar/token_10035_wisdel_wward.png",
         "avatar/token_10035_wisdel_wward_sale#14.png"
@@ -4490,6 +5110,7 @@
     {
       "id": "token_10036_lasher_mcbird",
       "name": "发条羽兽",
+      "tokens": [],
       "avatars": [
         "avatar/token_10036_lasher_mcbird.png",
         "avatar/token_10036_lasher_mcbird_sightseer#3.png"
@@ -4498,6 +5119,7 @@
     {
       "id": "token_10037_mitm_trshrb",
       "name": "樱桃三号",
+      "tokens": [],
       "avatars": [
         "avatar/token_10037_mitm_trshrb.png",
         "avatar/token_10037_mitm_trshrb_breaker#1.png"
@@ -4506,16 +5128,19 @@
     {
       "id": "token_10039_ulpia_block",
       "name": "从不混淆的方向",
+      "tokens": [],
       "avatars": []
     },
     {
       "id": "token_10040_siege2_vlion",
       "name": "黄金盟誓",
+      "tokens": [],
       "avatars": []
     },
     {
       "id": "token_10041_cathy_catsld",
       "name": "爬行号·防护单元",
+      "tokens": [],
       "avatars": [
         "avatar/token_10041_cathy_catsld.png"
       ]
@@ -4523,6 +5148,7 @@
     {
       "id": "token_10042_tecno_puppet",
       "name": "木偶舞者",
+      "tokens": [],
       "avatars": [
         "avatar/token_10042_tecno_puppet.png"
       ]
@@ -4530,6 +5156,7 @@
     {
       "id": "token_10043_necras_skeltn",
       "name": "悲叹的仆役",
+      "tokens": [],
       "avatars": [
         "avatar/token_10043_necras_skeltn.png",
         "avatar/token_10043_necras_skeltn_ambienceSynesthesia#7.png",
@@ -4539,6 +5166,7 @@
     {
       "id": "token_10044_wulfen_mine",
       "name": "矿石“杀手”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10044_wulfen_mine.png",
         "avatar/token_10044_wulfen_mine_marthe#14.png"
@@ -4547,6 +5175,7 @@
     {
       "id": "token_10045_alanna_crane",
       "name": "小螺帽",
+      "tokens": [],
       "avatars": [
         "avatar/token_10045_alanna_crane.png"
       ]
@@ -4554,6 +5183,7 @@
     {
       "id": "token_10050_monstr_prosts",
       "name": "重构体",
+      "tokens": [],
       "avatars": [
         "avatar/token_10050_monstr_prosts.png",
         "avatar/token_10050_monstr_prosts_boc#11.png"
@@ -4562,6 +5192,7 @@
     {
       "id": "token_10051_radian_tower1",
       "name": "戴乌",
+      "tokens": [],
       "avatars": [
         "avatar/token_10051_radian_tower1.png",
         "avatar/token_10051_radian_tower1_game#8.png"
@@ -4570,6 +5201,7 @@
     {
       "id": "token_10052_radian_tower2",
       "name": "赛柯",
+      "tokens": [],
       "avatars": [
         "avatar/token_10052_radian_tower2.png",
         "avatar/token_10052_radian_tower2_game#8.png"
@@ -4578,6 +5210,7 @@
     {
       "id": "token_10053_radian_tower3",
       "name": "桑特拉",
+      "tokens": [],
       "avatars": [
         "avatar/token_10053_radian_tower3.png",
         "avatar/token_10053_radian_tower3_game#8.png"
@@ -4586,6 +5219,7 @@
     {
       "id": "token_10054_phatm2_encdool",
       "name": "本能的召唤",
+      "tokens": [],
       "avatars": [
         "avatar/token_10054_phatm2_encdool.png"
       ]
@@ -4593,11 +5227,13 @@
     {
       "id": "token_10055_phatm2_mndclv",
       "name": "迷狂牢笼",
+      "tokens": [],
       "avatars": []
     },
     {
       "id": "token_10056_angel2_target",
       "name": "投递坐标",
+      "tokens": [],
       "avatars": [
         "avatar/token_10056_angel2_target.png",
         "avatar/token_10056_angel2_target_iteration#6.png"
@@ -4606,6 +5242,7 @@
     {
       "id": "token_10057_svash2_eagle1",
       "name": "风雪之眼",
+      "tokens": [],
       "avatars": [
         "avatar/token_10057_svash2_eagle1.png"
       ]
@@ -4613,6 +5250,7 @@
     {
       "id": "token_10057_svash2_eagle2",
       "name": "风雪之眼",
+      "tokens": [],
       "avatars": [
         "avatar/token_10057_svash2_eagle2.png"
       ]
@@ -4620,6 +5258,7 @@
     {
       "id": "token_10057_svash2_eagle3",
       "name": "风雪之眼",
+      "tokens": [],
       "avatars": [
         "avatar/token_10057_svash2_eagle3.png"
       ]
@@ -4627,11 +5266,13 @@
     {
       "id": "token_10058_sbell2_icetgt",
       "name": "保护目标（冻结状态）",
+      "tokens": [],
       "avatars": []
     },
     {
       "id": "token_10059_nasti_nstdef",
       "name": "“质检专员”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10059_nasti_nstdef.png"
       ]
@@ -4639,6 +5280,7 @@
     {
       "id": "token_10060_nasti_nstchr",
       "name": "“监工专员”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10060_nasti_nstchr.png"
       ]
@@ -4646,6 +5288,7 @@
     {
       "id": "token_10061_nasti_nstbld",
       "name": "“应急承重小组”",
+      "tokens": [],
       "avatars": [
         "avatar/token_10061_nasti_nstbld.png"
       ]
@@ -4653,6 +5296,7 @@
     {
       "id": "token_10063_buddy_bddg",
       "name": "牙猎犬",
+      "tokens": [],
       "avatars": [
         "avatar/token_10063_buddy_bddg.png",
         "avatar/token_10063_buddy_bddg_mh#2.png"
@@ -4661,6 +5305,7 @@
     {
       "id": "token_10064_wang_stone1",
       "name": "棋子",
+      "tokens": [],
       "avatars": [
         "avatar/token_10064_wang_stone1.png"
       ]
@@ -4668,11 +5313,13 @@
     {
       "id": "token_10065_demetr_dmtpos",
       "name": "牵绊",
+      "tokens": [],
       "avatars": []
     },
     {
       "id": "token_10066_closur_ourbase",
       "name": "指挥中心",
+      "tokens": [],
       "avatars": [
         "avatar/token_10066_closur_ourbase.png"
       ]
@@ -4680,6 +5327,7 @@
     {
       "id": "token_10068_kalts2_mtship",
       "name": "战术锚点",
+      "tokens": [],
       "avatars": [
         "avatar/token_10068_kalts2_mtship.png"
       ]
@@ -4687,6 +5335,7 @@
     {
       "id": "token_10069_mcnist_mcgraf",
       "name": "结构性原理",
+      "tokens": [],
       "avatars": [
         "avatar/token_10069_mcnist_mcgraf.png"
       ]
@@ -4694,6 +5343,7 @@
     {
       "id": "token_10070_aphris_pc",
       "name": "中继器",
+      "tokens": [],
       "avatars": [
         "avatar/token_10070_aphris_pc.png"
       ]
@@ -4701,6 +5351,7 @@
     {
       "id": "token_10071_aglna2_agairp",
       "name": "“一会儿见！”",
+      "tokens": [],
       "avatars": []
     }
   ]

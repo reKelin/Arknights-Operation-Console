@@ -31,6 +31,7 @@ impl DraftKind {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum DraftDirection {
+    None,
     Up,
     Right,
     Down,
@@ -40,6 +41,7 @@ pub enum DraftDirection {
 impl DraftDirection {
     fn as_str(self) -> &'static str {
         match self {
+            Self::None => "none",
             Self::Up => "up",
             Self::Right => "right",
             Self::Down => "down",
@@ -116,6 +118,11 @@ impl DraftEvent {
     }
 
     pub fn refresh_complete(&mut self) {
+        if self.kind == DraftKind::Deploy
+            && self.operator.as_deref() == Some("token_10064_wang_stone1")
+        {
+            self.direction = Some(DraftDirection::None);
+        }
         let tile_complete = self.tile.as_deref().is_some_and(valid_tile_code);
         self.complete = tile_complete
             && match self.kind {
@@ -373,6 +380,7 @@ fn event_from_value(value: &Value, order: u32) -> Result<DraftEvent, CommandErro
             .get("direction")
             .and_then(Value::as_str)
             .map(|direction| match direction {
+                "none" => DraftDirection::None,
                 "up" => DraftDirection::Up,
                 "right" => DraftDirection::Right,
                 "down" => DraftDirection::Down,
@@ -556,7 +564,7 @@ fn validate_event(
             }
             if !matches!(
                 object.get("direction").and_then(Value::as_str),
-                Some("up" | "right" | "down" | "left")
+                Some("up" | "right" | "down" | "left" | "none")
             ) {
                 return Err(CommandError::field(
                     "invalid_direction",
@@ -663,6 +671,30 @@ mod tests {
 
         assert_eq!(exported["schemaVersion"], 2);
         assert_eq!(exported["events"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn directionless_summon_exports_without_inventing_a_gesture() {
+        let mut axis = DraftAxis::demo();
+        let event = &mut axis.events[0];
+        event.kind = DraftKind::Deploy;
+        event.operator = Some("token_10064_wang_stone1".into());
+        event.tile = Some("E7".into());
+        event.direction = None;
+        event.refresh_complete();
+        assert_eq!(event.direction, Some(DraftDirection::None));
+        assert!(event.complete);
+        let value = axis.to_axis_json().unwrap();
+        assert_eq!(value["events"][0]["direction"], "none");
+        assert_eq!(
+            DraftAxis::from_axis_json(value).unwrap().events[0].direction,
+            Some(DraftDirection::None)
+        );
+        let event = &mut axis.events[0];
+        event.operator = Some("char_2027_wang".into());
+        event.direction = None;
+        event.refresh_complete();
+        assert!(!event.complete);
     }
 
     #[test]

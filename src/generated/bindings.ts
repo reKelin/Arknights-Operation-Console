@@ -166,7 +166,7 @@ export type DraftAxis = {
 	events: DraftEvent[],
 };
 
-export type DraftDirection = "up" | "right" | "down" | "left";
+export type DraftDirection = "none" | "up" | "right" | "down" | "left";
 
 export type DraftEvent = {
 	id: string,
@@ -208,7 +208,7 @@ export type ExecutionReceipt = {
 
 export type ExecutionReceiptStatus = "confirmed" | "uncertain" | "failed" | "cancelled";
 
-export type FacingDirection = "up" | "right" | "down" | "left";
+export type FacingDirection = "none" | "up" | "right" | "down" | "left";
 
 export type GameFrameRange = {
 	start: number,

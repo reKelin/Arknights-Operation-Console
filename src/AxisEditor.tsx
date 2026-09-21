@@ -223,6 +223,7 @@ export default function AxisEditor({
                               down: "朝下",
                               left: "朝左",
                               up: "朝上",
+                              none: "无朝向",
                             } as const
                           )[event.direction]
                         : "",
@@ -711,6 +712,7 @@ function EventForm({
             <option value="right">朝右</option>
             <option value="down">朝下</option>
             <option value="left">朝左</option>
+            <option value="none">无朝向</option>
           </select>
         </label>
       )}

@@ -73,7 +73,7 @@
     },
     "Direction": {
       "type": "string",
-      "enum": ["up", "right", "down", "left"]
+      "enum": ["up", "right", "down", "left", "none"]
     },
     "DeployEvent": {
       "type": "object",

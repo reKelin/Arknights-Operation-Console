@@ -156,6 +156,7 @@ pub struct AnalysisCandidate {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum FacingDirection {
+    None,
     Up,
     Right,
     Down,

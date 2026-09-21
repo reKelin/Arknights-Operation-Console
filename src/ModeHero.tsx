@@ -107,9 +107,15 @@ export default function ModeHero({
       ? "等待记录"
       : "暂无操作";
   const direction = point?.direction
-    ? ({ right: "朝右", down: "朝下", left: "朝左", up: "朝上" } as const)[
-        point.direction
-      ]
+    ? (
+        {
+          right: "朝右",
+          down: "朝下",
+          left: "朝左",
+          up: "朝上",
+          none: "无朝向",
+        } as const
+      )[point.direction]
     : "";
   const detail =
     snapshot.monitor.error ??

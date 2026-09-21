@@ -14,6 +14,8 @@ pub struct ProjectionMap {
 #[serde(rename_all = "camelCase")]
 pub struct ProjectionTile {
     pub height_type: i8,
+    #[serde(default)]
+    pub buildable_type: i8,
 }
 
 pub fn projection_file_name(stage: &StageCatalogEntry) -> String {
@@ -101,6 +103,7 @@ pub fn direction_target(
     distance: i32,
 ) -> (i32, i32) {
     match direction {
+        DraftDirection::None => origin,
         DraftDirection::Up => (origin.0, origin.1 - distance),
         DraftDirection::Right => (origin.0 + distance, origin.1),
         DraftDirection::Down => (origin.0, origin.1 + distance),
@@ -116,7 +119,16 @@ mod tests {
         ProjectionMap {
             width: 36,
             height: 9,
-            tiles: vec![vec![ProjectionTile { height_type: 0 }; 36]; 9],
+            tiles: vec![
+                vec![
+                    ProjectionTile {
+                        height_type: 0,
+                        buildable_type: 1
+                    };
+                    36
+                ];
+                9
+            ],
             view: [[0.0, -4.81, -7.76], [0.6, -5.31, -8.64]],
         }
     }

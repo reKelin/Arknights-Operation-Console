@@ -117,6 +117,7 @@ const operators = Object.entries(characterTable)
     return {
       id,
       name: value.name.trim(),
+      tokens: Object.keys(value.displayTokenDict ?? {}).sort(),
       avatars: avatarPaths
         .filter(
           (path) => path === `${prefix}.png` || path.startsWith(`${prefix}_`),

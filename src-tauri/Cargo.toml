@@ -47,6 +47,7 @@ windows = { version = "=0.62.2", features = [
 windows-capture = "=2.0.1"
 
 [features]
+catalog-tools = []
 default = ["desktop-app", "custom-protocol"]
 desktop-app = [
     "tauri/tray-icon",
@@ -54,3 +55,8 @@ desktop-app = [
     "dep:tauri-plugin-global-shortcut",
 ]
 custom-protocol = ["tauri/custom-protocol"]
+
+[[bin]]
+name = "sync-portraits"
+path = "src/bin/sync-portraits.rs"
+required-features = ["catalog-tools"]

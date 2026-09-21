@@ -9,7 +9,7 @@ export type EventId = string;
 export type Frame = number;
 export type OperatorId = string;
 export type Tile = string;
-export type Direction = "up" | "right" | "down" | "left";
+export type Direction = "up" | "right" | "down" | "left" | "none";
 export type Label = string;
 
 export interface AxisDocument {

@@ -190,6 +190,7 @@ test("整理页筛选、操作类型和朝向下拉会改变结果", async ({ pa
     "朝右",
     "朝下",
     "朝左",
+    "无朝向",
   ]);
   const rows = page.locator(".editor-table tbody tr");
   await page.getByLabel("筛选操作类型").selectOption("skill");
