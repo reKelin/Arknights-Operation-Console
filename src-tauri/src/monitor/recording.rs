@@ -459,6 +459,12 @@ fn analyze_file(
             config,
         )?;
         if !clock.snapshot().active
+            && observation.battle_state.is_running()
+            && !controls_fully_visible(&buffer, metadata.width, metadata.height)
+        {
+            observation.battle_state = super::ObservedBattleState::BattleBegin;
+        }
+        if !clock.snapshot().active
             && !matches!(
                 observation.battle_state,
                 super::ObservedBattleState::NotInBattle | super::ObservedBattleState::BattleBegin
@@ -572,7 +578,16 @@ fn analyze_file(
                     start: update.frame.saturating_sub(update.uncertainty_frames),
                     end: update.frame.saturating_add(update.uncertainty_frames),
                 },
-                battle_state: observation.battle_state,
+                // 仅候选分段使用面板边界；上面的权威时钟仍看到 Paused。
+                battle_state: if observation.battle_state == super::ObservedBattleState::Paused {
+                    if panel_visible(&buffer, metadata.width, metadata.height) {
+                        super::ObservedBattleState::PointTwoXRunning
+                    } else {
+                        super::ObservedBattleState::OneXRunning
+                    }
+                } else {
+                    observation.battle_state
+                },
                 observation_confidence: observation.confidence,
                 mapping_trusted: update.quality == super::ClockQuality::Trusted,
                 discontinuity_before,
@@ -663,17 +678,12 @@ fn analyze_file(
             .zip(completion.after.slots)
             .is_some_and(|(before, after)| after == before + 1);
         let deployed = !retreated
-            && ((completion.deployment && completion.cooldown_started)
-                || completion
-                    .before
-                    .slots
-                    .zip(completion.after.slots)
-                    .is_some_and(|(before, after)| before == after + 1)
-                || completion
-                    .before
-                    .cost
-                    .zip(completion.after.cost)
-                    .is_some_and(|(before, after)| after < before));
+            && deployment_completed(
+                completion.before,
+                completion.after,
+                completion.ready,
+                completion.deployment && completion.cooldown_started,
+            );
         if deployed {
             candidate.kind = Some(analysis::CandidateActionKind::Deploy);
             candidate.confidence = 85;
@@ -796,7 +806,7 @@ struct PendingInteraction {
     name_attempts: u8,
     last_panel: Vec<u8>,
     facing_panel: Vec<u8>,
-    running_frames: u8,
+    clear_frames: u8,
     response_ns: Option<u64>,
     ready: bool,
     before_bars: Vec<(u32, u32)>,
@@ -820,6 +830,7 @@ struct CompletedInteraction {
     before_bars: Vec<(u32, u32)>,
     skill_started: bool,
     skill_evidence_frames: u8,
+    skill_observations: u8,
     tile: Option<String>,
     direction: Option<analysis::FacingDirection>,
 }
@@ -828,6 +839,21 @@ struct HudReading {
     cost: Option<u8>,
     slots: Option<u8>,
 }
+fn deployment_completed(
+    before: HudReading,
+    after: HudReading,
+    ready: bool,
+    gesture_with_cooldown: bool,
+) -> bool {
+    let slots = before.slots.zip(after.slots);
+    if slots.is_some_and(|(a, b)| b == a + 1) {
+        return false;
+    }
+    gesture_with_cooldown
+        || slots.is_some_and(|(a, b)| a == b + 1)
+        || !ready && before.cost.zip(after.cost).is_some_and(|(a, b)| b < a)
+}
+
 fn read_cost(recognizer: Option<&StageOcrRecognizer>, image: Option<OcrImage>) -> HudReading {
     let Some(text) = recognizer
         .zip(image)
@@ -897,7 +923,7 @@ fn observe_interaction(
             name_attempts: 0,
             last_panel: Vec::new(),
             facing_panel: Vec::new(),
-            running_frames: 0,
+            clear_frames: 0,
             response_ns: None,
             ready: false,
             before_bars,
@@ -924,7 +950,7 @@ fn observe_interaction(
         } else if event.response_ns.is_none() {
             event.response_ns = Some(timestamp);
         }
-        if interacting
+        if panel
             && event.operator.is_none()
             && event.name_attempts < 3
             && timestamp.saturating_sub(event.start_ns)
@@ -940,12 +966,12 @@ fn observe_interaction(
                     .or_else(|| parameters.match_name(data, width, height));
             }
         }
-        event.running_frames = if running {
-            event.running_frames.saturating_add(1)
+        event.clear_frames = if !panel && (running || observation.battle_state == Paused) {
+            event.clear_frames.saturating_add(1)
         } else {
             0
         };
-        if event.running_frames >= 3 {
+        if event.clear_frames >= 3 {
             let mut event = pending.take().unwrap();
             if event.operator.is_none() {
                 event.operator = crop_region(
@@ -978,16 +1004,14 @@ fn observe_interaction(
                 .slots
                 .zip(after.slots)
                 .is_some_and(|(a, b)| b == a + 1);
-            let deployed = event
-                .before
-                .cost
-                .zip(after.cost)
-                .is_some_and(|(a, b)| b < a)
-                || event
-                    .before
-                    .slots
-                    .zip(after.slots)
-                    .is_some_and(|(a, b)| a == b + 1);
+            let cooldown_started =
+                cooldown_ratio(data, width, height) - event.before_cooldown > 0.01;
+            let deployed = deployment_completed(
+                event.before,
+                after,
+                event.ready,
+                event.deployment && cooldown_started,
+            );
             if event.operator.is_none() && (deployed || retreat) {
                 let before_units = portraits::match_bar(
                     &event.before_frame,
@@ -1059,8 +1083,7 @@ fn observe_interaction(
                 end_ns: timestamp,
                 before: event.before,
                 after,
-                cooldown_started: cooldown_ratio(data, width, height) - event.before_cooldown
-                    > 0.01,
+                cooldown_started,
                 deployment: event.deployment,
                 operator: event.operator,
                 response_ns: event.response_ns,
@@ -1068,15 +1091,14 @@ fn observe_interaction(
                 before_bars: event.before_bars,
                 skill_started: false,
                 skill_evidence_frames: 0,
+                skill_observations: 0,
             });
         }
     }
     if running && !panel {
         for event in completions.iter_mut().rev().take(1) {
-            if event.ready
-                && !event.deployment
-                && timestamp.saturating_sub(event.end_ns) <= 1_000_000_000
-            {
+            if event.ready && !event.deployment && event.skill_observations < 15 {
+                event.skill_observations += 1;
                 let changed =
                     has_new_skill_bar(&event.before_bars, &yellow_bars(data, width, height));
                 event.skill_evidence_frames = if changed {
@@ -1127,6 +1149,17 @@ fn has_new_skill_bar(before: &[(u32, u32)], after: &[(u32, u32)]) -> bool {
             .iter()
             .any(|&(bx, by)| x.abs_diff(bx) < 40 && y.abs_diff(by) < 12)
     })
+}
+
+fn controls_fully_visible(data: &[u8], width: u32, height: u32) -> bool {
+    let mut white = 0;
+    for y in (30..130).step_by(2) {
+        for x in (1740..1890).step_by(2) {
+            let (r, g, b) = reference_pixel(data, width, height, x, y);
+            white += usize::from(r.min(g).min(b) > 180);
+        }
+    }
+    white >= 150
 }
 
 fn panel_visible(data: &[u8], width: u32, height: u32) -> bool {
@@ -1209,7 +1242,7 @@ fn ready_visible(data: &[u8], width: u32, height: u32) -> bool {
 
 fn yellow_bars(data: &[u8], width: u32, height: u32) -> Vec<(u32, u32)> {
     let mut bars = Vec::new();
-    for y in (400..850).step_by(4) {
+    for y in (150..900).step_by(4) {
         let mut run = 0;
         for x in (350..1660).step_by(2) {
             let (r, g, b) = reference_pixel(data, width, height, x, y);
@@ -1312,6 +1345,62 @@ mod tests {
             parameters.verify_bar(&data, w, h, &names);
             assert!(parameters.roster.contains("token_10064_wang_stone1"));
         }
+    }
+
+    #[test]
+    fn skill_cost_is_not_deployment_and_paused_slot_changes_are_separate() {
+        let before = HudReading {
+            cost: Some(25),
+            slots: Some(7),
+        };
+        let consumed = HudReading {
+            cost: Some(15),
+            slots: Some(7),
+        };
+        assert!(!deployment_completed(before, consumed, true, false));
+        let retreated = HudReading {
+            cost: Some(30),
+            slots: Some(8),
+        };
+        let redeployed = HudReading {
+            cost: Some(10),
+            slots: Some(7),
+        };
+        assert!(!deployment_completed(before, retreated, false, false));
+        assert!(deployment_completed(retreated, redeployed, false, false));
+    }
+
+    #[test]
+    fn intro_fade_does_not_start_the_clock_and_upper_skill_bar_is_visible() {
+        for (bytes, ready) in [
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/intro-fade.png").as_slice(),
+                false,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/monitor/controls/intro-ready.png").as_slice(),
+                true,
+            ),
+        ] {
+            let patch = image::load_from_memory(bytes).unwrap().to_rgba8();
+            let mut frame = vec![0; 960 * 540 * 4];
+            for (x, y, p) in patch.enumerate_pixels() {
+                let i = (((y + 15) * 960 + x + 780) * 4) as usize;
+                frame[i..i + 4].copy_from_slice(&[p[2], p[1], p[0], 255]);
+            }
+            assert_eq!(controls_fully_visible(&frame, 960, 540), ready);
+        }
+        let patch = image::load_from_memory(include_bytes!(
+            "../../tests/fixtures/monitor/controls/upper-skill-bar.png"
+        ))
+        .unwrap()
+        .to_rgba8();
+        let mut frame = vec![0; 960 * 540 * 4];
+        for (x, y, p) in patch.enumerate_pixels() {
+            let i = (((y + 140) * 960 + x + 390) * 4) as usize;
+            frame[i..i + 4].copy_from_slice(&[p[2], p[1], p[0], 255]);
+        }
+        assert!(has_new_skill_bar(&[], &yellow_bars(&frame, 960, 540)));
     }
 
     #[test]
@@ -1519,6 +1608,46 @@ mod tests {
                                 <= 2,
                             "独立核验的倍速/暂停区间不一致: {interval}"
                         );
+                    }
+                    if let Some(f0) = reference["f0SourceSeconds"].as_f64() {
+                        let start = trace
+                            .iter()
+                            .find(|p| p.source_frame == segments[0].source_start_frame)
+                            .unwrap();
+                        assert!(
+                            (start.source_timestamp_ns / 1e9 - f0).abs() <= 1.0 / 15.0,
+                            "F0 与独立书签不符"
+                        );
+                    }
+                    if let Some(expected) = reference["prefixEvents"].as_array() {
+                        let actual = axis
+                            .events
+                            .iter()
+                            .filter(|e| {
+                                e.source_timestamp_ns.unwrap() / 1e9
+                                    < reference["prefixEndSeconds"].as_f64().unwrap()
+                            })
+                            .collect::<Vec<_>>();
+                        assert_eq!(actual.len(), expected.len(), "前六个操作不得增加或遗漏");
+                        let names: OperatorNames =
+                            serde_json::from_str(include_str!("../../data/operators.json"))
+                                .unwrap();
+                        for (event, expected) in actual.iter().zip(expected) {
+                            assert_eq!(serde_json::to_value(event.kind).unwrap(), expected["kind"]);
+                            let bookmark = expected["sourceSeconds"].as_f64().unwrap();
+                            assert!(
+                                (event.source_timestamp_ns.unwrap() / 1e9 - bookmark).abs() <= 0.3,
+                                "首次可见响应与书签关联错误"
+                            );
+                            if event.kind == crate::axis::DraftKind::Deploy {
+                                let unit = names
+                                    .operators
+                                    .iter()
+                                    .find(|u| u.name == expected["actor"].as_str().unwrap())
+                                    .unwrap();
+                                assert_eq!(event.operator.as_deref(), Some(unit.id.as_str()));
+                            }
+                        }
                     }
                     if let Some(states) = reference["states"].as_array() {
                         for state in states {

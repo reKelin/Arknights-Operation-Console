@@ -83,6 +83,40 @@
         "sourceSeconds": 54.2,
         "state": "twoXRunning"
       }
+    ],
+    "f0SourceSeconds": 15.75,
+    "prefixEndSeconds": 65,
+    "prefixEvents": [
+      {
+        "sourceSeconds": 34.783,
+        "kind": "deploy",
+        "actor": "艾雅法拉"
+      },
+      {
+        "sourceSeconds": 38.599,
+        "kind": "skill",
+        "actor": "艾雅法拉"
+      },
+      {
+        "sourceSeconds": 52.366,
+        "kind": "retreat",
+        "actor": "艾雅法拉"
+      },
+      {
+        "sourceSeconds": 53.883,
+        "kind": "deploy",
+        "actor": "死芒"
+      },
+      {
+        "sourceSeconds": 59.865,
+        "kind": "skill",
+        "actor": "死芒"
+      },
+      {
+        "sourceSeconds": 62.733,
+        "kind": "skill",
+        "actor": "炸弹载荷点"
+      }
     ]
   }
 }
